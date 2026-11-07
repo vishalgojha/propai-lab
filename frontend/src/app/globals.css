@@ -463,6 +463,15 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .broker-video-card { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); }
 .broker-video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #071014; }
 .broker-video-note { margin: 0; border-top: 1px solid var(--border); padding: .8rem 1rem; color: var(--muted-foreground); font-family: var(--font-mono); font-size: .68rem; letter-spacing: .04em; }
+.broker-instinct-section { border-top: 1px solid var(--border); background: var(--background); padding-block: clamp(3.5rem, 8vw, 6rem); }
+.broker-instinct-layout { display: grid; grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr); align-items: center; gap: clamp(2rem, 6vw, 5rem); }
+.broker-instinct-steps { display: grid; gap: .7rem; margin-top: 2rem; color: var(--text-secondary); font-family: var(--font-mono); font-size: .7rem; letter-spacing: .04em; }
+.broker-instinct-steps span { display: flex; align-items: center; gap: .65rem; }
+.broker-instinct-steps b { display: inline-grid; width: 1.8rem; height: 1.8rem; place-items: center; border: 1px solid var(--accent); border-radius: 999px; color: var(--accent); font-size: .6rem; }
+.broker-instinct-card { border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); border-radius: var(--radius); background: var(--card); padding: 1rem; box-shadow: var(--shadow); }
+.broker-instinct-copy { max-height: 19rem; overflow: auto; margin: 1rem 0; border: 1px solid var(--border); border-radius: calc(var(--radius) * .75); background: var(--surface); padding: 1rem; color: var(--foreground); font-family: var(--font-mono); font-size: .72rem; line-height: 1.7; white-space: pre-wrap; }
+.broker-instinct-copy-button { width: 100%; }
+.broker-instinct-note { margin: .8rem 0 0; color: var(--muted-foreground); font-family: var(--font-mono); font-size: .65rem; line-height: 1.6; }
 .broker-hero-copy, .broker-section-copy { max-width: 38rem; margin: 2rem 0 0; color: var(--text-secondary); font-size: 1.05rem; line-height: 1.7; }
 .broker-proof { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-top: 2rem; color: var(--text-secondary); font-size: .8rem; }
 .broker-proof span { display: inline-flex; align-items: center; gap: .4rem; }
@@ -589,6 +598,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
   .broker-pricing-grid { grid-template-columns: 1fr; }
   .broker-pipeline { grid-template-columns: 1fr; }
   .broker-field-grid { grid-template-columns: 1fr; }
+  .broker-instinct-layout { grid-template-columns: 1fr; gap: 2rem; }
 }
 
 /* Legacy surface bridge: keeps older route markup inside the light-only shell

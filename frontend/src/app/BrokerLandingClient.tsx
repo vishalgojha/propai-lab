@@ -23,9 +23,12 @@ const capabilities = [
   [Zap, "Brokerage Intelligence", "Know what needs attention today across your inventory, leads, and active deals."],
 ] as const;
 
+const INSTINCT_SETUP = `Connect to PropAI through REST API only.\n\nBase URL: https://api.propai.live\n\nAuthentication: use the PropAI token as X-API-Key: <ppai_token>\n\nHealth check: GET /api/external/v1/health\n\nEndpoints:\nGET /api/external/v1/listings/search\nGET /api/external/v1/requirements\nGET /api/external/v1/matches\nGET /api/external/v1/messages/search\nGET /api/external/v1/messages/{raw_message_id}\n\nUse groups-only raw message search by default. Never use localhost, MCP, Supabase, or ask for the token in WhatsApp chat. Store the token securely in Instinct Vault.`;
+
 export default function BrokerLandingClient() {
   const [accessOpen, setAccessOpen] = useState(false);
   const [accessNext, setAccessNext] = useState("/inbox");
+  const [instinctCopied, setInstinctCopied] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -35,6 +38,12 @@ export default function BrokerLandingClient() {
     setAccessOpen(true);
   }, []);
 
+  async function copyInstinctSetup() {
+    await navigator.clipboard.writeText(INSTINCT_SETUP);
+    setInstinctCopied(true);
+    window.setTimeout(() => setInstinctCopied(false), 1800);
+  }
+
   return (
     <main className="broker-landing min-h-screen overflow-hidden">
       <header className="broker-nav"><div className="broker-container flex h-20 items-center justify-between"><Link href="/" className="flex items-center gap-3" aria-label="PropAI home"><img src="/propai-logo.svg" alt="" aria-hidden="true" className="h-8 w-8" /><span className="text-lg font-semibold">PropAI</span></Link><nav className="hidden items-center gap-8 text-sm text-[var(--text-secondary)] md:flex"><a href="#how-it-works">How it works</a><a href="#capabilities">Capabilities</a><a href="#pricing">Pricing</a></nav><div className="flex items-center gap-5"><button type="button" onClick={() => setAccessOpen(true)} className="hidden text-sm text-[var(--text-secondary)] hover:text-[var(--foreground)] sm:inline">Sign in</button><button type="button" onClick={() => setAccessOpen(true)} className="broker-button">Start using PropAI</button></div></div></header>
@@ -42,6 +51,8 @@ export default function BrokerLandingClient() {
       <section className="broker-hero"><div className="broker-container grid items-center gap-14 lg:grid-cols-[1fr_0.86fr] lg:gap-20"><div><p className="broker-kicker">Your private brokerage copilot</p><h1>Connect Claude to the <em>WhatsApp market you already use.</em></h1><p className="broker-hero-copy">PropAI MCP gives Claude a tenant-scoped view of your source-backed inventory, buyer requirements, matches, and follow-ups — without exposing another brokerage&apos;s workspace.</p><div className="mt-8 flex flex-wrap items-center gap-5"><button type="button" onClick={() => setAccessOpen(true)} className="broker-button broker-button-large">Connect PropAI MCP <ArrowRight className="h-4 w-4" /></button><a href="#how-it-works" className="broker-text-link">See how it works <span aria-hidden="true">↓</span></a></div><div className="broker-proof"><span><Check className="h-3.5 w-3.5" /> Private workspace tools</span><span><Check className="h-3.5 w-3.5" /> Human approval stays on</span></div></div><BrokerSignature /></div></section>
 
       <section className="broker-video-section" aria-labelledby="mcp-video-title"><div className="broker-container broker-video-layout"><div><p className="broker-kicker">See it in 30 seconds</p><h2 id="mcp-video-title">Connect your private market to Claude.</h2><p className="broker-section-copy">Copy one URL, approve access, and ask questions about your own inventory in plain English.</p><a href="#pricing" className="broker-text-link">Choose your plan <span aria-hidden="true">↓</span></a></div><div className="broker-video-card"><video controls preload="metadata" playsInline className="broker-video" aria-label="How to connect PropAI MCP to Claude"><source src="/videos/propai-mcp-tutorial.mp4" type="video/mp4" />Your browser does not support the PropAI MCP tutorial video.</video><p className="broker-video-note">Tenant-scoped · Private inventory · You approve before sending</p></div></div></section>
+
+      <section className="broker-instinct-section" aria-labelledby="instinct-title"><div className="broker-container broker-instinct-layout"><div><p className="broker-kicker">Connect Instinct</p><h2 id="instinct-title">Give Instinct the setup once. Let it work from your WhatsApp.</h2><p className="broker-section-copy">Copy this instruction into Instinct. It tells the agent which REST endpoints to use, how to authenticate, and where private DM access begins.</p><div className="broker-instinct-steps"><span><b>01</b> Copy the instruction</span><span><b>02</b> Add your token in Instinct Vault</span><span><b>03</b> Ask for a listing search</span></div></div><div className="broker-instinct-card"><div className="broker-panel-meta"><span><ClipboardList className="h-3.5 w-3.5" /> Instinct setup instruction</span><span>REST · read-only</span></div><pre className="broker-instinct-copy">{INSTINCT_SETUP}</pre><button type="button" onClick={() => void copyInstinctSetup()} className="broker-button broker-instinct-copy-button"><ClipboardList className="h-4 w-4" /> {instinctCopied ? "Copied for Instinct" : "Copy instruction"}</button><p className="broker-instinct-note">Your token is never included here. Private DMs remain off until you explicitly enable consent in Account → MCP.</p></div></div></section>
 
       <section className="broker-section broker-divider"><div className="broker-container"><div className="mb-14 max-w-2xl"><p className="broker-kicker">From WhatsApp noise to a working market</p><h2>Five things happen to every message before it reaches you.</h2></div><div id="how-it-works" className="broker-pipeline">{steps.map(([number, title, description]) => <article key={number} className="broker-step"><div className="broker-step-number">{number}</div><h3>{title}</h3><p>{description}</p></article>)}</div></div></section>
 

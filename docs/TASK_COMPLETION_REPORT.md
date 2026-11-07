@@ -767,3 +767,11 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Verification: Added three auth tests; Python compilation and focused tests pass. Live aggregate inspection found two active Instinct keys, one previously used and one unused; no token values were exposed.
 - Next action: Redeploy the API and refresh Account → MCP. Configure Instinct with the latest one-time `ppai_…` token in its API-key field and use `X-API-Key`.
 
+### Add Instinct REST setup instructions to the landing page
+
+- Requested outcome: Let a broker copy a complete Instinct REST setup instruction directly from the PropAI landing page.
+- Files changed: `frontend/src/app/BrokerLandingClient.tsx` and `frontend/src/app/globals.css`.
+- Behavior: Added a responsive “Connect Instinct” section with the API base URL, authentication headers, all external endpoints, groups-only default, Vault guidance, and a one-click copy button. No token is rendered or included.
+- Verification: `git diff --check` passed. Impeccable mechanical detector found only the existing project-wide font warning. TypeScript checking remains blocked by existing unrelated repository-wide module/type errors.
+- Deployment/push status: Pending commit and Coolify `propai-lab:main` deployment.
+
