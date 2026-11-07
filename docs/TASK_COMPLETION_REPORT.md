@@ -781,7 +781,7 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Files changed: `routers/whatsapp_group_controls.py`, `tests/test_group_selection_policy.py`, and `architecture.md`.
 - Behavior: The primary WhatsApp connection now reports no hard group limit and accepts any number of explicitly confirmed groups. Secondary connections remain raw-only; raw capture remains separate from extraction consent. This does not make raw messages public or cross-tenant.
 - Verification: Python compilation passed; focused group-policy tests passed (`8 passed`); no database writes or migrations were performed.
-- Deployment/push status: Pending focused commit and Coolify deployment of `api` and `propai-lab:main-app`.
+- Deployment/push status: Commit `a1b6f3c5` pushed. Coolify API deployment `o14gxvu45gk8lenirapla2gq` and authenticated dashboard deployment `zadrht5pkqtyjaqgcmiol8hh` both finished successfully on that commit.
 - Known limitation: The dashboard still requires the broker to confirm the selected groups and click Start extraction. Existing group overlap safeguards remain active.
-- Independent task-verifier verdict: Pending final verification after commit/deployment.
+- Independent task-verifier verdict: **PASS** for the unlimited primary-group selection path. Evidence: backend cap state returns `cap: null`/`unlimited: true`, selection no longer rejects more than three primary groups, dashboard already treats that state as unlimited, focused tests pass, and both production services finished deployment. Manual browser refresh and click-through remains the final operator smoke check.
 
