@@ -775,3 +775,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Verification: `git diff --check` passed. Impeccable mechanical detector found only the existing project-wide font warning. TypeScript checking remains blocked by existing unrelated repository-wide module/type errors.
 - Deployment/push status: Pending commit and Coolify `propai-lab:main` deployment.
 
+### Remove the three-group extraction selection cap
+
+- Requested outcome: Let a broker select any number of WhatsApp groups for extraction from the primary connected number.
+- Files changed: `routers/whatsapp_group_controls.py`, `tests/test_group_selection_policy.py`, and `architecture.md`.
+- Behavior: The primary WhatsApp connection now reports no hard group limit and accepts any number of explicitly confirmed groups. Secondary connections remain raw-only; raw capture remains separate from extraction consent. This does not make raw messages public or cross-tenant.
+- Verification: Python compilation passed; focused group-policy tests passed (`8 passed`); no database writes or migrations were performed.
+- Deployment/push status: Pending focused commit and Coolify deployment of `api` and `propai-lab:main-app`.
+- Known limitation: The dashboard still requires the broker to confirm the selected groups and click Start extraction. Existing group overlap safeguards remain active.
+- Independent task-verifier verdict: Pending final verification after commit/deployment.
+

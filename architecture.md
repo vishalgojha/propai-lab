@@ -132,9 +132,10 @@ session rejects a new QR-pairing request.
 The earliest active WhatsApp connection is the sole continuous-extraction
 owner for this single-tenant workspace. Its live group and direct-message
 events are captured into tenant-scoped `raw_messages` independently of the
-group-selection screen. That screen gates starting extraction; it is not a
-raw-capture filter. When extraction runs, eligible live rows may be parsed
-after the deterministic gates. Additional connected numbers retain raw
+group-selection screen. The primary connection may explicitly select any
+number of groups; the screen gates starting extraction and records consent,
+but it is not a raw-capture filter. When extraction runs, eligible live rows
+may be parsed after the deterministic gates. Additional connected numbers retain raw
 messages as tenant-scoped evidence but are raw-only and are not continuously
 parsed. History-sync is disabled by default and history rows are suppressed;
 the owner's self-chat commands use a separate private-agent transcript rather

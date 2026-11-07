@@ -1075,8 +1075,19 @@ def _organization_has_unlimited_group_access(org_id: str) -> bool:
         return False
 
 
+def _group_selection_is_unlimited(connection: dict, *, primary: bool, platform_unlimited: bool = False) -> bool:
+    """Return whether the connection may explicitly select any number of groups.
+
+    Primary broker connections are now unlimited. The old three-group limit was
+    a product gate, not a WhatsApp or storage constraint, and caused the UI to
+    make a healthy raw capture look incomplete. Secondary connections remain
+    raw-only; the platform connection is managed separately.
+    """
+    return bool(platform_unlimited or _is_propai_connection(connection) or primary)
+
+
 def _cap_state(org_id: str, connection_id: int, *, unlimited: bool = False) -> dict:
-    """Return the three-group parsing limit and current selection state."""
+    """Return group-selection state for the connected WhatsApp number."""
     connection = _connection(org_id, connection_id)
     rows = (
         storage.client.table("organization_group_connections")
@@ -1088,9 +1099,10 @@ def _cap_state(org_id: str, connection_id: int, *, unlimited: bool = False) -> d
     data = rows.data or []
     opted_out_count = sum(1 for row in data if row.get("opted_out"))
     selected_count = sum(1 for row in data if row.get("is_active") and not row.get("opted_out"))
-    if unlimited or _is_propai_connection(connection):
+    primary = _is_primary_group_selection_connection(org_id, connection_id)
+    if _group_selection_is_unlimited(connection, primary=primary, platform_unlimited=unlimited):
         return {
-            "tier": "platform_admin" if unlimited else "internal",
+            "tier": "platform_admin" if unlimited else ("internal" if _is_propai_connection(connection) else "primary"),
             "cap": None,
             "opted_out_count": opted_out_count,
             # Confirmed groups still gate extraction. Returning zero here made
@@ -1099,12 +1111,10 @@ def _cap_state(org_id: str, connection_id: int, *, unlimited: bool = False) -> d
             "selected_count": selected_count,
             "remaining": None,
             "overridden": True,
-            # The internal shared connection is managed separately.
-            "unlimited": False,
+            "unlimited": True,
             "soft_warning_at_cap": False,
             "hard_block": False,
         }
-    primary = _is_primary_group_selection_connection(org_id, connection_id)
     return {
         "tier": "primary" if primary else "raw_only",
         "cap": PRIMARY_GROUP_SELECTION_CAP if primary else 0,
@@ -1129,8 +1139,8 @@ def extraction_allowed_for_group(
 ) -> bool:
     """Enforce the selected-group policy at message-ingestion time.
 
-    The first active WhatsApp connection owns parsing consent and is limited
-    to three selected groups. Later connections remain raw-evidence sources;
+    The first active WhatsApp connection owns parsing consent and may select
+    any number of groups. Later connections remain raw-evidence sources;
     their messages are not eligible for continuous extraction.
     """
     connection = None
@@ -1413,7 +1423,8 @@ async def select_groups(
         org_id, body.whatsapp_connection_id
     ):
         raise HTTPException(409, "Only the first connected WhatsApp number can select parsing groups")
-    if not _is_propai_connection(connection) and not unlimited and len(requested) > PRIMARY_GROUP_SELECTION_CAP:
+    primary = _is_primary_group_selection_connection(org_id, body.whatsapp_connection_id)
+    if not _group_selection_is_unlimited(connection, primary=primary, platform_unlimited=unlimited) and len(requested) > PRIMARY_GROUP_SELECTION_CAP:
         raise HTTPException(400, f"Select at most {PRIMARY_GROUP_SELECTION_CAP} groups for parsing")
     directory = await asyncio.to_thread(
         _group_directory,

@@ -1,4 +1,5 @@
 from extraction_worker import _row_has_group_consent
+from routers.whatsapp_group_controls import _group_selection_is_unlimited
 
 
 def _row(group, broker, *, from_me=False):
@@ -74,3 +75,17 @@ def test_unlimited_org_secondary_connection_stays_raw_only():
     }
 
     assert _row_has_group_consent(_row("secondary@g.us", "phone-2"), policy) is False
+
+
+def test_primary_connection_can_select_more_than_three_groups():
+    assert _group_selection_is_unlimited(
+        {"broker_id": "phone-1"},
+        primary=True,
+    ) is True
+
+
+def test_secondary_connection_is_not_unlimited_for_normal_workspace():
+    assert _group_selection_is_unlimited(
+        {"broker_id": "phone-2"},
+        primary=False,
+    ) is False
