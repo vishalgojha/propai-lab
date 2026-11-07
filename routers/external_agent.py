@@ -58,11 +58,19 @@ def _key_row(token: str) -> dict:
     return row
 
 
-async def external_auth(authorization: str | None = Header(default=None)) -> dict:
-    scheme, _, token = str(authorization or "").partition(" ")
-    if scheme.lower() != "bearer" or not token:
+async def external_auth(
+    authorization: str | None = Header(default=None),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict:
+    bearer_scheme, _, bearer_token = str(authorization or "").partition(" ")
+    bearer_token = bearer_token.strip() if bearer_scheme.lower() == "bearer" else ""
+    header_token = str(x_api_key or "").strip()
+    if bearer_token and header_token and not secrets.compare_digest(bearer_token, header_token):
+        raise HTTPException(401, "Conflicting external API credentials")
+    token = bearer_token or header_token
+    if not token:
         raise HTTPException(401, "Bearer token required")
-    return _key_row(token.strip())
+    return _key_row(token)
 
 
 @router.get("/health")

@@ -759,3 +759,11 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Next action: Open `app.propai.live/account?tab=mcp`; confirm the switch reads “Disabled — groups only.” Enable it only if Instinct should read private DMs.
 - Independent task-verifier verdict: **PASS** for the deployed consent gate and groups-only default. Authenticated browser interaction remains a manual smoke check because it requires the user’s existing session.
 
+### Make Instinct API-key authentication compatible
+
+- Requested outcome: Make the Account → MCP external credential work with Instinct’s API-key header mode.
+- Files changed: `routers/external_agent.py`, `frontend/src/app/workspace/mcp/page.tsx`, and `tests/test_external_agent_auth.py`.
+- Behavior: The API now accepts the one-time token through either `Authorization: Bearer <token>` or `X-API-Key: <token>`. Conflicting credentials are rejected. The UI documents both formats; secrets remain out of URLs and logs.
+- Verification: Added three auth tests; Python compilation and focused tests pass. Live aggregate inspection found two active Instinct keys, one previously used and one unused; no token values were exposed.
+- Next action: Redeploy the API and refresh Account → MCP. Configure Instinct with the latest one-time `ppai_…` token in its API-key field and use `X-API-Key`.
+
