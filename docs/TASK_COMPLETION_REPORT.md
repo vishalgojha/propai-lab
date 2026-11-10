@@ -809,3 +809,11 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Verification/deployment: Python compilation and focused integration/browser/auth tests passed; changed-page ESLint passed. Commit `e0a8fda2` is pushed. Coolify deployments for `api` and `propai-lab:main-app` both finished successfully on that commit. Direct public curl verification was blocked by sandbox DNS resolution (`curl` returned HTTP 000), so Coolify deployment status is the production evidence available here.
 - Limitation: The authenticated browser connector is unavailable in this session, so I could not fill the shown Instinct Vault form directly. Once the browser connector is available, the form fields are Name `PropAI`, Password `<one-time ppai_ token>`, and Website `https://api.propai.live/api/external/v1`.
 
+### Fix setup-agent button stuck in Running state
+
+- Requested outcome: Make the Instinct setup button complete instead of waiting on the server browser process.
+- Files changed: `routers/integrations_agent.py`, `frontend/src/app/workspace/mcp/page.tsx`, and this report.
+- Behavior: Browser endpoint checks are now queued as background work; token creation and the UI response return immediately. The check remains tenant-scoped and is persisted to the browser session trace.
+- Verification/deployment: Pending focused tests, commit, and redeployment of `api` and `propai-lab:main-app`.
+- Security action: The token visible in the supplied screenshot is exposed and must be revoked/rotated. Do not reuse it.
+

@@ -55,7 +55,7 @@ export default function McpWorkspacePage() {
       if (result.instinct_token) setExternalToken(result.instinct_token);
       setAgentMessage(result.instinct_token
         ? "Instinct is prepared. Copy the one-time token into Instinct Vault; PropAI will not show it again."
-        : result.browser?.error || result.handoff || result.browser?.summary || "The integration task is ready.");
+        : result.browser?.error || result.browser?.message || result.handoff || result.browser?.summary || "The integration task is ready.");
       const refreshed = await fetchJSON<AgentStatus>("/integrations/agent/status");
       setAgentStatus(refreshed);
     } catch (error) {

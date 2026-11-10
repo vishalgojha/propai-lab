@@ -8,11 +8,12 @@ It does not automate third-party login, CAPTCHA, consent, or outbound sending.
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
 from browser_runtime import run_browser_command
@@ -22,6 +23,7 @@ from storage import AgentAuditLog, AgentBrowserSession, AgentBrowserStep
 
 
 router = APIRouter(prefix="/api/integrations/agent", tags=["integration_agent"])
+logger = logging.getLogger(__name__)
 MCP_ENDPOINT = "https://mcp.propai.live/mcp"
 API_BASE_URL = "https://api.propai.live"
 ALLOWED_TASKS = {"instinct", "claude", "gemini", "verify"}
@@ -113,6 +115,13 @@ async def _browser_check(task: str, tenant_id: str, user_id: str) -> dict:
     }
 
 
+async def _background_browser_check(task: str, tenant_id: str, user_id: str) -> None:
+    try:
+        await _browser_check(task, tenant_id, user_id)
+    except Exception:
+        logger.exception("Integration browser check failed for task=%s tenant=%s", task, tenant_id)
+
+
 @router.get("/status")
 async def integration_agent_status(
     user: dict = Depends(require_user),
@@ -138,6 +147,7 @@ async def integration_agent_status(
 @router.post("/tasks")
 async def run_integration_agent_task(
     body: IntegrationAgentTask,
+    background_tasks: BackgroundTasks,
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
@@ -167,7 +177,12 @@ async def run_integration_agent_task(
             },
         })
     if body.launch_browser_check:
-        result["browser"] = await _browser_check(body.task, tenant_id, user_id)
+        background_tasks.add_task(_background_browser_check, body.task, tenant_id, user_id)
+        result["browser"] = {
+            "status": "queued",
+            "url": _check_url(body.task),
+            "message": "The endpoint check is running in the background and is recorded in the browser session trace.",
+        }
     await asyncio.to_thread(
         storage.log_agent_audit_event,
         AgentAuditLog(
