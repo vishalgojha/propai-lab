@@ -814,6 +814,7 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Requested outcome: Make the Instinct setup button complete instead of waiting on the server browser process.
 - Files changed: `routers/integrations_agent.py`, `frontend/src/app/workspace/mcp/page.tsx`, and this report.
 - Behavior: Browser endpoint checks are now queued as background work; token creation and the UI response return immediately. The check remains tenant-scoped and is persisted to the browser session trace.
-- Verification/deployment: Pending focused tests, commit, and redeployment of `api` and `propai-lab:main-app`.
+- Verification/deployment: Focused Python tests passed (`8 passed`), changed-page ESLint passed, commit `31535f1b` pushed, and Coolify deployments for `api` (`jctat1nztre80s6c6kyv1oog`) and `propai-lab:main-app` (`jbkkoyup0jk3bt3d85tuftlt`) finished successfully on that commit.
+- Independent task-verifier verdict: **PASS** for the non-blocking PropAI setup-agent response path; **PARTIAL** for direct Instinct Vault automation because the authenticated browser connector is unavailable.
 - Security action: The token visible in the supplied screenshot is exposed and must be revoked/rotated. Do not reuse it.
 
