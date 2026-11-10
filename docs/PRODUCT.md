@@ -112,6 +112,13 @@ adapted for touch-sized screens. The super-admin operations agent can also
 receive user-selected images for a bounded visual inspection; attachments are
 sent only with that request and are not inventory evidence by themselves.
 
+The integrations setup agent is a bounded authenticated workspace utility for
+the PropAI-side steps behind Instinct REST and Claude/Gemini MCP connections.
+It can create the one-time Instinct credential, verify PropAI-owned endpoints,
+and record browser checks. Third-party login, CAPTCHA, consent, and outbound
+WhatsApp sending remain explicit handoffs; the setup agent never claims those
+steps completed without evidence.
+
 ## Product Data Lifecycle
 
 Every market record follows this evidence-preserving lifecycle:

@@ -319,6 +319,9 @@ app.include_router(self_chat_router)
 from routers.external_agent import router as external_agent_router
 app.include_router(external_agent_router)
 
+from routers.integrations_agent import router as integrations_agent_router
+app.include_router(integrations_agent_router)
+
 from routers.ai_chat import router as ai_chat_router
 app.include_router(ai_chat_router)
 

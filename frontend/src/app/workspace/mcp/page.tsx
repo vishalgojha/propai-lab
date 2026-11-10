@@ -1,10 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Copy, ExternalLink, KeyRound, Server } from "lucide-react";
+import { Bot, Check, Copy, ExternalLink, KeyRound, Play, Server } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
 const MCP_ENDPOINT = "https://mcp.propai.live/mcp";
+
+type AgentStatus = {
+  browser?: { ok?: boolean; error?: string; version?: string };
+  instinct?: { configured?: boolean };
+  mcp?: { configured?: boolean; oauth?: boolean };
+};
 
 export default function McpWorkspacePage() {
   const [copied, setCopied] = useState(false);
@@ -13,17 +19,50 @@ export default function McpWorkspacePage() {
   const [keyMessage, setKeyMessage] = useState("");
   const [dmConsent, setDmConsent] = useState(false);
   const [dmConsentBusy, setDmConsentBusy] = useState(false);
+  const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
+  const [agentBusy, setAgentBusy] = useState<string | null>(null);
+  const [agentMessage, setAgentMessage] = useState("");
 
   useEffect(() => {
     void fetchJSON<{ enabled: boolean }>("/external/v1/dm-consent")
       .then((result) => setDmConsent(Boolean(result.enabled)))
       .catch(() => setKeyMessage("Could not load private DM consent status."));
+    void fetchJSON<AgentStatus>("/integrations/agent/status")
+      .then(setAgentStatus)
+      .catch(() => setAgentMessage("The setup agent status is temporarily unavailable."));
   }, []);
 
   async function copyEndpoint() {
     await navigator.clipboard.writeText(MCP_ENDPOINT);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1800);
+  }
+
+  async function runAgentTask(task: "instinct" | "claude" | "gemini" | "verify", createToken = false) {
+    setAgentBusy(task);
+    setAgentMessage("");
+    try {
+      const result = await fetchJSON<{
+        status: string;
+        handoff?: string;
+        instinct_token?: string;
+        browser?: { status?: string; summary?: string; error?: string };
+      }>("/integrations/agent/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task, create_instinct_token: createToken, launch_browser_check: true }),
+      });
+      if (result.instinct_token) setExternalToken(result.instinct_token);
+      setAgentMessage(result.instinct_token
+        ? "Instinct is prepared. Copy the one-time token into Instinct Vault; PropAI will not show it again."
+        : result.browser?.error || result.handoff || result.browser?.summary || "The integration task is ready.");
+      const refreshed = await fetchJSON<AgentStatus>("/integrations/agent/status");
+      setAgentStatus(refreshed);
+    } catch (error) {
+      setAgentMessage(error instanceof Error ? error.message : "The setup agent could not complete this task.");
+    } finally {
+      setAgentBusy(null);
+    }
   }
 
   async function createExternalToken() {
@@ -117,6 +156,38 @@ export default function McpWorkspacePage() {
         </div>
         {externalToken && <div className="mt-4 rounded-xl border border-amber-300/20 bg-black/20 p-4"><div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">One-time token</div><code className="mt-2 block break-all text-xs text-amber-100">{externalToken}</code><button type="button" onClick={() => void navigator.clipboard.writeText(externalToken)} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200"><Copy className="h-3.5 w-3.5" /> Copy token</button></div>}
         {keyMessage && <p className="mt-3 text-xs leading-5 text-zinc-400">{keyMessage}</p>}
+      </div>
+
+      <div className="mt-5 rounded-2xl border border-cyan-300/20 bg-cyan-300/[0.05] p-6">
+        <div className="flex items-start gap-4">
+          <div className="rounded-xl border border-cyan-300/25 bg-cyan-300/10 p-3 text-cyan-200"><Bot className="h-5 w-5" aria-hidden="true" /></div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-semibold text-white">PropAI setup agent</h2>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">Run the repetitive PropAI-side checks for Instinct, Claude, and Gemini from one place. The agent records each browser check and stops at third-party login, CAPTCHA, consent, or sending boundaries.</p>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          {[
+            ["instinct", "Prepare Instinct", "Create a one-time token and verify the REST endpoint."],
+            ["claude", "Prepare Claude MCP", "Verify the MCP endpoint and OAuth handoff."],
+            ["gemini", "Prepare Gemini MCP", "Verify the MCP endpoint for a Gemini connector."],
+            ["verify", "Run all checks", "Check the PropAI endpoints and browser runtime."],
+          ].map(([task, label, detail]) => (
+            <div key={task} className="rounded-xl border border-white/10 bg-black/20 p-4">
+              <div className="font-semibold text-white">{label}</div>
+              <p className="mt-1 text-xs leading-5 text-zinc-500">{detail}</p>
+              <button type="button" onClick={() => void runAgentTask(task as "instinct" | "claude" | "gemini" | "verify", task === "instinct")} disabled={agentBusy !== null} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-cyan-300/30 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-300/10 disabled:opacity-60">
+                <Play className="h-3.5 w-3.5" aria-hidden="true" />{agentBusy === task ? "Running…" : label}
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[11px] uppercase tracking-[0.12em] text-zinc-500">
+          <span>Instinct {agentStatus?.instinct?.configured ? "ready" : "not configured"}</span>
+          <span>MCP {agentStatus?.mcp?.configured ? "available" : "unavailable"}</span>
+          <span>Browser {agentStatus?.browser?.ok ? "ready" : "needs deployment"}</span>
+        </div>
+        {agentMessage && <p className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3 text-xs leading-5 text-zinc-300">{agentMessage}</p>}
       </div>
     </section>
   );

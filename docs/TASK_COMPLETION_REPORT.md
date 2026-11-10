@@ -785,3 +785,19 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Known limitation: The dashboard still requires the broker to confirm the selected groups and click Start extraction. Existing group overlap safeguards remain active.
 - Independent task-verifier verdict: **PASS** for the unlimited primary-group selection path. Evidence: backend cap state returns `cap: null`/`unlimited: true`, selection no longer rejects more than three primary groups, dashboard already treats that state as unlimited, focused tests pass, and both production services finished deployment. Manual browser refresh and click-through remains the final operator smoke check.
 
+### Add bounded Instinct and MCP integrations setup agent
+
+- Requested outcome: Give users a browser-assisted setup path for Instinct REST and PropAI MCP connections used by Claude, Gemini, and related workflows, while reducing repetitive manual setup.
+- Files/services changed: `routers/integrations_agent.py`, `app.py`, `frontend/src/app/workspace/mcp/page.tsx`, `tests/test_integrations_agent.py`, `docs/PRODUCT.md`, and `architecture.md`. No database migration was required; existing tenant-scoped API-key, browser-session, and audit tables are reused.
+- Behavior: Account → MCP now exposes one-click Instinct, Claude MCP, Gemini MCP, and verification tasks. The API can issue the one-time hashed Instinct token, return the fixed MCP endpoint, run a PropAI-owned browser endpoint check through `agent-browser`, and persist tenant-scoped browser/audit traces. Third-party login, CAPTCHA, OAuth consent, private-DM consent, and WhatsApp sending remain explicit handoffs.
+- Verification performed: Python compilation passed; focused backend tests passed (`8 passed` across integration-agent, browser-runtime, and external-agent-auth tests); changed-page ESLint passed; `git diff --check` passed; Impeccable detector returned no findings for the changed page. Full frontend TypeScript checking remains blocked by pre-existing unrelated repository-wide errors.
+- Deployment/push status: Not deployed or pushed at report-writing time. Coolify services needing redeployment after push: `api` and `propai-lab:main-app`.
+- Known limitations or failures: The server-side browser runtime cannot inherit a user’s existing Claude, Gemini, or Instinct login session. The agent therefore verifies PropAI-owned endpoints and prepares the handoff; it does not claim third-party setup completed without evidence.
+- Independent task-verifier verdict: **PARTIAL**.
+  - PASS — authenticated tenant-scoped setup-agent routes are registered and the UI calls them.
+  - PASS — Instinct token issuance reuses hashed external-agent credentials and never returns stored secrets.
+  - PASS — browser checks use only PropAI-owned endpoints and persist tenant-scoped session/step/audit records; the standalone-session foreign-key issue was fixed before verification.
+  - PASS — focused Python tests, changed-page ESLint, Python compilation, and staged diff checks passed.
+  - FAIL — end-to-end third-party setup is not automated or production-verified because the server browser cannot inherit the user’s logged-in Claude/Gemini/Instinct session; no live authenticated smoke test or deployment was performed.
+- Next action: Push the scoped commit, redeploy `api` and `propai-lab:main-app`, then add a browser connector/remote authenticated session if fully automatic third-party setup is required.
+
