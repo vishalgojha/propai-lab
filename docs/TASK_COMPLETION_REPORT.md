@@ -806,6 +806,6 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Requested outcome: Make the Instinct setup explicit for Vault password storage and show the API endpoint directly on the website.
 - Files changed: `routers/integrations_agent.py`, `frontend/src/app/workspace/mcp/page.tsx`, and `frontend/src/app/BrokerLandingClient.tsx`.
 - Behavior: The setup agent now returns endpoint `https://api.propai.live/api/external/v1`, Vault secret name `PROPAI_API_KEY`, and secret type `password`. The workspace MCP page and landing-page copy show the same endpoint and Vault instructions.
-- Verification/deployment: Focused backend verification remains green from the prior pass; the updated UI/API changes require a fresh commit and redeployment of `api` and `propai-lab:main-app`.
+- Verification/deployment: Python compilation and focused integration/browser/auth tests passed; changed-page ESLint passed. Commit `e0a8fda2` is pushed. Coolify deployments for `api` and `propai-lab:main-app` both finished successfully on that commit. Direct public curl verification was blocked by sandbox DNS resolution (`curl` returned HTTP 000), so Coolify deployment status is the production evidence available here.
 - Limitation: The authenticated browser connector is unavailable in this session, so I could not fill the shown Instinct Vault form directly. Once the browser connector is available, the form fields are Name `PropAI`, Password `<one-time ppai_ token>`, and Website `https://api.propai.live/api/external/v1`.
 
