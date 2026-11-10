@@ -158,8 +158,11 @@ async def run_integration_agent_task(
             "token_metadata": key,
             "setup": {
                 "base_url": API_BASE_URL,
+                "endpoint": f"{API_BASE_URL}/api/external/v1",
                 "health": "/api/external/v1/health",
                 "auth_header": "X-API-Key",
+                "vault_secret_name": "PROPAI_API_KEY",
+                "vault_secret_type": "password",
                 "raw_scope_default": "groups",
             },
         })

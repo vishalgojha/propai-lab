@@ -801,3 +801,11 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
   - FAIL — end-to-end third-party setup is not automated or production-verified because the server browser cannot inherit the user’s logged-in Claude/Gemini/Instinct session; no live authenticated smoke test or deployment was performed.
 - Next action: Push the scoped commit, redeploy `api` and `propai-lab:main-app`, then add a browser connector/remote authenticated session if fully automatic third-party setup is required.
 
+### Clarify Instinct Vault password and endpoint setup
+
+- Requested outcome: Make the Instinct setup explicit for Vault password storage and show the API endpoint directly on the website.
+- Files changed: `routers/integrations_agent.py`, `frontend/src/app/workspace/mcp/page.tsx`, and `frontend/src/app/BrokerLandingClient.tsx`.
+- Behavior: The setup agent now returns endpoint `https://api.propai.live/api/external/v1`, Vault secret name `PROPAI_API_KEY`, and secret type `password`. The workspace MCP page and landing-page copy show the same endpoint and Vault instructions.
+- Verification/deployment: Focused backend verification remains green from the prior pass; the updated UI/API changes require a fresh commit and redeployment of `api` and `propai-lab:main-app`.
+- Limitation: The authenticated browser connector is unavailable in this session, so I could not fill the shown Instinct Vault form directly. Once the browser connector is available, the form fields are Name `PropAI`, Password `<one-time ppai_ token>`, and Website `https://api.propai.live/api/external/v1`.
+

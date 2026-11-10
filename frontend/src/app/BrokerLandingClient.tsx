@@ -23,7 +23,7 @@ const capabilities = [
   [Zap, "Brokerage Intelligence", "Know what needs attention today across your inventory, leads, and active deals."],
 ] as const;
 
-const INSTINCT_SETUP = `Connect to PropAI through REST API only.\n\nBase URL: https://api.propai.live\n\nAuthentication: use the PropAI token as X-API-Key: <ppai_token>\n\nHealth check: GET /api/external/v1/health\n\nEndpoints:\nGET /api/external/v1/listings/search\nGET /api/external/v1/requirements\nGET /api/external/v1/matches\nGET /api/external/v1/messages/search\nGET /api/external/v1/messages/{raw_message_id}\n\nUse groups-only raw message search by default. Never use localhost, MCP, Supabase, or ask for the token in WhatsApp chat. Store the token securely in Instinct Vault.`;
+const INSTINCT_SETUP = `Connect to PropAI through REST API only.\n\nEndpoint: https://api.propai.live/api/external/v1\n\nVault: save the PropAI token as a password/secret named PROPAI_API_KEY.\nAuthentication: send that Vault secret as X-API-Key: <ppai_token>\n\nHealth check: GET /api/external/v1/health\n\nEndpoints:\nGET /api/external/v1/listings/search\nGET /api/external/v1/requirements\nGET /api/external/v1/matches\nGET /api/external/v1/messages/search\nGET /api/external/v1/messages/{raw_message_id}\n\nUse groups-only raw message search by default. Never use localhost, MCP, Supabase, or ask for the token in WhatsApp chat.`;
 
 export default function BrokerLandingClient() {
   const [accessOpen, setAccessOpen] = useState(false);
