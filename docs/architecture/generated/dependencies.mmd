@@ -28,6 +28,7 @@ flowchart LR
         routers_google_drive["routers.google_drive"]
         routers_groups_market["routers.groups_market"]
         routers_infra["routers.infra"]
+        routers_integrations_agent["routers.integrations_agent"]
         routers_lead_ingestion["routers.lead_ingestion"]
         routers_listings["routers.listings"]
         routers_notes["routers.notes"]
@@ -175,6 +176,8 @@ flowchart LR
     routers_infra --> extraction
     routers_infra --> routers
     routers_infra --> storage
+    routers_integrations_agent --> routers
+    routers_integrations_agent --> storage
     routers_lead_ingestion --> routers
     routers_listings --> matching
     routers_listings --> routers
@@ -244,4 +247,6 @@ flowchart LR
     route__workspace_llm_providers -.-> api__workspace_llm_providers_test["/workspace/llm-providers/test"]
     route__workspace_mcp -.-> api__external_v1_dm_consent["/external/v1/dm-consent"]
     route__workspace_mcp -.-> api__external_v1_keys["/external/v1/keys"]
+    route__workspace_mcp -.-> api__integrations_agent_status["/integrations/agent/status"]
+    route__workspace_mcp -.-> api__integrations_agent_tasks["/integrations/agent/tasks"]
     route__workspace_whatsapp -.-> api__workspace_whatsapp_access["/workspace/whatsapp-access"]
