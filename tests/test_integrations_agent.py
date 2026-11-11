@@ -12,3 +12,9 @@ def test_browser_checks_use_only_propai_owned_endpoints():
     assert _check_url("claude") == "https://mcp.propai.live/"
     assert _check_url("gemini") == "https://mcp.propai.live/"
     assert MCP_ENDPOINT == "https://mcp.propai.live/mcp"
+
+
+def test_browser_preflight_reports_missing_runtime():
+    from browser_runtime import AGENT_BROWSER_INSTALL_MESSAGE
+
+    assert "agent-browser CLI is not installed" in AGENT_BROWSER_INSTALL_MESSAGE

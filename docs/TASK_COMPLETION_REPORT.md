@@ -818,3 +818,18 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Independent task-verifier verdict: **PASS** for the non-blocking PropAI setup-agent response path; **PARTIAL** for direct Instinct Vault automation because the authenticated browser connector is unavailable.
 - Security action: The token visible in the supplied screenshot is exposed and must be revoked/rotated. Do not reuse it.
 
+### Surface missing browser runtime in Instinct preparation
+
+- Requested outcome: Explain why Prepare Instinct still does not complete when the browser agent is unavailable, and prevent a silent setup success.
+- Files changed: `routers/integrations_agent.py`, `Dockerfile.api`, `tests/test_integrations_agent.py`, and this report.
+- Behavior: The setup task now performs a cheap browser-runtime preflight before queueing the endpoint check. If `agent-browser` is unavailable, the API returns `browser.status = unavailable` with the actionable runtime error instead of falsely returning `queued`; healthy runtimes retain the audited background check. The API image now fails its build if either `agent-browser` or Chromium is missing.
+- Verification performed: Focused integration/browser tests passed (`6 passed`); Python compilation passed; `git diff --check` passed; local runtime health correctly reported `agent-browser CLI is not installed`.
+- Deployment/push status: Pending scoped commit and push. Coolify services needing redeployment are `api` and `propai-lab:main-app`; no redeployment was performed.
+- Known limitations or failures: This workspace does not contain the browser CLI, and production was not live-tested or redeployed. The existing Dockerfile is intended to provide it in the API image; the new build guard will expose a failed image build rather than silently degrading.
+- Independent task-verifier verdict: **PARTIAL**.
+  - PASS — the API response path now exposes the actual browser-runtime failure before background work is queued.
+  - PASS — the container build explicitly verifies both required browser executables.
+  - PASS — focused tests and syntax checks pass, and unrelated dirty files were not included in the scoped diff.
+  - FAIL — production deployment and authenticated UI smoke verification remain outstanding.
+- Next action: Commit and push this scoped change, then redeploy `api` and `propai-lab:main-app`; click Prepare Instinct again and confirm the browser status message.
+

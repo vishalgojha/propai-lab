@@ -16,7 +16,7 @@ from uuid import uuid4
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
-from browser_runtime import run_browser_command
+from browser_runtime import _RUNTIME, run_browser_command
 from routers.common import _resolve_active_organization_id, require_user, storage, get_tenant_context
 from routers.external_agent import _digest, KEY_PREFIX
 from storage import AgentAuditLog, AgentBrowserSession, AgentBrowserStep
@@ -177,12 +177,26 @@ async def run_integration_agent_task(
             },
         })
     if body.launch_browser_check:
-        background_tasks.add_task(_background_browser_check, body.task, tenant_id, user_id)
-        result["browser"] = {
-            "status": "queued",
-            "url": _check_url(body.task),
-            "message": "The endpoint check is running in the background and is recorded in the browser session trace.",
-        }
+        # Do the cheap runtime preflight before queueing work. Previously this
+        # endpoint always returned `queued`, even when the API image had no
+        # agent-browser binary, leaving the operator with a token but no
+        # explanation for the failed setup check.
+        browser_health = await asyncio.to_thread(_RUNTIME.health_check)
+        if not browser_health.get("ok"):
+            result["browser"] = {
+                "status": "unavailable",
+                "url": _check_url(body.task),
+                "error": str(browser_health.get("error") or "Browser runtime is unavailable"),
+                "runtime": browser_health,
+            }
+        else:
+            background_tasks.add_task(_background_browser_check, body.task, tenant_id, user_id)
+            result["browser"] = {
+                "status": "queued",
+                "url": _check_url(body.task),
+                "runtime": browser_health,
+                "message": "The endpoint check is running in the background and is recorded in the browser session trace.",
+            }
     await asyncio.to_thread(
         storage.log_agent_audit_event,
         AgentAuditLog(

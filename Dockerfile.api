@@ -31,6 +31,12 @@ RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential ca-certificates chromium \
   && rm -rf /var/lib/apt/lists/*
 
+# Fail the image build when the configured browser runtime is absent. Without
+# this check the setup-agent UI can issue a valid Instinct token while its
+# browser verification silently degrades at runtime.
+RUN agent-browser --version \
+    && chromium --version
+
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
