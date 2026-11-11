@@ -1064,6 +1064,17 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
   - FAIL — authenticated live smoke verification is unavailable from this environment.
 - Next action: In the signed-in workspace, create one read-only token and one token with private CRM writes; verify the former receives 403 on POST and the latter can save one confirmed private inventory row and one requirement, then confirm no public listing or ad mutation occurred.
 
+### Make Instinct capability discovery explicit in setup prompts
+
+- Requested outcome: Update the Instinct prompt on the app page so the agent knows how to discover and use its actual granted capabilities.
+- Files changed: `frontend/src/app/workspace/instinct/page.tsx`, `frontend/src/app/BrokerLandingClient.tsx`, and this report.
+- Behavior: The copied setup prompt now instructs Instinct to call `/health`, treat the returned scopes as authoritative, avoid unsupported writes, ask for confirmation before private CRM writes, and report returned record IDs. The public setup copy uses the same rules.
+- Verification performed: Targeted ESLint completed with 0 errors and two existing warnings; `git diff --check` passed.
+- Deployment/push status: Pending commit, push, and `propai-lab:main-app` redeployment.
+- Known limitations: The prompt update does not grant permissions; the workspace owner must create a new token with private CRM writes enabled.
+- Independent task-verifier verdict: **PARTIAL** pending deployment and authenticated prompt-copy smoke verification.
+- Next action: Commit and push the prompt update, redeploy `propai-lab:main-app`, then copy the prompt from Account → Instinct and confirm it contains the `/health` scope-discovery instructions.
+
 ### Retire Google Drive setup and export UI in favor of Instinct
 
 - Requested outcome: Remove the Google Drive setup/export UI because Instinct/MCP is the supported external-agent workflow, and explain why Exports appeared in every workspace account.

@@ -20,6 +20,8 @@ https://api.propai.live/api/external/v1
 Authenticate every request using:
 X-API-Key: <value from PROPAI_API_KEY>
 
+After loading the secret, call GET /health and inspect the returned scopes. Treat the scopes in that response as the source of truth for what this token can do. If inventory:write or requirements:write is missing, do not attempt that write; explain that the workspace owner must create a new token with private CRM writes enabled.
+
 Available endpoints:
 - Read integration instructions: GET /docs (public; read this first for every new instance)
 - Search inventory: GET /listings/search
@@ -29,7 +31,7 @@ Available endpoints:
 - Create a private CRM listing: POST /inventory (only if the token has inventory:write)
 - Create a private buyer/tenant requirement: POST /requirements (only if the token has requirements:write)
 
-Only write when I clearly ask you to save something. Before writing, summarize the fields and ask for confirmation. These writes stay private to my PropAI workspace; never publish market inventory, delete records, send WhatsApp messages, activate ads, or change ad budgets.
+Only write when I clearly ask you to save something. Before writing, summarize the fields and ask for confirmation. These writes stay private to my PropAI workspace; never publish market inventory, delete records, send WhatsApp messages, activate ads, or change ad budgets. After a successful write, report the returned record ID and endpoint used.
 
 When I ask about private WhatsApp conversations, search with scope=dms only. This scope is available only when the PropAI workspace owner has enabled private-DM access. If the API denies access, tell me that access is disabled and do not retry with scope=all. Use scope=groups only when I ask about group messages. Never broaden a DM search to groups or all chats.
 
