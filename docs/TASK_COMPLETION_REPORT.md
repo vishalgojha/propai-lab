@@ -844,3 +844,14 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Independent task-verifier verdict: **PARTIAL** pending commit and dashboard deployment.
 - Next action: Commit and push this frontend fix, redeploy `propai-lab:main-app`, and retest the Instinct button in the authenticated workspace.
 
+### Open Instinct during the setup handoff
+
+- Requested outcome: Make Prepare Instinct open the Instinct workspace instead of only creating a PropAI token.
+- Files changed: `frontend/src/app/workspace/mcp/page.tsx` and this report.
+- Behavior: Clicking Prepare Instinct immediately opens `https://app.instinct.com` and then runs the PropAI token/runtime preparation. The success message now says exactly what remains: save `PROPAI_API_KEY` in Instinct Vault and ask Instinct to use PropAI's REST API.
+- Verification performed: Changed-page ESLint and `git diff --check` passed.
+- Deployment/push status: Pending commit, push, and `propai-lab:main-app` redeployment.
+- Known limitations or failures: PropAI cannot silently authenticate to Instinct, fill its Vault, or send a WhatsApp/tool request without an Instinct-supported authenticated handoff. The browser popup may still be blocked by browser policy; the URL is also available as the explicit handoff.
+- Independent task-verifier verdict: **PARTIAL** pending deployment and authenticated smoke verification.
+- Next action: Commit/push, redeploy the dashboard, and click Prepare Instinct once to confirm the Instinct tab opens.
+

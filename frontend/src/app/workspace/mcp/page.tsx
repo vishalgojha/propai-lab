@@ -5,6 +5,7 @@ import { Bot, Check, Copy, ExternalLink, KeyRound, Play, Server } from "lucide-r
 import { fetchJSON } from "@/lib/api";
 
 const MCP_ENDPOINT = "https://mcp.propai.live/mcp";
+const INSTINCT_WORKSPACE_URL = "https://app.instinct.com";
 
 type AgentStatus = {
   browser?: { ok?: boolean; error?: string; version?: string };
@@ -39,6 +40,9 @@ export default function McpWorkspacePage() {
   }
 
   async function runAgentTask(task: "instinct" | "claude" | "gemini" | "verify", createToken = false) {
+    // Open Instinct from the user's click, before the async request yields, so
+    // popup blockers do not treat the handoff as an unsolicited window.
+    if (task === "instinct") window.open(INSTINCT_WORKSPACE_URL, "_blank", "noopener,noreferrer");
     setAgentBusy(task);
     setAgentMessage("");
     try {
@@ -54,7 +58,7 @@ export default function McpWorkspacePage() {
       }, 15000);
       if (result.instinct_token) setExternalToken(result.instinct_token);
       setAgentMessage(result.instinct_token
-        ? "Instinct is prepared. Copy the one-time token into Instinct Vault; PropAI will not show it again."
+        ? "PropAI is ready and Instinct is open. Save the one-time token in Instinct Vault as PROPAI_API_KEY, then ask Instinct to use PropAI's REST API."
         : result.browser?.error || result.browser?.message || result.handoff || result.browser?.summary || "The integration task is ready.");
       const refreshed = await fetchJSON<AgentStatus>("/integrations/agent/status", undefined, 15000);
       setAgentStatus(refreshed);
