@@ -892,3 +892,18 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
   - FAIL — production redeployment and a real QR/linking-code smoke test remain outstanding.
 - Next action: Commit and push the scoped change, redeploy `ingestor`, then request one fresh linking code without repeatedly resetting the session and confirm the code arrives within the UI timeout.
 
+### Remove unused WhatsApp Business API tab
+
+- Requested outcome: Stop presenting the unused Business API setup in the WhatsApp workspace and keep users on the WhatsMeow number/group connection flow.
+- Files changed: `frontend/src/app/whatsapp/page.tsx`.
+- Behavior: The WhatsApp page now exposes only My Numbers and Groups. Old `?tab=business-api` URLs safely fall back to My Numbers. Shared backend WABA routes remain intact for compatibility and are not part of the active connection UI.
+- Verification performed: Impeccable UI detector returned no findings; `git diff --check` passed. ESLint could not complete because the local dependency installation is incomplete and pnpm’s cache is read-only (`ERR_MODULE_NOT_FOUND: eslint`).
+- Deployment/push status: Pending scoped commit and push. Coolify service needing redeployment: `propai-lab:main-app` (`y18kprfw29mu6wclzgpgfrvv`).
+- Known limitations or failures: The legacy `/waba` page and server endpoints still exist for compatibility; they are no longer linked as a WhatsApp tab.
+- Independent task-verifier verdict: **PARTIAL**.
+  - PASS — the visible WhatsApp Business API tab and component import are removed.
+  - PASS — legacy Business API query links resolve to My Numbers.
+  - PASS — unrelated backend WABA code was not deleted.
+  - FAIL — dashboard deployment and full ESLint verification remain outstanding.
+- Next action: Commit and push the scoped dashboard change, redeploy `propai-lab:main-app`, and verify `/whatsapp?tab=business-api` opens My Numbers in production.
+
