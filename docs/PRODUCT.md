@@ -194,6 +194,8 @@ only selected connected groups.
   screen controls whether extraction can be started; it is not a raw-capture
   filter. Every eligible group starts checked, groups can be excluded with
   Opt out, and the broker must confirm the selection before extraction uses it.
+  Group names with strong non-property signals may receive an advisory review
+  hint; that name-only hint never changes the selection.
   WhatsApp history sync is restricted to private direct conversations;
   imported history remains raw evidence and is suppressed from automated
   extraction. External agents can read it only with explicit workspace DM

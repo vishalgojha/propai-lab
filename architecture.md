@@ -147,7 +147,9 @@ group-selection screen. Every eligible group is checked by default, and the
 operator can opt out groups individually. The draft selection must still be
 explicitly confirmed before extraction uses it; the screen gates starting
 extraction and is not a raw-capture filter. When extraction runs, eligible
-live rows may be parsed after the deterministic gates. Additional connected numbers retain raw
+live rows may be parsed after the deterministic gates. Strong non-property
+terms in a group name can produce an advisory review hint; group messages are
+not analyzed for this hint, and it never changes selection state. Additional connected numbers retain raw
 messages as tenant-scoped evidence but are raw-only and are not continuously
 parsed. History-sync is disabled by default and history rows are suppressed;
 the owner's self-chat commands use a separate private-agent transcript rather

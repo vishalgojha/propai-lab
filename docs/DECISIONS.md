@@ -15,6 +15,20 @@ Raw capture remains independent of this extraction choice.
 **Outcome:** The review draft includes eligible groups except saved opt-outs;
 the operator still confirms the draft before it changes extraction eligibility.
 
+## 2026-11-11 — Show advisory topic hints for WhatsApp groups
+
+**Decision:** Flag strong non-property wording in a WhatsApp group name for
+operator review. Do not infer from group size, sender overlap, or unseen message
+content, and do not automatically opt out a flagged group.
+
+**Why:** Opt-out-first selection can include personal, devotional, school, or
+hobby groups when their names make that likely. A visible hint helps the owner
+review those groups without presenting a name-based guess as fact.
+
+**Outcome:** The Groups screen shows a “Possibly not real estate” hint with the
+name-based topic signal. The operator retains control of selection and must
+confirm changes.
+
 ## 2026-11-06 — Restore strict multi-tenant private workspaces
 
 **Decision:** PropAI is a multi-tenant authenticated workspace product again.

@@ -240,6 +240,23 @@ function whatsappGroupDisplayName(group: Pick<OnboardingGroup, "group_name">): s
   return name;
 }
 
+const REAL_ESTATE_GROUP_NAME_PATTERN = /\b(real\s*estate|realty|properties|property|builders?|broker(?:s|age)?|flats?|apartments?|housing|rera|rent|sale|commercial|residential|industrial|shops?|offices?|warehouses?|land|plots?|inventory|construction|development)\b/i;
+
+const NON_PROPERTY_GROUP_NAME_HINTS: Array<{ pattern: RegExp; topic: string }> = [
+  { pattern: /\b(family|families|relatives|cousins?|friends?)\b/i, topic: "personal or family" },
+  { pattern: /\b(hare\s*krishna|bhajan|bhakti|kirtan|satsang|temple|mandir|church|mosque|prayer)\b/i, topic: "religious or devotional" },
+  { pattern: /\b(school|college|classmates?|students?|tuition|alumni|batchmates?)\b/i, topic: "school or college" },
+  { pattern: /\b(cricket|football|badminton|sports?|gaming|gamers?)\b/i, topic: "sports or gaming" },
+  { pattern: /\b(good\s*morning|gm\s*(?:wishes|messages)|daily\s*wishes|festival\s*wishes)\b/i, topic: "greetings or wishes" },
+];
+
+function whatsappGroupTopicHint(group: Pick<OnboardingGroup, "group_name">): string | null {
+  const name = String(group.group_name || "").trim();
+  if (!name || REAL_ESTATE_GROUP_NAME_PATTERN.test(name)) return null;
+  const hint = NON_PROPERTY_GROUP_NAME_HINTS.find(({ pattern }) => pattern.test(name));
+  return hint ? hint.topic : null;
+}
+
 function matchesLiveStatus(phone: Phone, status: WhatsAppStatus | null) {
   if (!status || !isLiveWhatsAppConnection(status)) return false;
   const liveDigits = normalizePhoneDigits(status.phone);
@@ -1615,10 +1632,18 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
               </div>
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
-            {sortedGroups.map((group) => (
+            {sortedGroups.map((group) => {
+              const topicHint = whatsappGroupTopicHint(group);
+              return (
           <div key={group.group_jid} className={`h-full rounded-lg border p-3 ${selectedGroups.has(group.group_jid) ? "border-emerald-400/35 bg-emerald-500/[0.04]" : "border-white/10 bg-white/[0.02]"}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
+                {topicHint && (
+                  <div className="mb-2 rounded-md border border-amber-400/25 bg-amber-400/[0.06] px-2 py-1 text-[10px] leading-4 text-amber-200" title="This hint uses the group name only. It does not inspect messages or change your selection.">
+                    <span className="font-semibold">Possibly not real estate</span>
+                    <span className="text-amber-100/75"> · Name suggests a {topicHint} group; review before opting out.</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
                   {group.selectable !== false && !group.opted_out && (
                     <input type="checkbox" checked={selectedGroups.has(group.group_jid)} onChange={() => toggleGroupSelection(group)} disabled={savingSelection} className="h-4 w-4 accent-emerald-400" aria-label={`Select ${whatsappGroupDisplayName(group)}`} />
@@ -1722,7 +1747,8 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
               ) : null}
             </div>
           </div>
-            ))}
+              );
+            })}
             {!filteredGroups.length && <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-xs text-zinc-500">No groups match “{groupQuery}”.</div>}
             </div>
           </>

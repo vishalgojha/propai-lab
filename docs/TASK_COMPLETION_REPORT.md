@@ -1037,3 +1037,14 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Independent task-verifier verdict: **PARTIAL** — local logic and deployed commit pass review; live signed-in UI confirmation remains pending.
 - Next action: Hard-refresh WhatsApp → Groups and confirm all eligible, non-opted-out groups start checked. If the Market counters warning remains, inspect the exact Supabase count error in API application logs.
 
+### Flag groups that may not be real estate related
+
+- Requested outcome: Help identify groups that may be personal or unrelated to real estate when all eligible groups are preselected.
+- Files changed: `frontend/src/app/connections/page.tsx`, `docs/PRODUCT.md`, `docs/DECISIONS.md`, `architecture.md`, and this report.
+- Behavior: Strong non-property wording in the group name displays a “Possibly not real estate” review hint with its topic signal. Property-related wording suppresses the hint. The hint is name-only, does not inspect messages, and never changes group selection or opts a group out.
+- Verification performed: Impeccable detector returned no findings; `git diff --check` passed. Independent task-verifier returned **PARTIAL**: the hint is conservative, transparent, and does not alter selection, but deployment and live UI verification are pending. No tests were requested or run.
+- Push/deployment status: Pending scoped commit, push, and redeployment of `propai-lab:main-app` (`y18kprfw29mu6wclzgpgfrvv`).
+- Known limitations: Name-only classification can miss unrelated groups or flag a mixed-purpose group; operator review remains necessary.
+- Independent task-verifier verdict: **PARTIAL**.
+- Next action: Commit, push, and deploy the dashboard update, then review the topic hints in WhatsApp → Groups.
+
