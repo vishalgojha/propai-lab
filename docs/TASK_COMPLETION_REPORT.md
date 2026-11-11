@@ -850,7 +850,7 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Files changed: `frontend/src/app/workspace/mcp/page.tsx` and this report.
 - Behavior: Clicking Prepare Instinct immediately opens `https://app.instinct.com` and then runs the PropAI token/runtime preparation. The success message now says exactly what remains: save `PROPAI_API_KEY` in Instinct Vault and ask Instinct to use PropAI's REST API.
 - Verification performed: Changed-page ESLint and `git diff --check` passed.
-- Deployment/push status: Pending commit, push, and `propai-lab:main-app` redeployment.
+- Deployment/push status: Commit `186c62bb` pushed to `origin/main`. Coolify `propai-lab:main-app` deployment `an6d1msu0cclthdfl6n5osba` finished successfully on that commit.
 - Known limitations or failures: PropAI cannot silently authenticate to Instinct, fill its Vault, or send a WhatsApp/tool request without an Instinct-supported authenticated handoff. The browser popup may still be blocked by browser policy; the URL is also available as the explicit handoff.
 - Independent task-verifier verdict: **PARTIAL** pending deployment and authenticated smoke verification.
 - Next action: Commit/push, redeploy the dashboard, and click Prepare Instinct once to confirm the Instinct tab opens.
@@ -1072,8 +1072,8 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Verification performed: Targeted ESLint completed with 0 errors and two existing warnings; `git diff --check` passed.
 - Deployment/push status: Pending commit, push, and `propai-lab:main-app` redeployment.
 - Known limitations: The prompt update does not grant permissions; the workspace owner must create a new token with private CRM writes enabled.
-- Independent task-verifier verdict: **PARTIAL** pending deployment and authenticated prompt-copy smoke verification.
-- Next action: Commit and push the prompt update, redeploy `propai-lab:main-app`, then copy the prompt from Account → Instinct and confirm it contains the `/health` scope-discovery instructions.
+- Independent task-verifier verdict: **PARTIAL** — implementation and deployment pass; authenticated prompt-copy smoke verification is not available in this environment.
+- Next action: Copy the prompt from Account → Instinct and confirm it contains the `/health` scope-discovery instructions.
 
 ### Retire Google Drive setup and export UI in favor of Instinct
 
