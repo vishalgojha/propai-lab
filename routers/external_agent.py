@@ -18,10 +18,12 @@ KEY_PREFIX = "ppai_"
 logger = logging.getLogger(__name__)
 RAW_MESSAGE_COLUMNS = "id,group_name,sender,sender_phone,message,message_type,timestamp,source,is_group,processed"
 EXTERNAL_AGENT_DOCS = Path(__file__).resolve().parents[1] / "docs" / "EXTERNAL_AGENT_API.md"
+WRITE_SCOPES = {"inventory:write", "requirements:write"}
 
 
 class ApiKeyCreate(BaseModel):
     label: str = "Instinct"
+    write_access: bool = False
 
 
 class DmConsentUpdate(BaseModel):
@@ -36,7 +38,7 @@ def _key_row(token: str) -> dict:
     if not token.startswith(KEY_PREFIX) or len(token) < 40:
         raise HTTPException(401, "Invalid external API token")
     result = storage.client.table("external_agent_api_keys").select(
-        "id,tenant_id,scopes,expires_at,revoked_at"
+        "id,tenant_id,created_by,label,scopes,expires_at,revoked_at"
     ).eq("key_hash", _digest(token)).is_("revoked_at", "null").limit(1).execute()
     row = (result.data or [None])[0] if result else None
     if not row:
@@ -200,12 +202,16 @@ async def external_matches(q: str = "", limit: int = Query(20, ge=1, le=50), key
 @router.post("/keys")
 async def create_external_key(body: ApiKeyCreate, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
     token = KEY_PREFIX + secrets.token_urlsafe(32)
+    scopes = ["inventory:read", "requirements:read", "matches:read", "raw_messages:read"]
+    if body.write_access:
+        scopes.extend(sorted(WRITE_SCOPES))
     payload = {
         "tenant_id": tenant_id,
         "created_by": user["id"],
         "label": body.label.strip()[:80] or "Instinct",
         "key_prefix": token[:13],
         "key_hash": _digest(token),
+        "scopes": scopes,
     }
     try:
         # PropAI's lightweight Supabase adapter switches an insert builder
@@ -234,6 +240,97 @@ async def create_external_key(body: ApiKeyCreate, user: dict = Depends(require_u
         )
         raise HTTPException(500, "Could not create external API key")
     return {"key": created, "token": token, "warning": "Save this token now. It will not be shown again."}
+
+
+@router.post("/inventory")
+async def external_create_inventory(
+    body: dict,
+    key: dict = Depends(external_auth),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    """Create private CRM inventory for the token's tenant only.
+
+    This is deliberately private CRM data, not market inventory. Publishing or
+    turning it into source-backed market evidence remains a separate action.
+    """
+    _require_scope(key, "inventory:write")
+    if idempotency_key and len(idempotency_key.strip()) > 160:
+        raise HTTPException(422, "Idempotency-Key is too long")
+    try:
+        from routers.crm import _normalize_inventory_payload
+        payload = _normalize_inventory_payload(body)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    custom_fields = dict(payload.get("custom_fields") or {})
+    custom_fields["_external_agent"] = str(key.get("label") or "external_agent")[:80]
+    if idempotency_key:
+        normalized_idempotency_key = idempotency_key.strip()
+        existing = storage.client.table("crm_inventory").select("*").eq(
+            "tenant_id", str(key["tenant_id"])
+        ).contains("custom_fields", {"_idempotency_key": normalized_idempotency_key}).limit(1).execute()
+        existing_row = (existing.data or [None])[0] if existing else None
+        if existing_row:
+            return {"ok": True, "private": True, "entity": "crm_inventory", "record": existing_row, "idempotent_replay": True}
+        custom_fields["_idempotency_key"] = normalized_idempotency_key
+    payload.update({
+        "tenant_id": str(key["tenant_id"]),
+        "created_by": key.get("created_by"),
+        "source": "external_agent",
+        "custom_fields": custom_fields,
+    })
+    result = storage.client.table("crm_inventory").insert(payload).execute()
+    row = (result.data or [None])[0] if result else None
+    if not row:
+        raise HTTPException(503, "Private inventory could not be saved")
+    return {"ok": True, "private": True, "entity": "crm_inventory", "record": row}
+
+
+@router.post("/requirements")
+async def external_create_requirement(
+    body: dict,
+    key: dict = Depends(external_auth),
+):
+    """Create a tenant-scoped CRM requirement and client record."""
+    _require_scope(key, "requirements:write")
+    tenant_id = str(key["tenant_id"])
+    raw_text = str(body.get("raw_text") or body.get("notes") or "").strip()
+    name = str(body.get("name") or "External agent requirement").strip()[:200]
+    phone = "".join(ch for ch in str(body.get("phone") or "") if ch.isdigit())[-15:] or None
+    if len(raw_text) < 3 and not body.get("location_pref"):
+        raise HTTPException(400, "raw_text or location_pref is required")
+    clients = storage.client.table("clients").select("id").eq("tenant_id", tenant_id)
+    if phone:
+        clients = clients.eq("phone", phone)
+    client_rows = clients.limit(1).execute().data or []
+    client_id = client_rows[0]["id"] if client_rows else None
+    if client_id is None:
+        client = storage.client.table("clients").insert({
+            "tenant_id": tenant_id,
+            "name": name,
+            "phone": phone,
+            "notes": raw_text,
+            "status": "active",
+        }).execute()
+        client_id = ((client.data or [None])[0] or {}).get("id")
+    if client_id is None:
+        raise HTTPException(503, "Client record could not be saved")
+    requirement = storage.client.table("client_requirements").insert({
+        "tenant_id": tenant_id,
+        "client_id": client_id,
+        "intent": "requirement",
+        "bhk": ", ".join(str(item) for item in (body.get("bhk_preference") or [])[:20]) or None,
+        "price_min": body.get("budget_min"),
+        "price_max": body.get("budget_max"),
+        "micro_market": body.get("location_pref"),
+        "area_sqft_min": body.get("area_min_sqft"),
+        "area_sqft_max": body.get("area_max_sqft"),
+        "notes": raw_text,
+        "is_primary": True,
+    }).execute()
+    row = (requirement.data or [None])[0] if requirement else None
+    if not row:
+        raise HTTPException(503, "Requirement could not be saved")
+    return {"ok": True, "private": True, "entity": "client_requirements", "client_id": client_id, "record": row}
 
 
 @router.get("/dm-consent")

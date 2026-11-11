@@ -1048,3 +1048,18 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Independent task-verifier verdict: **PARTIAL** — code, docs, detector, diff check, and deployment pass; live signed-in UI review is not available in this session.
 - Next action: Hard-refresh WhatsApp → Groups and check representative non-property and property group names to confirm the hints display as expected.
 
+### Add explicit scoped private CRM writes for Instinct
+
+- Requested outcome: Let Instinct write owner-scoped listings and requirements into PropAI while preserving tenant isolation and keeping ads, publishing, messaging, deletion, and budgets protected.
+- Files changed: `routers/external_agent.py`, `docs/EXTERNAL_AGENT_API.md`, `architecture.md`, `frontend/src/app/workspace/mcp/page.tsx`, `frontend/src/app/workspace/instinct/page.tsx`, `frontend/src/app/BrokerLandingClient.tsx`, and this report.
+- Behavior: Newly created external tokens remain read-only by default. The workspace owner can explicitly enable `inventory:write` and `requirements:write`; these create only private `crm_inventory`, `clients`, and `client_requirements` rows under the token tenant. Inventory retries support `Idempotency-Key`. No endpoint was added for public market publishing, ads, outbound WhatsApp, deletion, or budget changes.
+- Verification performed: `pytest -q tests/test_external_agent_search.py` passed (5 tests); `python3 -m py_compile routers/external_agent.py` passed; targeted frontend ESLint completed with 0 errors and two existing warnings; `git diff --check` passed. Second-pass task-verifier review: **PARTIAL** — local implementation and tenant/write-scope checks pass, but production deployment and authenticated browser/API smoke verification remain pending.
+- Deployment/push status: Not yet committed or pushed. Coolify services needing redeployment after push: `api` (`djbbkdp28uhoc5p8cfnjr642`) and `propai-lab:main-app` (`y18kprfw29mu6wclzgpgfrvv`).
+- Known limitations: Existing external tokens do not gain write access; create a new token with the explicit checkbox. Ads execution through Instinct/MCP remains a separate approval-gated phase. The local checkout has unrelated dirty and untracked work that must not be staged.
+- Independent task-verifier verdict: **PARTIAL**.
+  - PASS — write scopes are opt-in and enforced per endpoint.
+  - PASS — writes resolve tenant from the bearer token and target private CRM tables only.
+  - PASS — setup documentation and UI explain the new write capability and prohibited actions.
+  - FAIL — production deployment and authenticated live smoke verification are pending.
+- Next action: Stage only the task files, commit and push, redeploy `api` and `propai-lab:main-app`, then verify token creation, scope rejection for read-only keys, and one confirmed private inventory/requirement write in the signed-in workspace.
+

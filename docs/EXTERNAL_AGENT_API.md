@@ -17,7 +17,10 @@ The machine-readable API schema is at
 
 ## Authentication
 
-The workspace owner creates a read-only API key in PropAI under Account → MCP.
+The workspace owner creates an API key in PropAI under Account → MCP. Keys are
+read-only unless the owner explicitly enables private CRM writes when creating
+the key. Write-enabled keys still cannot publish market inventory, send
+messages, activate ads, change budgets, or delete records.
 The owner stores the one-time value in Instinct Vault as `PROPAI_API_KEY`.
 Retrieve it from Vault when making a request and send it in the `X-API-Key`
 header:
@@ -32,7 +35,7 @@ there is no tenant parameter and it must not be guessed or added.
 
 ## Endpoints
 
-All endpoints below are read-only. There is no message-send or data-write API.
+Read endpoints:
 
 | Method and path | Purpose | Important parameters |
 | --- | --- | --- |
@@ -42,6 +45,17 @@ All endpoints below are read-only. There is no message-send or data-write API.
 | `GET /matches` | Search listing matches | `q`, `limit` |
 | `GET /messages/search` | Search captured WhatsApp source messages | `q`, `scope`, `since`, `until`, `limit`, `offset` |
 | `GET /messages/{raw_message_id}` | Fetch one full source message | `raw_message_id` from search results |
+
+Optional private CRM writes (only for a key with the matching write scope):
+
+| `POST /inventory` | Create private CRM inventory | `inventory:write`; requires `building_name` or `location` |
+| `POST /requirements` | Create a private buyer/tenant requirement | `requirements:write`; requires `raw_text` or `location_pref` |
+
+These writes are tenant-scoped to the key, remain private CRM records, and do
+not become WhatsApp source evidence or public inventory. Send an
+`Idempotency-Key` with inventory requests when the caller may retry. Ads,
+publishing, outbound WhatsApp, deletion, and budget changes remain outside this
+API and require a separate approval flow.
 
 The default message-search scope is `groups`. Use `scope=groups` for group
 messages and `scope=dms` only when the owner asks about private conversations.

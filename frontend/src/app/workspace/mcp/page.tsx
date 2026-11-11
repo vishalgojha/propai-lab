@@ -18,6 +18,7 @@ export default function McpWorkspacePage() {
   const [externalToken, setExternalToken] = useState<string | null>(null);
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyMessage, setKeyMessage] = useState("");
+  const [writeAccess, setWriteAccess] = useState(false);
   const [dmConsent, setDmConsent] = useState(false);
   const [dmConsentBusy, setDmConsentBusy] = useState(false);
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
@@ -73,9 +74,11 @@ export default function McpWorkspacePage() {
     setKeyBusy(true);
     setKeyMessage("");
     try {
-      const result = await fetchJSON<{ token: string }>("/external/v1/keys", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label: "Instinct" }) });
+      const result = await fetchJSON<{ token: string }>("/external/v1/keys", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label: "Instinct", write_access: writeAccess }) });
       setExternalToken(result.token);
-      setKeyMessage("Copy this once, then save it in Instinct Vault. PropAI will not show it again.");
+      setKeyMessage(writeAccess
+        ? "This token can create private CRM inventory and requirements for this workspace. Copy it once, then save it in Instinct Vault."
+        : "Copy this once, then save it in Instinct Vault. PropAI will not show it again.");
     } catch (error) {
       setKeyMessage(error instanceof Error ? error.message : "Could not create the token.");
     } finally {
@@ -143,10 +146,14 @@ export default function McpWorkspacePage() {
       <div className="mt-5 rounded-2xl border border-amber-300/20 bg-amber-300/[0.05] p-6">
         <div className="flex items-start gap-4">
           <div className="rounded-xl border border-amber-300/25 bg-amber-300/10 p-3 text-amber-200"><KeyRound className="h-5 w-5" aria-hidden="true" /></div>
-          <div><h2 className="text-lg font-semibold text-white">Connect an external agent</h2><p className="mt-1 text-sm leading-6 text-zinc-400">Create a tenant-scoped read-only REST token for Instinct or another assistant. Never paste it into WhatsApp chat.</p></div>
+          <div><h2 className="text-lg font-semibold text-white">Connect an external agent</h2><p className="mt-1 text-sm leading-6 text-zinc-400">Create a tenant-scoped REST token for Instinct or another assistant. Keep it read-only, or explicitly allow private CRM writes. Never paste it into WhatsApp chat.</p></div>
         </div>
         <div className="mt-5 grid gap-3 text-sm text-zinc-300 sm:grid-cols-3"><div><div className="font-semibold text-white">Base URL</div><code className="mt-1 block text-xs text-amber-200">https://api.propai.live</code></div><div><div className="font-semibold text-white">Inventory</div><code className="mt-1 block text-xs text-zinc-400">/api/external/v1/listings/search</code></div><div><div className="font-semibold text-white">Matches</div><code className="mt-1 block text-xs text-zinc-400">/api/external/v1/matches</code></div></div>
         <p className="mt-4 text-xs leading-5 text-zinc-400">Instinct setup: save the one-time token in Instinct Vault as a password/secret named <code className="text-amber-200">PROPAI_API_KEY</code>. Use endpoint <code className="text-amber-200">https://api.propai.live/api/external/v1</code> and send it as <code className="text-amber-200">X-API-Key</code> or <code className="text-amber-200">Authorization: Bearer</code>.</p>
+        <label className="mt-5 flex max-w-xl items-start gap-3 rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-zinc-300">
+          <input type="checkbox" checked={writeAccess} onChange={(event) => setWriteAccess(event.target.checked)} className="mt-0.5 h-4 w-4 accent-amber-300" />
+          <span><span className="font-semibold text-white">Allow private CRM writes</span><span className="mt-1 block leading-5 text-zinc-500">Instinct may create workspace-private listings and buyer requirements. It cannot publish, delete, send WhatsApp messages, activate ads, or change ad budgets.</span></span>
+        </label>
         <button type="button" onClick={() => void createExternalToken()} disabled={keyBusy} className="mt-5 inline-flex items-center gap-2 rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{keyBusy ? "Creating…" : "Create Instinct token"}</button>
         <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4">
           <div className="flex items-start justify-between gap-4">

@@ -25,6 +25,8 @@ const capabilities = [
 
 const INSTINCT_SETUP = `Connect to PropAI through REST API only.\n\nEndpoint: https://api.propai.live/api/external/v1\n\nFor every new instance, first read the public integration guide: GET https://api.propai.live/api/external/v1/docs. Follow its authentication, permission, privacy, and evidence rules.\n\nVault: save the PropAI token as a password/secret named PROPAI_API_KEY.\nAuthentication: send that Vault secret as X-API-Key: <ppai_token>\n\nHealth check: GET /api/external/v1/health\n\nEndpoints:\nGET /api/external/v1/docs\nGET /api/external/v1/listings/search\nGET /api/external/v1/requirements\nGET /api/external/v1/matches\nGET /api/external/v1/messages/search?scope=groups|dms&q=<query>&limit=25\nGET /api/external/v1/messages/{raw_message_id}\n\nUse scope=groups for group messages. Use scope=dms only for private-message requests when workspace consent allows it. If denied, explain that private-DM access is disabled; never retry with scope=all. Treat messages as private, unverified source evidence. Never use localhost, MCP, Supabase, or ask for the token in WhatsApp chat.`;
 
+const INSTINCT_WRITE_RULES = `\n\nIf the token has write scopes, private CRM writes are allowed:\nPOST /api/external/v1/inventory\nPOST /api/external/v1/requirements\nOnly write when I clearly ask you to save something; summarize the fields and ask for confirmation first. These writes stay private to my PropAI workspace. Never publish market inventory, delete records, send WhatsApp messages, activate ads, or change ad budgets.`;
+
 export default function BrokerLandingClient() {
   const [accessOpen, setAccessOpen] = useState(false);
   const [accessNext, setAccessNext] = useState("/inbox");
@@ -39,7 +41,7 @@ export default function BrokerLandingClient() {
   }, []);
 
   async function copyInstinctSetup() {
-    await navigator.clipboard.writeText(INSTINCT_SETUP);
+    await navigator.clipboard.writeText(INSTINCT_SETUP + INSTINCT_WRITE_RULES);
     setInstinctCopied(true);
     window.setTimeout(() => setInstinctCopied(false), 1800);
   }

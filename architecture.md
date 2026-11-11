@@ -198,11 +198,15 @@ External assistants such as Instinct do not receive Supabase sessions or
 service-role credentials. The FastAPI external-agent surface uses a separate
 tenant-scoped, revocable bearer token stored only as a SHA-256 digest in
 `external_agent_api_keys`. A token is created from the authenticated
-Account → MCP page and shown once. The read-only v1 contract is intentionally
+Account → MCP page and shown once. The default v1 contract is read-only and intentionally
 small: `/api/external/v1/listings/search`, `/requirements`, `/matches`, and
 `/health`. Every request resolves its tenant from the token before reading
 typed rows; the token cannot select another tenant or access raw DMs by
-default. Token creation and revocation remain authenticated workspace actions.
+default. Owner-enabled `inventory:write` and `requirements:write` scopes may
+create only tenant-private CRM inventory and requirements. They cannot create
+source-backed market listings, publish, delete, send WhatsApp messages,
+activate ads, or change budgets. Token creation and revocation remain
+authenticated workspace actions.
 
 ### Plan entitlements
 
@@ -237,7 +241,9 @@ through live ingestion and existing group-selection paths.
 
 ### Google Drive inventory export
 
-The `google-drive-sync` is an outbound, tenant-scoped adapter for broker-owned
+The broker-facing Google Drive setup and export UI is retired; Instinct/MCP is
+the supported external-agent path. The legacy `google-drive-sync` remains an
+outbound, tenant-scoped adapter for broker-owned
 private CRM inventory. The API stores encrypted Google OAuth credentials and a
 selected inventory export definition; the worker consumes sync jobs and writes
 one Google Sheet inside a dedicated Drive folder. It never reads Drive data,
@@ -1290,15 +1296,15 @@ evidence. Global source blocks are a separate ingestion invariant. A blocked
 source is retained as raw audit evidence but is marked processed and suppressed
 before any extraction attempt, including direct webhook calls; it must never
 produce typed listings or requirements.
-## Google Drive market export
+## Legacy Google Drive market export (workspace UI retired)
 
-The authenticated broker workspace may export selected, source-grounded Market
-Inbox listing references to a private Google Sheet in the broker's connected
-Drive. The export is a complete snapshot and includes the source listing's
-broker contact phone for the downstream Meta AI workflow. This phone remains
-outside public HTML. The API validates the typed listing table, visibility,
-review state, and blocked-broker policy before queueing the tenant-scoped sync
-job; the worker rechecks those rules before writing the Sheet.
+The former authenticated workspace UI exported selected, source-grounded Market
+Inbox listing references to a private Google Sheet. Those setup and export
+controls are removed; the old Google Drive route redirects to Account →
+Instinct. API routes, stored credentials, and the worker remain for existing
+jobs and operational cleanup. Their tenant, visibility, review, and blocked-
+broker checks are unchanged. Do not add new user-facing Drive controls without
+a new product decision.
 
 ## Building enrichment evidence
 

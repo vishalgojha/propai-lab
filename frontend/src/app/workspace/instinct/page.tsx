@@ -26,6 +26,10 @@ Available endpoints:
 - Search WhatsApp messages: GET /messages/search?scope=groups|dms&q=<query>&limit=25
 - Fetch a matching WhatsApp message: GET /messages/{raw_message_id}
 - Find matches: GET /matches
+- Create a private CRM listing: POST /inventory (only if the token has inventory:write)
+- Create a private buyer/tenant requirement: POST /requirements (only if the token has requirements:write)
+
+Only write when I clearly ask you to save something. Before writing, summarize the fields and ask for confirmation. These writes stay private to my PropAI workspace; never publish market inventory, delete records, send WhatsApp messages, activate ads, or change ad budgets.
 
 When I ask about private WhatsApp conversations, search with scope=dms only. This scope is available only when the PropAI workspace owner has enabled private-DM access. If the API denies access, tell me that access is disabled and do not retry with scope=all. Use scope=groups only when I ask about group messages. Never broaden a DM search to groups or all chats.
 
