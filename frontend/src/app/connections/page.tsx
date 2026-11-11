@@ -282,6 +282,8 @@ function PhoneCard({
   const [pairQrStartedAt, setPairQrStartedAt] = useState<number | null>(null);
   const [pairQrValue, setPairQrValue] = useState<string | null>(null);
   const [pairQrDataUrl, setPairQrDataUrl] = useState<string | null>(null);
+  const [pairQrExpiresAt, setPairQrExpiresAt] = useState<string | null>(null);
+  const [pairQrSecondsRemaining, setPairQrSecondsRemaining] = useState(0);
   const [pairCodeExpiresAt, setPairCodeExpiresAt] = useState<string | null>(null);
   const [pairCodeSecondsRemaining, setPairCodeSecondsRemaining] = useState(0);
   const [pairingSucceeded, setPairingSucceeded] = useState(false);
@@ -415,6 +417,9 @@ function PhoneCard({
     setPairCodeExpiresAt(null);
     setPairQrValue(null);
     setPairQrStartedAt(Date.now());
+    const qrExpiresAt = new Date(Date.now() + PAIRING_SESSION_WINDOW_SECONDS * 1000).toISOString();
+    setPairQrExpiresAt(qrExpiresAt);
+    setPairQrSecondsRemaining(pairingSecondsUntil(qrExpiresAt));
     setPairQrPending(false);
     setShowPairCodeDialog(true);
     try {
@@ -454,15 +459,19 @@ function PhoneCard({
           setActionError(pairingError || "WhatsApp could not prepare a QR code. Try the linking-code option.");
           return;
         }
-        if (Date.now() - pairQrStartedAt > 70_000) {
+        if (Date.now() - pairQrStartedAt > PAIRING_SESSION_WINDOW_SECONDS * 1000) {
           setPairQrPending(false);
           setPairQrStartedAt(null);
+          setPairQrExpiresAt(null);
+          setPairQrSecondsRemaining(0);
           setActionError("WhatsApp is taking too long to prepare a QR code. Try the linking-code option; do not reset the session.");
         }
       } catch {
-        if (!cancelled && Date.now() - pairQrStartedAt > 70_000) {
+        if (!cancelled && Date.now() - pairQrStartedAt > PAIRING_SESSION_WINDOW_SECONDS * 1000) {
           setPairQrPending(false);
           setPairQrStartedAt(null);
+          setPairQrExpiresAt(null);
+          setPairQrSecondsRemaining(0);
           setActionError("Could not read QR pairing status. Try the linking-code option.");
         }
       }
@@ -471,6 +480,22 @@ function PhoneCard({
     const interval = window.setInterval(() => void poll(), 2_000);
     return () => { cancelled = true; window.clearInterval(interval); };
   }, [pairQrPending, pairQrStartedAt, showPairCodeDialog, pairingSucceeded, phone.id, onRefresh]);
+
+  useEffect(() => {
+    if (!pairQrExpiresAt || !showPairCodeDialog || pairingSucceeded) return;
+    const updateCountdown = () => {
+      const remaining = pairingSecondsUntil(pairQrExpiresAt);
+      setPairQrSecondsRemaining(remaining);
+      if (remaining === 0 && pairQrPending) {
+        setPairQrPending(false);
+        setPairQrStartedAt(null);
+        setActionError("This QR session expired. Close this window and request one fresh QR code.");
+      }
+    };
+    updateCountdown();
+    const interval = window.setInterval(updateCountdown, 1_000);
+    return () => window.clearInterval(interval);
+  }, [pairQrExpiresAt, pairQrPending, showPairCodeDialog, pairingSucceeded]);
 
   useEffect(() => {
     if ((!pairCodePending && !pairCodeResult) || !showPairCodeDialog || pairingSucceeded) return;
@@ -976,7 +1001,7 @@ function PhoneCard({
                     <div className="font-semibold text-white">On your phone</div>
                     <div>WhatsApp → Settings → Linked devices → Link a device, then scan the QR currently shown here.</div>
                   </div>
-                  <p className="mt-2 text-[11px] leading-5 text-zinc-500">Use only one method at a time. Keep this window open, scan the latest QR before it refreshes, and do not click Reconnect WhatsApp while pairing.</p>
+                  <p className="mt-2 text-[11px] leading-5 text-zinc-500">Use only one method at a time. Scan the latest QR before this session expires in <span className="font-mono text-zinc-300">{formatPairingCountdown(pairQrSecondsRemaining)}</span>. Do not click Reconnect WhatsApp while pairing.</p>
                   <p className="mt-2 text-[11px] leading-5 text-zinc-500">If linking fails, remove an old linked device from WhatsApp and try one fresh QR code.</p>
                   {actionError && <p className="mt-3 text-xs text-red-400">{actionError}</p>}
                 </div>

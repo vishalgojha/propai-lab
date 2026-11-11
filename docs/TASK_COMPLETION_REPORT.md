@@ -866,3 +866,14 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Independent task-verifier verdict: **PARTIAL** pending verification and deployment.
 - Next action: Run lint/detector, commit/push, redeploy `propai-lab:main-app`, and verify the dialog copy in production.
 
+### Show QR pairing session countdown
+
+- Requested outcome: Make QR refresh/expiry visible instead of silently rotating the code.
+- Files changed: `frontend/src/app/connections/page.tsx` and this report.
+- Behavior: The QR dialog now shows a live session countdown, expires the UI state with an actionable message, and allows the longer documented pairing window before declaring QR preparation stuck.
+- Verification performed: Pending focused frontend lint and mechanical UI detector.
+- Deployment/push status: Pending commit, push, and dashboard redeployment.
+- Known limitations or failures: WhatsApp still controls whether the handset accepts the QR; the timer reflects PropAI’s pairing session window, not a guarantee of WhatsApp’s exact server-side expiry.
+- Independent task-verifier verdict: **PARTIAL** pending verification and deployment.
+- Next action: Run lint/detector, commit/push, redeploy `propai-lab:main-app`, and verify the countdown in production.
+
