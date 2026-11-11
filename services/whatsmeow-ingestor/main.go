@@ -782,7 +782,11 @@ sessionLoop:
 			}
 			heartbeatStop = s.startHeartbeat()
 
-			// Code pairing: wait for first QR event, then generate pairing code
+			// Code pairing: WhatsMeow normally emits a QR event when the websocket
+			// is ready. After a reset, however, that event can be delayed until the
+			// pairing window is nearly over. Do not make phone-number pairing depend
+			// on receiving that event; use it as a fast path and fall back to the
+			// connected websocket after a short readiness grace period.
 			s.mu.RLock()
 			pairMode := s.pairingMode
 			phone := s.pairingPhone
@@ -790,53 +794,24 @@ sessionLoop:
 			s.mu.RUnlock()
 			if pairMode == "code" && phone != "" {
 				log.Printf("[broker %s] initiating code pairing for phone %s", s.brokerID, phone)
-				// Wait for the first QR event to ensure connection is established
+				pairingReady := false
+				pairingReadyTimer := time.NewTimer(12 * time.Second)
 				select {
 				case evt, ok := <-qrChan:
-					if ok && evt.Event == "code" {
-						pairingWindowExpiresAt := time.Now().Add(160 * time.Second).UTC().Format(time.RFC3339)
-						// The QR event can arrive a fraction before the websocket is
-						// marked connected. PairPhone called during that window fails
-						// with "websocket not connected" and leaves the UI with no code.
-						readyDeadline := time.Now().Add(10 * time.Second)
-						for !s.client.IsConnected() && time.Now().Before(readyDeadline) {
-							select {
-							case <-disconnected:
-								stopHeartbeat()
-								continue sessionLoop
-							case <-s.ctx.Done():
-								stopHeartbeat()
-								s.client.Disconnect()
-								return
-							case <-time.After(200 * time.Millisecond):
-							}
-						}
-						if !s.client.IsConnected() {
-							log.Printf("[broker %s] pairing websocket did not become ready", s.brokerID)
-							s.failCodePairing("WhatsApp did not become ready to issue a pairing code. Wait a moment, then try once.")
-							stopHeartbeat()
-							return
-						}
-						// WhatsApp validates both fields and rejects unknown/non-browser
-						// identities with a 400. Keep this aligned with WhatsMeow's
-						// documented `Browser (OS)` contract.
-						code, err := s.client.PairPhone(ctx, phone, true, whatsmeow.PairClientChrome, "Chrome (Windows)")
-						if err != nil {
-							log.Printf("[broker %s] PairPhone failed: %v", s.brokerID, err)
-							s.failCodePairing(pairingErrorMessage(err))
-							stopHeartbeat()
-							return
-						} else {
-							log.Printf("[broker %s] pairing code: %s", s.brokerID, code)
-							s.setStatus(Status{
-								Connected:              false,
-								ConnectionState:        "code_pairing",
-								PairingCode:            code,
-								PairingPhone:           phone,
-								PairingWindowExpiresAt: pairingWindowExpiresAt,
-								QRAvailable:            true,
-							})
-						}
+					if !ok {
+						stopHeartbeat()
+						continue sessionLoop
+					}
+					pairingReady = evt.Event == "code"
+				case <-pairingReadyTimer.C:
+					if s.client.IsConnected() {
+						log.Printf("[broker %s] no QR readiness event yet; pairing websocket is connected, requesting code", s.brokerID)
+						pairingReady = true
+					} else {
+						log.Printf("[broker %s] pairing websocket did not become ready", s.brokerID)
+						s.failCodePairing("WhatsApp did not become ready to issue a pairing code. Wait a moment, then try once.")
+						stopHeartbeat()
+						return
 					}
 				case <-s.pairingModeChanged:
 					s.mu.RLock()
@@ -858,6 +833,58 @@ sessionLoop:
 					s.client.Disconnect()
 					return
 				}
+				if !pairingReady {
+					stopHeartbeat()
+					continue sessionLoop
+				}
+				if !pairingReadyTimer.Stop() {
+					select {
+					case <-pairingReadyTimer.C:
+					default:
+					}
+				}
+				pairingWindowExpiresAt := time.Now().Add(160 * time.Second).UTC().Format(time.RFC3339)
+				// The QR event can arrive a fraction before the websocket is marked
+				// connected. PairPhone called during that window fails with
+				// "websocket not connected" and leaves the UI with no code.
+				readyDeadline := time.Now().Add(10 * time.Second)
+				for !s.client.IsConnected() && time.Now().Before(readyDeadline) {
+					select {
+					case <-disconnected:
+						stopHeartbeat()
+						continue sessionLoop
+					case <-s.ctx.Done():
+						stopHeartbeat()
+						s.client.Disconnect()
+						return
+					case <-time.After(200 * time.Millisecond):
+					}
+				}
+				if !s.client.IsConnected() {
+					log.Printf("[broker %s] pairing websocket did not become ready", s.brokerID)
+					s.failCodePairing("WhatsApp did not become ready to issue a pairing code. Wait a moment, then try once.")
+					stopHeartbeat()
+					return
+				}
+				// WhatsApp validates both fields and rejects unknown/non-browser
+				// identities with a 400. Keep this aligned with WhatsMeow's
+				// documented `Browser (OS)` contract.
+				code, err := s.client.PairPhone(ctx, phone, true, whatsmeow.PairClientChrome, "Chrome (Windows)")
+				if err != nil {
+					log.Printf("[broker %s] PairPhone failed: %v", s.brokerID, err)
+					s.failCodePairing(pairingErrorMessage(err))
+					stopHeartbeat()
+					return
+				}
+				log.Printf("[broker %s] pairing code: %s", s.brokerID, code)
+				s.setStatus(Status{
+					Connected:              false,
+					ConnectionState:        "code_pairing",
+					PairingCode:            code,
+					PairingPhone:           phone,
+					PairingWindowExpiresAt: pairingWindowExpiresAt,
+					QRAvailable:            true,
+				})
 				// Now wait for pairing to complete (channel closes on success)
 				for {
 					select {

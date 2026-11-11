@@ -877,3 +877,18 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Independent task-verifier verdict: **PARTIAL** pending verification and deployment.
 - Next action: Run lint/detector, commit/push, redeploy `propai-lab:main-app`, and verify the countdown in production.
 
+### Prevent WhatsApp phone-code pairing from waiting on delayed QR events
+
+- Requested outcome: Make WhatsApp pairing reliably produce a QR or phone-number linking code after reset/re-pair, instead of remaining stuck until the UI reports that code generation timed out.
+- Files changed: `services/whatsmeow-ingestor/main.go`.
+- Behavior: Phone-number pairing now uses the first QR readiness event as a fast path, but falls back after 12 seconds when the WhatsMeow websocket is already connected. It then calls `PairPhone` without waiting for a delayed QR event. Existing disconnect, cancellation, mode-switch, and error handling remain active.
+- Verification performed: `gofmt` completed; `GOCACHE=/tmp/propai-go-cache go test ./...` passed in `services/whatsmeow-ingestor`; `git diff --check` passed. Production logs identified the prior failure sequence: code pairing started after reset, no code was issued until the delayed reconnect/QR path, and the UI timed out first.
+- Deployment/push status: Scoped commit and push pending. Coolify service needing redeployment: `ingestor` (`egn4dqsw3xxmhb9noorm85do`). No production redeployment was performed in this pass.
+- Known limitations or failures: Live handset pairing was not re-tested because the current production ingestor still contains the old waiting behavior until redeployment. WhatsApp may still reject a code for handset/account-side reasons after the code is issued.
+- Independent task-verifier verdict: **PARTIAL**.
+  - PASS — the delayed-QR blocking path is removed from the code-pairing flow, and the fallback is guarded by websocket connection state.
+  - PASS — cancellation, disconnect, pairing-mode changes, and `PairPhone` errors still terminate or retry safely.
+  - PASS — ingestor tests, formatting, and diff checks pass.
+  - FAIL — production redeployment and a real QR/linking-code smoke test remain outstanding.
+- Next action: Commit and push the scoped change, redeploy `ingestor`, then request one fresh linking code without repeatedly resetting the session and confirm the code arrives within the UI timeout.
+
