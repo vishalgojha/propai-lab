@@ -1043,8 +1043,8 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Files changed: `frontend/src/app/connections/page.tsx`, `docs/PRODUCT.md`, `docs/DECISIONS.md`, `architecture.md`, and this report.
 - Behavior: Strong non-property wording in the group name displays a “Possibly not real estate” review hint with its topic signal. Property-related wording suppresses the hint. The hint is name-only, does not inspect messages, and never changes group selection or opts a group out.
 - Verification performed: Impeccable detector returned no findings; `git diff --check` passed. Independent task-verifier returned **PARTIAL**: the hint is conservative, transparent, and does not alter selection, but deployment and live UI verification are pending. No tests were requested or run.
-- Push/deployment status: Pending scoped commit, push, and redeployment of `propai-lab:main-app` (`y18kprfw29mu6wclzgpgfrvv`).
+- Push/deployment status: Commit `2c20ee106298bd99c52f1d2c97e5959530a3c27c` pushed to `origin/main`. Coolify deployment `qxl2diidai0aq4dkpdb497gr` for `propai-lab:main-app` finished successfully on that commit at 2026-11-11 14:33 UTC.
 - Known limitations: Name-only classification can miss unrelated groups or flag a mixed-purpose group; operator review remains necessary.
-- Independent task-verifier verdict: **PARTIAL**.
-- Next action: Commit, push, and deploy the dashboard update, then review the topic hints in WhatsApp → Groups.
+- Independent task-verifier verdict: **PARTIAL** — code, docs, detector, diff check, and deployment pass; live signed-in UI review is not available in this session.
+- Next action: Hard-refresh WhatsApp → Groups and check representative non-property and property group names to confirm the hints display as expected.
 
