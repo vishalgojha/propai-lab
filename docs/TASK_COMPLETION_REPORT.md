@@ -940,3 +940,5 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
   - FAIL — dashboard deployment and browser smoke verification remain outstanding.
 - Next action: Commit and push, redeploy `propai-lab:main-app`, then refresh WhatsApp → Groups and confirm the capture banner says Connected.
 
+- Deployment follow-up: Coolify deployment `wj6937nh8wade6p8vf65l1po` finished successfully for `propai-lab:main-app` on commit `1793f9c73ae01ad6cd1f48de20cede78635bb0d6` at 2026-11-11 11:02 UTC. Refresh WhatsApp → Groups to see the live capture status.
+
