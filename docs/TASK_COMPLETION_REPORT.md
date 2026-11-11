@@ -964,3 +964,5 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Independent task-verifier verdict: **PARTIAL** pending deployment and browser verification.
 - Next action: Commit and push, redeploy `propai-lab:main-app`, then use raw capture with Instinct/MCP without starting optional extraction.
 
+- Deployment follow-up: Coolify deployment `iip0kyhx2fw2gblxlx1l6j23` finished successfully for `propai-lab:main-app` on commit `55dce2e19e6820fecd7fe253f1c4f38290fb245b` at 2026-11-11 11:22 UTC. Refresh the WhatsApp Groups page to see the raw-ingest-only wording.
+
