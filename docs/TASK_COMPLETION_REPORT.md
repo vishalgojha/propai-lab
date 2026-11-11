@@ -983,3 +983,15 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 
 - Deployment follow-up: Coolify deployment `ksh9icn5h60ejz03vvv7pnjb` finished successfully for `propai-lab:main-app` on commit `2290947a08bb81b621d9db0aedc3d6e7748c8319` at 2026-11-11 11:54 UTC. Coolify reported `finished` after 245 seconds. The independent task-verifier verdict is now **PASS** for the implemented and deployed acceptance conditions; an authenticated browser smoke test remains a recommended user-side confirmation after hard refresh.
 
+### Preselect eligible WhatsApp groups and prevent false disconnect banner
+
+- Requested outcome: Preselect all eligible groups for one-click confirmation, and stop the workspace shell from claiming WhatsApp disconnected while the ingestor is connected.
+- Files changed: `frontend/src/app/connections/page.tsx`, `frontend/src/app/layout.tsx`, and this report.
+- Behavior: A fresh group directory pre-checks every selectable, non-opted-out group while preserving the explicit confirmation step. Saved selections remain authoritative on later reloads. The global WhatsApp status now prefers the fresh workspace live-status probe over a stale per-phone disconnected row.
+- Evidence: Coolify ingestor logs show phone `919821029013` connected at `2026-11-11 11:57:08 UTC`, followed by group directory sync and group message receipt. The screenshot’s group panel also showed live capture connected, confirming the global banner was inconsistent rather than proof of an actual session drop.
+- Verification performed: `git diff --check` passed. ESLint on both changed UI files completed with 0 errors; existing warnings remain. Full TypeScript checking retains unrelated repository errors.
+- Deployment/push status: Pending scoped commit, push, and redeployment of `propai-lab:main-app`.
+- Known limitations: The UI still requires explicit confirmation before changing the extraction consent on the server; this change does not silently start extraction or alter the ingestor session.
+- Independent task-verifier verdict: **PARTIAL** pending deployment and browser smoke verification.
+- Next action: Commit/push, redeploy `propai-lab:main-app`, then hard-refresh WhatsApp → Groups and confirm all eligible groups are checked and the global banner remains connected.
+

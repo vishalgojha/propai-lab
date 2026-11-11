@@ -1176,22 +1176,34 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
   const [savingSelection, setSavingSelection] = useState(false);
   const [checkingGroup, setCheckingGroup] = useState<string | null>(null);
 
+  const applyDirectorySelection = useCallback((next: OnboardingGroupState) => {
+    const selectable = (next.groups || []).filter((group) => group.selectable !== false && !group.opted_out);
+    const persisted = selectable
+      .filter((group) => group.connected)
+      .map((group) => group.group_jid);
+    // A fresh connection should be ready to review in one click: pre-check
+    // every eligible group, but keep the explicit confirmation step. Once
+    // the API reports a saved selection, preserve that selection on reload.
+    const initialSelection = next.selected_count === 0
+      ? selectable.map((group) => group.group_jid)
+      : persisted;
+    setSelectedGroups(new Set(initialSelection));
+  }, []);
+
   const loadGroups = useCallback(async () => {
     if (!hasPairingIdentity) return;
     setLoading(true);
     try {
       const next = await getOnboardingGroups(phone.id);
       setData(next);
-      const selectable = (next.groups || []).filter((group) => group.selectable !== false);
-      const existing = selectable.filter((group) => group.connected && !group.opted_out).map((group) => group.group_jid);
-      setSelectedGroups(new Set(existing));
+      applyDirectorySelection(next);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load group onboarding data.");
     } finally {
       setLoading(false);
     }
-  }, [hasPairingIdentity, phone.id]);
+  }, [applyDirectorySelection, hasPairingIdentity, phone.id]);
 
   const toggleGroupSelection = (group: OnboardingGroup) => {
     if (group.selectable === false || savingSelection) return;
@@ -1373,10 +1385,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         const next = await getOnboardingGroups(phone.id);
         if (next.groups?.length) {
           setData(next);
-          const selectable = next.groups.filter((group) => group.selectable !== false);
-          setSelectedGroups(new Set(
-            selectable.filter((group) => group.connected && !group.opted_out).map((group) => group.group_jid),
-          ));
+          applyDirectorySelection(next);
           setMessage("Group directory loaded.");
           await onRefresh();
           return;
@@ -2153,7 +2162,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
 
           {view === "groups" && phones.some((phone) => !isPlaceholderPhone(phone.phone_number) || !isPlaceholderPhone(phone.phone_number_live)) ? (
             <div className="order-3 mb-8">
-              <Section title="Syncing status">
+              <Section title="Message capture">
                 <div className="space-y-6">
                   {phones
                     .filter((phone) => !isPlaceholderPhone(phone.phone_number) || !isPlaceholderPhone(phone.phone_number_live))
