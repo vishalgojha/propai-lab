@@ -1258,7 +1258,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       // checkbox model even if the following directory refresh is eventually
       // consistent and briefly returns the previous connection rows.
       setSelectedGroups(new Set(result.selected_group_jids));
-      setMessage("Group selection confirmed. Syncing will use only these groups.");
+      setMessage("Selection saved for optional extraction. Raw WhatsApp capture is unaffected.");
       await loadGroups();
       setSelectedGroups(new Set(result.selected_group_jids));
       await onRefresh();
@@ -1324,7 +1324,13 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       await loadGroups();
       await onRefresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update extraction state.");
+      const detail = err instanceof Error ? err.message : "Could not update extraction state.";
+      if (action === "start" && detail.toLowerCase().includes("select and confirm")) {
+        setError(null);
+        setMessage("Raw WhatsApp capture is already active. Extraction is optional for Instinct and MCP, so it was not started.");
+      } else {
+        setError(detail);
+      }
     } finally {
       setActiveControl(null);
     }
@@ -1480,7 +1486,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         <div className="mt-4 border-y border-white/10 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-wider text-zinc-300">Extraction status</div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-zinc-300">Optional extraction</div>
               <div className="mt-1 text-[11px] text-zinc-500">
                 {data.extraction_status === "running"
                   ? "New and queued messages are being processed into listings and requirements."
@@ -1501,7 +1507,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
           </div>
           {!data.unlimited && persistedSelectedCount === 0 && !hasUnpersistedSelection && (
             <div className="mt-3 border-l-2 border-amber-400/50 bg-amber-400/[0.04] px-3 py-2 text-[11px] text-amber-200">
-              Select and confirm at least one group to start extraction. Live raw capture from groups and direct chats is separate and continues while extraction is stopped.
+              No groups are selected for optional extraction. Live raw capture for Instinct and MCP continues independently.
             </div>
           )}
           {hasUnpersistedSelection && (
@@ -1516,7 +1522,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
               </button>
             )}
             <button type="button" onClick={() => void handleExtractionControl("start")} disabled={activeControl !== null || savingSelection || hasUnpersistedSelection || data.extraction_status === "running" || (!data.unlimited && persistedSelectedCount === 0)} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/40 px-3 py-1.5 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-40">
-              <Play className="h-3 w-3" /> {activeControl === "start" ? "Starting..." : "Start extraction"}
+              <Play className="h-3 w-3" /> {activeControl === "start" ? "Starting..." : "Start optional extraction"}
             </button>
             <button type="button" onClick={() => void handleExtractionControl("pause")} disabled={activeControl !== null || data.extraction_status !== "running"} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 px-3 py-1.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40">
               <Pause className="h-3 w-3" /> {activeControl === "pause" ? "Pausing..." : "Pause extraction"}

@@ -953,3 +953,14 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Independent task-verifier verdict: **PARTIAL** pending deployment and browser verification.
 - Next action: Push and redeploy `propai-lab:main-app`, then confirm the header says `WhatsApp connected` and `Extraction stopped` when extraction is not running.
 
+### Make raw-ingest-only mode explicit for Instinct and MCP
+
+- Requested outcome: Use WhatsApp for raw evidence capture and let Instinct/MCP consume it, without presenting AI extraction as required.
+- Files changed: `frontend/src/app/connections/page.tsx` and this report.
+- Behavior: The extraction area is now labeled optional; group-selection copy says it does not affect raw capture; and attempting optional extraction without confirmed groups produces an informational message instead of a misleading ingestion error. Raw capture remains the primary connected state.
+- Verification performed: Impeccable UI detector returned no findings; `git diff --check` passed. Production logs show raw group/direct messages arriving after WhatsApp connection.
+- Deployment/push status: Pending scoped commit and push. Coolify service needing redeployment: `propai-lab:main-app` (`y18kprfw29mu6wclzgpgfrvv`).
+- Known limitations or failures: The extraction worker and controls remain available for workspaces that later want structured listings; this change does not start or stop that worker automatically.
+- Independent task-verifier verdict: **PARTIAL** pending deployment and browser verification.
+- Next action: Commit and push, redeploy `propai-lab:main-app`, then use raw capture with Instinct/MCP without starting optional extraction.
+
