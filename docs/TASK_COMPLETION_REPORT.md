@@ -995,3 +995,19 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Independent task-verifier verdict: **PARTIAL** pending deployment and browser smoke verification.
 - Next action: Commit/push, redeploy `propai-lab:main-app`, then hard-refresh WhatsApp → Groups and confirm all eligible groups are checked and the global banner remains connected.
 
+### Enable private-DM history access for Instinct and clarify raw capture state
+
+- Requested outcome: Import WhatsApp history only from private direct chats, keep history out of AI extraction, expose those messages to Instinct through a consent-gated `scope=dms`, and show raw capture status independently of optional extraction.
+- Files changed: `services/whatsmeow-ingestor/main.go`, `services/whatsmeow-ingestor/main_test.go`, `routers/external_agent.py`, `tests/test_external_agent_search.py`, `frontend/src/app/workspace/instinct/page.tsx`, `frontend/src/app/BrokerLandingClient.tsx`, `frontend/src/app/layout.tsx`, `frontend/src/components/layout/MobileDrawer.tsx`, `architecture.md`, `docs/PRODUCT.md`, and this report.
+- Behavior: History events and explicit backfill requests accept direct chats only; history rows remain marked processed with extraction suppressed. External search accepts `scope=dms`, filters `is_group=false`, and requires workspace DM consent plus the token's DM scope. The Instinct prompt now directs private-message searches to `scope=dms` and forbids falling back to `scope=all`. The shell reports `Raw capture active` or `Raw capture disconnected` from live session state, independent of extraction state.
+- Verification: Focused Python tests passed (7); Go ingestor tests passed; targeted ESLint had 0 errors with existing warnings; Impeccable detector returned no findings. Production `/openapi.json` advertises `^(groups|dms|all)$`. The frontend local build could not run because the checkout lacks four existing Radix modules (`react-dialog`, `react-separator`, `react-tabs`, `react-tooltip`); Coolify production builds completed successfully.
+- Push/deployment: Commits `3fad5c1a` (DM API/history/Instinct setup) and `3f5ce3a0` (raw-capture status) pushed to `origin/main`. Coolify `api` deployment `oie9cahvl0s93uu0dzn8v3e6` finished on `2290947a`; `Ingestor` deployment `y1n4qurcy9ri2mcw62lixtmi` finished healthy on `66415078`; `propai-lab:main-app` deployment `vqp88qnhe3vnw82b75h3rulw` finished on `3f5ce3a0`. A duplicate dashboard deployment was cancelled after the successful deployment.
+- Known limitations: The production API contract and service deployments are verified, but a signed-in browser smoke test and confirmation that the linked handset has delivered private history are still unverified. No live DM contents were read during this task.
+- Independent task-verifier verdict: **PARTIAL**.
+  - PASS — DM search is consent- and scope-gated, tenant-filtered, and published in production OpenAPI.
+  - PASS — history processing/backfill filters out groups, and imported history is suppressed from extraction.
+  - PASS — Instinct setup now tells the agent to use the DM-only scope without broadening access.
+  - PASS — deployed shell status distinguishes live raw capture from optional extraction.
+  - FAIL — live handset history population and authenticated browser display have not been confirmed.
+- Next action: Hard-refresh `app.propai.live`; confirm the header reads `Raw capture active`. Then ask Instinct to search the relevant private conversation using `/messages/search?scope=dms&q=<query>`; if no results arrive, reconnect the handset and confirm WhatsApp has completed its private-chat history sync.
+
