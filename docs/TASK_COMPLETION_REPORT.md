@@ -966,3 +966,18 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 
 - Deployment follow-up: Coolify deployment `iip0kyhx2fw2gblxlx1l6j23` finished successfully for `propai-lab:main-app` on commit `55dce2e19e6820fecd7fe253f1c4f38290fb245b` at 2026-11-11 11:22 UTC. Refresh the WhatsApp Groups page to see the raw-ingest-only wording.
 
+### Prevent extraction start 400 when group consent is missing
+
+- Requested outcome: Fix the WhatsApp Groups screen shown with a connected phone, zero selected groups, and an extraction-start 400 response.
+- Files changed: `frontend/src/app/connections/page.tsx` and this report.
+- Behavior: The admin/unlimited override now removes only the group-count cap; it does not bypass explicit group consent. Group checkboxes remain available, the start action is disabled until at least one persisted group is confirmed, and a defensive handler guard prevents stale clients or state races from submitting an invalid start.
+- Verification performed: `git diff --check` passed. Target-file ESLint completed with 0 errors and existing warnings. Repository TypeScript checking remains non-green because of unrelated pre-existing errors across the frontend; the changed file introduced no reported type error.
+- Deployment/push status: Pending scoped commit and push. Coolify service needing redeployment: `propai-lab:main-app` (`y18kprfw29mu6wclzgpgfrvv`).
+- Known limitations or failures: Production browser verification is pending redeployment; the API still correctly rejects direct invalid start requests as a safety boundary.
+- Independent task-verifier verdict: **PARTIAL**.
+  - PASS — unlimited/admin mode no longer hides selectable group checkboxes.
+  - PASS — optional extraction cannot be started from the UI without a persisted confirmed group.
+  - PASS — a defensive client-side guard prevents the screenshot’s invalid request path.
+  - FAIL — the deployed production page has not yet been redeployed and browser-smoke-tested.
+- Next action: Commit and push the scoped change, redeploy `propai-lab:main-app`, then refresh WhatsApp → Groups and confirm selecting/confirming a group enables optional extraction without the 400.
+

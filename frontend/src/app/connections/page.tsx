@@ -1311,6 +1311,16 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
   };
 
   const handleExtractionControl = async (action: "start" | "pause" | "stop") => {
+    // Extraction always requires an explicit, persisted group choice. The
+    // unlimited/admin override removes the count cap; it does not bypass
+    // consent. Keep this guard here as well as on the button so an older
+    // client or a state race cannot turn the API's 400 into a confusing UI
+    // error.
+    if (action === "start" && data && persistedSelectedCount === 0) {
+      setError("Select and confirm at least one WhatsApp group before starting extraction.");
+      setMessage(null);
+      return;
+    }
     setActiveControl(action);
     setError(null);
     setMessage(null);
@@ -1422,7 +1432,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
   );
   const persistedSelectedCount = data?.selected_count ?? persistedSelectedJids.size;
   const networkGroupCount = (data?.groups || []).filter((group) => group.network_owned).length;
-  const hasUnpersistedSelection = !data?.unlimited && (
+  const hasUnpersistedSelection = (
     selectedGroups.size !== persistedSelectedJids.size
     || Array.from(selectedGroups).some((jid) => !persistedSelectedJids.has(jid))
   );
@@ -1505,9 +1515,9 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
               {data.extraction_status === "running" ? "Running" : data.extraction_status === "paused" ? "Paused" : "Stopped"}
             </span>
           </div>
-          {!data.unlimited && persistedSelectedCount === 0 && !hasUnpersistedSelection && (
+          {persistedSelectedCount === 0 && !hasUnpersistedSelection && (
             <div className="mt-3 border-l-2 border-amber-400/50 bg-amber-400/[0.04] px-3 py-2 text-[11px] text-amber-200">
-              No groups are selected for optional extraction. Live raw capture for Instinct and MCP continues independently.
+              Select and confirm at least one group before starting optional extraction. Live raw capture for Instinct and MCP continues independently.
             </div>
           )}
           {hasUnpersistedSelection && (
@@ -1521,7 +1531,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                 <Check className="h-3 w-3" /> {savingSelection ? "Saving selection..." : `Confirm ${selectedGroups.size} group${selectedGroups.size === 1 ? "" : "s"}`}
               </button>
             )}
-            <button type="button" onClick={() => void handleExtractionControl("start")} disabled={activeControl !== null || savingSelection || hasUnpersistedSelection || data.extraction_status === "running" || (!data.unlimited && persistedSelectedCount === 0)} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/40 px-3 py-1.5 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-40">
+            <button type="button" onClick={() => void handleExtractionControl("start")} disabled={activeControl !== null || savingSelection || hasUnpersistedSelection || data.extraction_status === "running" || persistedSelectedCount === 0} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/40 px-3 py-1.5 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-40">
               <Play className="h-3 w-3" /> {activeControl === "start" ? "Starting..." : "Start optional extraction"}
             </button>
             <button type="button" onClick={() => void handleExtractionControl("pause")} disabled={activeControl !== null || data.extraction_status !== "running"} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 px-3 py-1.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40">
@@ -1607,7 +1617,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  {!data.unlimited && group.selectable !== false && (
+                  {group.selectable !== false && !group.opted_out && (
                     <input type="checkbox" checked={selectedGroups.has(group.group_jid)} onChange={() => toggleGroupSelection(group)} disabled={savingSelection} className="h-4 w-4 accent-emerald-400" aria-label={`Select ${whatsappGroupDisplayName(group)}`} />
                   )}
                   <div className="connection-group-name truncate text-sm font-semibold">{whatsappGroupDisplayName(group)}</div>
