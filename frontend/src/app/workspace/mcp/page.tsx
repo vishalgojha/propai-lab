@@ -51,12 +51,12 @@ export default function McpWorkspacePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ task, create_instinct_token: createToken, launch_browser_check: true }),
-      });
+      }, 15000);
       if (result.instinct_token) setExternalToken(result.instinct_token);
       setAgentMessage(result.instinct_token
         ? "Instinct is prepared. Copy the one-time token into Instinct Vault; PropAI will not show it again."
         : result.browser?.error || result.browser?.message || result.handoff || result.browser?.summary || "The integration task is ready.");
-      const refreshed = await fetchJSON<AgentStatus>("/integrations/agent/status");
+      const refreshed = await fetchJSON<AgentStatus>("/integrations/agent/status", undefined, 15000);
       setAgentStatus(refreshed);
     } catch (error) {
       setAgentMessage(error instanceof Error ? error.message : "The setup agent could not complete this task.");
@@ -176,7 +176,7 @@ export default function McpWorkspacePage() {
             <div key={task} className="rounded-xl border border-white/10 bg-black/20 p-4">
               <div className="font-semibold text-white">{label}</div>
               <p className="mt-1 text-xs leading-5 text-zinc-500">{detail}</p>
-              <button type="button" onClick={() => void runAgentTask(task as "instinct" | "claude" | "gemini" | "verify", task === "instinct")} disabled={agentBusy !== null} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-cyan-300/30 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-300/10 disabled:opacity-60">
+              <button type="button" onClick={() => void runAgentTask(task as "instinct" | "claude" | "gemini" | "verify", task === "instinct")} disabled={agentBusy === task} aria-busy={agentBusy === task} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-cyan-300/30 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-300/10 disabled:opacity-60">
                 <Play className="h-3.5 w-3.5" aria-hidden="true" />{agentBusy === task ? "Running…" : label}
               </button>
             </div>

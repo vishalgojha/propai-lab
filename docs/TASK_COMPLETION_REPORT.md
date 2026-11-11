@@ -833,3 +833,14 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
   - FAIL — production deployment and authenticated UI smoke verification remain outstanding.
 - Next action: Commit and push this scoped change, then redeploy `api` and `propai-lab:main-app`; click Prepare Instinct again and confirm the browser status message.
 
+### Prevent setup-agent controls from appearing globally triggered
+
+- Requested outcome: Make it clear that clicking one integration task does not trigger every task, and prevent a hung request from leaving the UI stuck indefinitely.
+- Files changed: `frontend/src/app/workspace/mcp/page.tsx` and this report.
+- Behavior: Only the clicked task button is disabled and marked busy. The setup-task and status requests now fail visibly after 15 seconds instead of leaving the page in `Running…` indefinitely.
+- Verification performed: Changed-page ESLint passed; `git diff --check` passed.
+- Deployment/push status: The API deployment for commit `09b51512` is still in progress; the dashboard deployment was queued. This frontend fix is not yet committed or deployed.
+- Known limitations or failures: Multiple different setup tasks can now be started concurrently; each remains independently labeled. The underlying API deployment must finish before the runtime preflight fix is available in production.
+- Independent task-verifier verdict: **PARTIAL** pending commit and dashboard deployment.
+- Next action: Commit and push this frontend fix, redeploy `propai-lab:main-app`, and retest the Instinct button in the authenticated workspace.
+
