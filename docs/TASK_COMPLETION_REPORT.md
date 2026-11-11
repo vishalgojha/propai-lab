@@ -909,3 +909,18 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 
 - Deployment follow-up: Coolify deployment `g7vdhcrwq7i3q8tfk6dmaqcb` finished successfully for `propai-lab:main-app` on commit `8ceb257e29dad97c32e6727506364d79424da84e` at 2026-11-11 08:35 UTC. The remaining verification is a browser hard refresh and production route check.
 
+### Add dedicated Instinct setup tab
+
+- Requested outcome: Add a dedicated Instinct tab in `app.propai.live` containing the PropAI API/Vault setup and a copy-ready prompt for Instinct WhatsApp.
+- Files changed: `frontend/src/app/account/page.tsx`, `frontend/src/app/workspace/instinct/page.tsx`, and this report.
+- Behavior: Account now includes an Instinct tab. It shows secret name `PROPAI_API_KEY`, the tenant-scoped PropAI API base URL, the exposed inventory/matches endpoints, a one-click prompt copy action, and an Instinct workspace link. The prompt explicitly tells Instinct to retrieve the secret from Vault and never request or display it. No API token is embedded in the UI or prompt.
+- Verification performed: Impeccable UI detector returned no findings; `git diff --check` passed. Repository-wide TypeScript checking remains blocked by pre-existing missing modules and unrelated configuration errors; the new page was not among the reported type errors.
+- Deployment/push status: Pending scoped commit and push. Coolify service needing redeployment: `propai-lab:main-app` (`y18kprfw29mu6wclzgpgfrvv`).
+- Known limitations or failures: Instinct must already support Vault access in the user’s account; PropAI cannot write the external Vault directly or reveal the one-time key.
+- Independent task-verifier verdict: **PARTIAL**.
+  - PASS — dedicated Account tab and route are wired.
+  - PASS — prompt includes Vault secret lookup, API authentication, endpoints, and source-grounded behavior.
+  - PASS — secret value is not committed or exposed by this change.
+  - FAIL — production deployment and authenticated browser smoke verification remain outstanding.
+- Next action: Commit and push the scoped change, redeploy `propai-lab:main-app`, then open Account → Instinct and test copying the prompt.
+
