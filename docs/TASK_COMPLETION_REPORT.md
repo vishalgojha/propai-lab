@@ -981,3 +981,5 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
   - FAIL — the deployed production page has not yet been redeployed and browser-smoke-tested.
 - Next action: Commit and push the scoped change, redeploy `propai-lab:main-app`, then refresh WhatsApp → Groups and confirm selecting/confirming a group enables optional extraction without the 400.
 
+- Deployment follow-up: Coolify deployment `ksh9icn5h60ejz03vvv7pnjb` finished successfully for `propai-lab:main-app` on commit `2290947a08bb81b621d9db0aedc3d6e7748c8319` at 2026-11-11 11:54 UTC. Coolify reported `finished` after 245 seconds. The independent task-verifier verdict is now **PASS** for the implemented and deployed acceptance conditions; an authenticated browser smoke test remains a recommended user-side confirmation after hard refresh.
+
