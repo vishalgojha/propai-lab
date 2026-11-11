@@ -57,6 +57,14 @@ not become WhatsApp source evidence or public inventory. Send an
 publishing, outbound WhatsApp, deletion, and budget changes remain outside this
 API and require a separate approval flow.
 
+Workspace owners can grant the write scopes to an existing key without
+rotating its secret. In Account → MCP, use the key's **Enable private CRM
+writes** control. The authenticated owner endpoint is
+`PUT /api/external/v1/keys/{key_id}/write-access` with
+`{"enabled":true}`. Setting `enabled` to `false` removes only the two CRM write
+scopes. Other scopes, including `raw_messages:dms`, are preserved; DM reads
+still require the separate workspace consent switch.
+
 The default message-search scope is `groups`. Use `scope=groups` for group
 messages and `scope=dms` only when the owner asks about private conversations.
 DM search requires both owner consent in Account → MCP and the `raw_messages:dms`

@@ -26,6 +26,10 @@ class ApiKeyCreate(BaseModel):
     write_access: bool = False
 
 
+class ApiKeyWriteAccessUpdate(BaseModel):
+    enabled: bool = True
+
+
 class DmConsentUpdate(BaseModel):
     enabled: bool = Field(description="Allow external agents to read this workspace's private WhatsApp DMs")
 
@@ -386,6 +390,34 @@ async def list_external_keys(user: dict = Depends(require_user), tenant_id: str 
         "id,label,key_prefix,scopes,expires_at,last_used_at,revoked_at,created_at"
     ).eq("tenant_id", tenant_id).order("created_at", desc=True).execute()
     return {"keys": result.data or []}
+
+
+@router.put("/keys/{key_id}/write-access")
+async def update_external_key_write_access(
+    key_id: str,
+    body: ApiKeyWriteAccessUpdate,
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
+    """Grant or remove private CRM write scopes on one existing key."""
+    await _require_org_permission(user, tenant_id, "manage_whatsapp")
+    result = storage.client.table("external_agent_api_keys").select(
+        "id,scopes"
+    ).eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").limit(1).execute()
+    key = (result.data or [None])[0] if result else None
+    if not key:
+        raise HTTPException(404, "Active external API key not found")
+
+    scopes = list(key.get("scopes") or [])
+    scopes = [scope for scope in scopes if scope not in WRITE_SCOPES]
+    if body.enabled:
+        scopes.extend(sorted(WRITE_SCOPES))
+    updated = storage.client.table("external_agent_api_keys").update(
+        {"scopes": scopes}
+    ).eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").execute()
+    if not updated.data:
+        raise HTTPException(409, "External API key changed; refresh the key list and retry")
+    return {"id": key_id, "scopes": scopes}
 
 
 @router.delete("/keys/{key_id}")

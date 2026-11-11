@@ -206,7 +206,10 @@ default. Owner-enabled `inventory:write` and `requirements:write` scopes may
 create only tenant-private CRM inventory and requirements. They cannot create
 source-backed market listings, publish, delete, send WhatsApp messages,
 activate ads, or change budgets. Token creation and revocation remain
-authenticated workspace actions.
+authenticated workspace actions. A workspace owner may also enable or remove
+those two write scopes on one existing key through an authenticated,
+tenant-scoped permission action; the key secret and its unrelated scopes are
+preserved. DM reads remain gated separately by workspace consent.
 
 ### Plan entitlements
 

@@ -13,12 +13,25 @@ type AgentStatus = {
   mcp?: { configured?: boolean; oauth?: boolean };
 };
 
+type ExternalAgentKey = {
+  id: string;
+  label: string;
+  key_prefix: string;
+  scopes: string[];
+  expires_at?: string | null;
+  last_used_at?: string | null;
+  revoked_at?: string | null;
+  created_at?: string;
+};
+
 export default function McpWorkspacePage() {
   const [copied, setCopied] = useState(false);
   const [externalToken, setExternalToken] = useState<string | null>(null);
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyMessage, setKeyMessage] = useState("");
   const [writeAccess, setWriteAccess] = useState(false);
+  const [externalKeys, setExternalKeys] = useState<ExternalAgentKey[]>([]);
+  const [keyScopeBusy, setKeyScopeBusy] = useState<string | null>(null);
   const [dmConsent, setDmConsent] = useState(false);
   const [dmConsentBusy, setDmConsentBusy] = useState(false);
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
@@ -26,6 +39,9 @@ export default function McpWorkspacePage() {
   const [agentMessage, setAgentMessage] = useState("");
 
   useEffect(() => {
+    void fetchJSON<{ keys: ExternalAgentKey[] }>("/external/v1/keys")
+      .then((result) => setExternalKeys(result.keys || []))
+      .catch(() => setKeyMessage("Could not load existing external API key permissions."));
     void fetchJSON<{ enabled: boolean }>("/external/v1/dm-consent")
       .then((result) => setDmConsent(Boolean(result.enabled)))
       .catch(() => setKeyMessage("Could not load private DM consent status."));
@@ -76,6 +92,9 @@ export default function McpWorkspacePage() {
     try {
       const result = await fetchJSON<{ token: string }>("/external/v1/keys", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label: "Instinct", write_access: writeAccess }) });
       setExternalToken(result.token);
+      void fetchJSON<{ keys: ExternalAgentKey[] }>("/external/v1/keys")
+        .then((refreshedKeys) => setExternalKeys(refreshedKeys.keys || []))
+        .catch(() => setKeyMessage("Token created, but the key list could not refresh."));
       setKeyMessage(writeAccess
         ? "This token can create private CRM inventory and requirements for this workspace. Copy it once, then save it in Instinct Vault."
         : "Copy this once, then save it in Instinct Vault. PropAI will not show it again.");
@@ -83,6 +102,26 @@ export default function McpWorkspacePage() {
       setKeyMessage(error instanceof Error ? error.message : "Could not create the token.");
     } finally {
       setKeyBusy(false);
+    }
+  }
+
+  async function updateKeyWriteAccess(key: ExternalAgentKey, enabled: boolean) {
+    setKeyScopeBusy(key.id);
+    setKeyMessage("");
+    try {
+      const result = await fetchJSON<{ scopes: string[] }>(`/external/v1/keys/${encodeURIComponent(key.id)}/write-access`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      setExternalKeys((current) => current.map((item) => item.id === key.id ? { ...item, scopes: result.scopes } : item));
+      setKeyMessage(enabled
+        ? `Private CRM writes enabled for ${key.label} (${key.key_prefix}). The API key itself is unchanged; DM access is unchanged.`
+        : `Private CRM writes removed from ${key.label} (${key.key_prefix}).`);
+    } catch (error) {
+      setKeyMessage(error instanceof Error ? error.message : "Could not update this API key's permissions.");
+    } finally {
+      setKeyScopeBusy(null);
     }
   }
 
@@ -155,6 +194,24 @@ export default function McpWorkspacePage() {
           <span><span className="font-semibold text-white">Allow private CRM writes</span><span className="mt-1 block leading-5 text-zinc-500">Instinct may create workspace-private listings and buyer requirements. It cannot publish, delete, send WhatsApp messages, activate ads, or change ad budgets.</span></span>
         </label>
         <button type="button" onClick={() => void createExternalToken()} disabled={keyBusy} className="mt-5 inline-flex items-center gap-2 rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{keyBusy ? "Creating…" : "Create Instinct token"}</button>
+        <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4">
+          <h3 className="text-sm font-semibold text-white">Existing external API keys</h3>
+          <p className="mt-1 text-xs leading-5 text-zinc-500">Enable private CRM writes on the current key without rotating its secret. This does not change private DM permission.</p>
+          <div className="mt-3 space-y-2">
+            {externalKeys.filter((key) => !key.revoked_at).map((key) => {
+              const hasWriteAccess = key.scopes.includes("inventory:write") && key.scopes.includes("requirements:write");
+              return <div key={key.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 px-3 py-3">
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-white">{key.label}</div>
+                  <code className="mt-1 block text-[11px] text-zinc-500">{key.key_prefix}</code>
+                  <div className="mt-1 text-[11px] text-zinc-400">{hasWriteAccess ? "Private CRM writes enabled" : "Read only"} · {key.scopes.includes("raw_messages:dms") ? "DM key scope present; workspace consent still applies" : "No DM key scope"}</div>
+                </div>
+                <button type="button" onClick={() => void updateKeyWriteAccess(key, !hasWriteAccess)} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{keyScopeBusy === key.id ? "Updating…" : hasWriteAccess ? "Remove write access" : "Enable private CRM writes"}</button>
+              </div>;
+            })}
+            {!externalKeys.some((key) => !key.revoked_at) && <p className="rounded-lg border border-white/10 px-3 py-4 text-xs text-zinc-500">No active external API keys found. Create a key above.</p>}
+          </div>
+        </div>
         <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4">
           <div className="flex items-start justify-between gap-4">
             <div>

@@ -1091,3 +1091,18 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
   - FAIL — signed-in live UI behavior was not independently confirmed.
 - Next action: Hard-refresh the app and confirm Account, shared navigation, and Market Inbox no longer show Drive controls; opening the old Google Drive URL should land on Instinct.
 
+### Grant private CRM write scopes to an existing Instinct key
+
+- Requested outcome: Let Instinct create private inventory and requirement records using its existing API key, without replacing the secret or changing private-DM permission.
+- Files changed: `routers/external_agent.py`, `frontend/src/app/workspace/mcp/page.tsx`, `docs/EXTERNAL_AGENT_API.md`, `docs/DECISIONS.md`, `architecture.md`, and this report.
+- Behavior: Account → MCP lists active keys by label and prefix. A workspace manager can enable or remove only `inventory:write` and `requirements:write` on one active tenant-owned key. The key secret and all other scopes are preserved; DM reads remain gated by the existing workspace consent switch.
+- Verification performed: `python3 -m py_compile routers/external_agent.py` passed; targeted ESLint on the MCP Account page passed; `git diff --check` passed. No tests were run. Independent task-verifier returned **PARTIAL**: authorization, tenant/key scoping, and scope preservation pass; no live key was changed and deployment is pending.
+- Push/deployment status: Pending commit and redeployment of `api` (`djbbkdp28uhoc5p8cfnjr642`) and `propai-lab:main-app` (`y18kprfw29mu6wclzgpgfrvv`).
+- Known limitations: This session has no authenticated workspace-owner session, so it cannot invoke the live permission action. After deployment, the owner must select the matching key prefix and enable private CRM writes; the API secret will not need to change.
+- Independent task-verifier verdict: **PARTIAL**.
+  - PASS — the update endpoint requires `manage_whatsapp` and constrains the update to one active key in the caller's tenant.
+  - PASS — the endpoint only changes the two CRM write scopes and preserves DM and other scopes.
+  - PASS — the Account UI offers a per-key action without displaying or rotating the secret.
+  - FAIL — deployment and the actual live key scope update are pending.
+- Next action: Push and deploy both services. In Account → MCP, enable writes for the prefix matching Instinct's saved key, then verify `/health` shows the two write scopes and the DM consent setting remains disabled.
+

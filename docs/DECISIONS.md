@@ -2,6 +2,21 @@
 
 Record significant technical and product decisions. Format: date, decision, context, outcome.
 
+## 2026-11-11 — Allow write scopes on existing external-agent keys
+
+**Decision:** Let workspace managers enable or remove private CRM write scopes
+on one active external-agent key without rotating its secret. Preserve the
+key's other scopes; private DM access remains governed by its separate
+workspace consent.
+
+**Why:** Instinct already holds the one-time API secret, so replacing a
+read-only key would require an unnecessary Vault update and interruption.
+
+**Outcome:** Account → MCP lists active key prefixes and offers a per-key
+permission action. The authenticated API checks workspace permission and
+tenant ownership before changing only `inventory:write` and
+`requirements:write`.
+
 ## 2026-11-11 — Retire Google Drive controls from the workspace UI
 
 **Decision:** Remove Google Drive setup and export actions from Account,
