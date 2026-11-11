@@ -942,3 +942,14 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 
 - Deployment follow-up: Coolify deployment `wj6937nh8wade6p8vf65l1po` finished successfully for `propai-lab:main-app` on commit `1793f9c73ae01ad6cd1f48de20cede78635bb0d6` at 2026-11-11 11:02 UTC. Refresh WhatsApp → Groups to see the live capture status.
 
+### Clarify extraction status versus WhatsApp capture
+
+- Requested outcome: Make it clear that a connected WhatsApp number can have extraction stopped without raw message capture being disconnected.
+- Files changed: `frontend/src/app/layout.tsx` and this report.
+- Behavior: Header, sidebar, mobile status, and status-pill labels now say `Extraction paused` or `Extraction stopped` instead of the ambiguous `Syncing` wording. The WhatsApp connection status remains separately visible.
+- Verification performed: Impeccable UI detector returned no findings; `git diff --check` passed. Production ingestor logs already show automatic raw group/direct message receipt after connection.
+- Deployment/push status: Pending scoped commit and push. Coolify service needing redeployment: `propai-lab:main-app` (`y18kprfw29mu6wclzgpgfrvv`).
+- Known limitations or failures: Extraction remains intentionally manual and must be started separately; this label change does not alter capture or extraction behavior.
+- Independent task-verifier verdict: **PARTIAL** pending deployment and browser verification.
+- Next action: Push and redeploy `propai-lab:main-app`, then confirm the header says `WhatsApp connected` and `Extraction stopped` when extraction is not running.
+

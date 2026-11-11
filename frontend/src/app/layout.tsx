@@ -309,9 +309,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const extractionLabel = extractionHealth === null
     ? "Checking messages"
     : extractionStatus === "paused"
-      ? "Syncing paused"
+      ? "Extraction paused"
       : extractionStatus === "stopped"
-        ? "Syncing stopped"
+        ? "Extraction stopped"
         : "Reading messages";
   const whatsappLabel = !hasConfiguredWhatsApp
     ? "Add WhatsApp number"
