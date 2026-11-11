@@ -57,8 +57,8 @@ export function MobileDrawer({
   isSuperAdmin,
   whatsappConnected,
   whatsappPhone,
-  extractionLabel,
-  extractionWarning,
+  captureLabel,
+  captureWarning,
   buildLabel,
 }: {
   open: boolean;
@@ -66,8 +66,8 @@ export function MobileDrawer({
   isSuperAdmin: boolean;
   whatsappConnected: boolean | null;
   whatsappPhone?: string | null;
-  extractionLabel: string;
-  extractionWarning: boolean;
+  captureLabel: string;
+  captureWarning: boolean;
   buildLabel: string;
 }) {
   const pathname = usePathname();
@@ -201,7 +201,7 @@ export function MobileDrawer({
           <span className="min-w-0 flex-1 truncate text-zinc-300">
             {whatsappConnected ? `WhatsApp · ${whatsappPhone || "Connected"}` : whatsappConnected === false ? "Connect WhatsApp" : "Checking WhatsApp"}
           </span>
-          <span className={`shrink-0 truncate ${extractionWarning ? "text-amber-300" : "text-zinc-600"}`}>{extractionLabel}</span>
+          <span className={`shrink-0 truncate ${captureWarning ? "text-amber-300" : "text-zinc-600"}`}>{captureLabel}</span>
           <span className="shrink-0 border-l border-white/10 pl-2 font-mono text-[10px] text-zinc-500" title={buildHint}>{buildLabel}</span>
           <button
             type="button"
