@@ -57,6 +57,15 @@ not become WhatsApp source evidence or public inventory. Send an
 publishing, outbound WhatsApp, deletion, and budget changes remain outside this
 API and require a separate approval flow.
 
+Writes containing sensitive CRM fields such as contact details, owner/contact
+identity, quotes, budgets, or phone numbers return `202 approval_required` and
+are not saved until the workspace owner approves them in Account → MCP. Every
+write attempt is recorded in the tenant-scoped external-agent audit log,
+including rejected, failed, replayed, and approved outcomes. Workspace owners
+can rotate a key with `POST /keys/{key_id}/rotate`; rotation revokes the old
+secret immediately and returns a new one-time token. Never put tokens or raw
+phone values into an audit note.
+
 Workspace owners can grant the write scopes to an existing key without
 rotating its secret. In Account → MCP, use the key's **Enable private CRM
 writes** control. The authenticated owner endpoint is
@@ -64,6 +73,10 @@ writes** control. The authenticated owner endpoint is
 `{"enabled":true}`. Setting `enabled` to `false` removes only the two CRM write
 scopes. Other scopes, including `raw_messages:dms`, are preserved; DM reads
 still require the separate workspace consent switch.
+
+Pending sensitive changes are visible only to authenticated workspace owners
+at `GET /approvals`. Approve or reject one with
+`POST /approvals/{approval_id}/decision` and `{"approved":true|false}`.
 
 The default message-search scope is `groups`. Use `scope=groups` for group
 messages and `scope=dms` only when the owner asks about private conversations.

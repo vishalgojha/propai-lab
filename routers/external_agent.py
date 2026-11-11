@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from routers.common import _require_org_permission, require_tenant, require_user, storage
@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 RAW_MESSAGE_COLUMNS = "id,group_name,sender,sender_phone,message,message_type,timestamp,source,is_group,processed"
 EXTERNAL_AGENT_DOCS = Path(__file__).resolve().parents[1] / "docs" / "EXTERNAL_AGENT_API.md"
 WRITE_SCOPES = {"inventory:write", "requirements:write"}
+SENSITIVE_INVENTORY_FIELDS = {"contact_number", "owner_name", "contact_name", "quote"}
+SENSITIVE_REQUIREMENT_FIELDS = {"phone", "budget_min", "budget_max"}
 
 
 class ApiKeyCreate(BaseModel):
@@ -28,6 +30,11 @@ class ApiKeyCreate(BaseModel):
 
 class ApiKeyWriteAccessUpdate(BaseModel):
     enabled: bool = True
+
+
+class ApprovalDecision(BaseModel):
+    approved: bool
+    note: str = ""
 
 
 class DmConsentUpdate(BaseModel):
@@ -110,6 +117,47 @@ def _require_dm_consent(key: dict):
             "Private DM access is disabled. The workspace owner must explicitly enable it in Account → MCP.",
         )
     _require_scope(key, "raw_messages:dms")
+
+
+def _redact_payload(payload: dict) -> dict:
+    sensitive = {"phone", "contact_number", "owner_name", "contact_name", "quote", "budget_min", "budget_max"}
+    return {
+        str(field): "[REDACTED]" if str(field) in sensitive else value
+        for field, value in payload.items()
+        if str(field) not in {"token", "api_key", "authorization"}
+    }
+
+
+def _write_audit_start(key: dict, operation: str, entity_type: str, payload: dict, sensitive_fields: list[str], *, status: str = "started", request_id: str = "") -> str:
+    result = storage.client.table("external_agent_write_audit_log").insert({
+        "tenant_id": str(key["tenant_id"]),
+        "api_key_id": key.get("id"),
+        "operation": operation,
+        "entity_type": entity_type,
+        "status": status,
+        "request_id": request_id[:160],
+        "idempotency_key": str(payload.get("_idempotency_key") or "")[:160],
+        "sensitive_fields": sensitive_fields,
+        "payload": _redact_payload(payload),
+    }).execute()
+    audit_id = ((result.data or [None])[0] or {}).get("id") if result else None
+    if not audit_id:
+        raise HTTPException(503, "Write audit is unavailable; no CRM mutation was performed")
+    return str(audit_id)
+
+
+def _write_audit_finish(audit_id: str, status: str, *, entity_id: str = "", result: dict | None = None, error_code: str = ""):
+    storage.client.table("external_agent_write_audit_log").update({
+        "status": status,
+        "entity_id": str(entity_id or ""),
+        "result": result or {},
+        "error_code": error_code[:120],
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", audit_id).execute()
+
+
+def _sensitive_fields(payload: dict, fields: set[str]) -> list[str]:
+    return sorted(field for field in fields if payload.get(field) not in (None, "", [], {}))
 
 
 @router.get("/messages/search")
@@ -265,15 +313,40 @@ async def external_create_inventory(
         payload = _normalize_inventory_payload(body)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    normalized_idempotency_key = idempotency_key.strip() if idempotency_key else ""
+    if normalized_idempotency_key:
+        payload["_idempotency_key"] = normalized_idempotency_key
+    sensitive_fields = _sensitive_fields(payload, SENSITIVE_INVENTORY_FIELDS)
+    audit_id = str(key.get("_audit_id") or "") if key.get("_approval_granted") else _write_audit_start(key, "create", "crm_inventory", payload, sensitive_fields)
+    if sensitive_fields and not key.get("_approval_granted"):
+        approval = storage.client.table("external_agent_write_approvals").insert({
+            "tenant_id": str(key["tenant_id"]),
+            "audit_id": audit_id,
+            "api_key_id": key.get("id"),
+            "operation": "create",
+            "entity_type": "crm_inventory",
+            "payload": payload,
+            "sensitive_fields": sensitive_fields,
+        }).execute()
+        approval_id = ((approval.data or [None])[0] or {}).get("id") if approval else None
+        if not approval_id:
+            _write_audit_finish(audit_id, "failed", error_code="approval_unavailable")
+            raise HTTPException(503, "Approval request could not be created")
+        _write_audit_finish(audit_id, "pending_approval")
+        return JSONResponse(status_code=202, content={
+            "ok": False, "private": True, "approval_required": True,
+            "approval_id": str(approval_id), "audit_id": audit_id,
+            "sensitive_fields": sensitive_fields,
+        })
     custom_fields = dict(payload.get("custom_fields") or {})
     custom_fields["_external_agent"] = str(key.get("label") or "external_agent")[:80]
-    if idempotency_key:
-        normalized_idempotency_key = idempotency_key.strip()
+    if normalized_idempotency_key:
         existing = storage.client.table("crm_inventory").select("*").eq(
             "tenant_id", str(key["tenant_id"])
         ).contains("custom_fields", {"_idempotency_key": normalized_idempotency_key}).limit(1).execute()
         existing_row = (existing.data or [None])[0] if existing else None
         if existing_row:
+            _write_audit_finish(audit_id, "succeeded", entity_id=str(existing_row.get("id") or ""), result={"idempotent_replay": True})
             return {"ok": True, "private": True, "entity": "crm_inventory", "record": existing_row, "idempotent_replay": True}
         custom_fields["_idempotency_key"] = normalized_idempotency_key
     payload.update({
@@ -285,7 +358,9 @@ async def external_create_inventory(
     result = storage.client.table("crm_inventory").insert(payload).execute()
     row = (result.data or [None])[0] if result else None
     if not row:
+        _write_audit_finish(audit_id, "failed", error_code="inventory_insert_empty")
         raise HTTPException(503, "Private inventory could not be saved")
+    _write_audit_finish(audit_id, "succeeded", entity_id=str(row.get("id") or ""), result={"private": True})
     return {"ok": True, "private": True, "entity": "crm_inventory", "record": row}
 
 
@@ -302,6 +377,28 @@ async def external_create_requirement(
     phone = "".join(ch for ch in str(body.get("phone") or "") if ch.isdigit())[-15:] or None
     if len(raw_text) < 3 and not body.get("location_pref"):
         raise HTTPException(400, "raw_text or location_pref is required")
+    sensitive_fields = _sensitive_fields(body, SENSITIVE_REQUIREMENT_FIELDS)
+    audit_id = str(key.get("_audit_id") or "") if key.get("_approval_granted") else _write_audit_start(key, "create", "client_requirements", body, sensitive_fields)
+    if sensitive_fields and not key.get("_approval_granted"):
+        approval = storage.client.table("external_agent_write_approvals").insert({
+            "tenant_id": tenant_id,
+            "audit_id": audit_id,
+            "api_key_id": key.get("id"),
+            "operation": "create",
+            "entity_type": "client_requirements",
+            "payload": body,
+            "sensitive_fields": sensitive_fields,
+        }).execute()
+        approval_id = ((approval.data or [None])[0] or {}).get("id") if approval else None
+        if not approval_id:
+            _write_audit_finish(audit_id, "failed", error_code="approval_unavailable")
+            raise HTTPException(503, "Approval request could not be created")
+        _write_audit_finish(audit_id, "pending_approval")
+        return JSONResponse(status_code=202, content={
+            "ok": False, "private": True, "approval_required": True,
+            "approval_id": str(approval_id), "audit_id": audit_id,
+            "sensitive_fields": sensitive_fields,
+        })
     clients = storage.client.table("clients").select("id").eq("tenant_id", tenant_id)
     if phone:
         clients = clients.eq("phone", phone)
@@ -317,6 +414,7 @@ async def external_create_requirement(
         }).execute()
         client_id = ((client.data or [None])[0] or {}).get("id")
     if client_id is None:
+        _write_audit_finish(audit_id, "failed", error_code="client_insert_empty")
         raise HTTPException(503, "Client record could not be saved")
     requirement = storage.client.table("client_requirements").insert({
         "tenant_id": tenant_id,
@@ -333,8 +431,67 @@ async def external_create_requirement(
     }).execute()
     row = (requirement.data or [None])[0] if requirement else None
     if not row:
+        _write_audit_finish(audit_id, "failed", error_code="requirement_insert_empty")
         raise HTTPException(503, "Requirement could not be saved")
+    _write_audit_finish(audit_id, "succeeded", entity_id=str(row.get("id") or ""), result={"client_id": client_id, "private": True})
     return {"ok": True, "private": True, "entity": "client_requirements", "client_id": client_id, "record": row}
+
+
+@router.get("/approvals")
+async def list_external_write_approvals(
+    user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant),
+):
+    await _require_org_permission(user, tenant_id, "manage_whatsapp")
+    result = storage.client.table("external_agent_write_approvals").select(
+        "id,audit_id,operation,entity_type,payload,sensitive_fields,status,requested_at,decided_at,decision_note"
+    ).eq("tenant_id", tenant_id).eq("status", "pending").order("requested_at", desc=True).limit(100).execute()
+    return {"approvals": result.data or []}
+
+
+@router.post("/approvals/{approval_id}/decision")
+async def decide_external_write_approval(
+    approval_id: str,
+    body: ApprovalDecision,
+    user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant),
+):
+    await _require_org_permission(user, tenant_id, "manage_whatsapp")
+    result = storage.client.table("external_agent_write_approvals").select(
+        "*"
+    ).eq("id", approval_id).eq("tenant_id", tenant_id).eq("status", "pending").limit(1).execute()
+    approval = (result.data or [None])[0] if result else None
+    if not approval:
+        raise HTTPException(404, "Pending approval not found")
+    now = datetime.now(timezone.utc).isoformat()
+    update = storage.client.table("external_agent_write_approvals").update({
+        "status": "approved" if body.approved else "rejected",
+        "decided_at": now,
+        "decided_by": user["id"],
+        "decision_note": body.note.strip()[:500],
+    }).eq("id", approval_id).eq("tenant_id", tenant_id).eq("status", "pending").execute()
+    if not update.data:
+        raise HTTPException(409, "Approval was already decided")
+    if not body.approved:
+        _write_audit_finish(str(approval["audit_id"]), "rejected", error_code="owner_rejected")
+        return {"ok": True, "approved": False, "approval_id": approval_id}
+
+    key_result = storage.client.table("external_agent_api_keys").select(
+        "id,tenant_id,created_by,label,scopes,expires_at,revoked_at"
+    ).eq("id", approval.get("api_key_id")).eq("tenant_id", tenant_id).is_("revoked_at", "null").limit(1).execute()
+    key = (key_result.data or [None])[0] if key_result else None
+    if not key:
+        _write_audit_finish(str(approval["audit_id"]), "failed", error_code="key_revoked")
+        raise HTTPException(409, "The external key was revoked before approval was applied")
+    key["_approval_granted"] = True
+    key["_audit_id"] = str(approval["audit_id"])
+    payload = approval.get("payload") or {}
+    if approval.get("entity_type") == "crm_inventory":
+        record = await external_create_inventory(payload, key, payload.get("_idempotency_key"))
+    elif approval.get("entity_type") == "client_requirements":
+        record = await external_create_requirement(payload, key)
+    else:
+        _write_audit_finish(str(approval["audit_id"]), "failed", error_code="unsupported_entity")
+        raise HTTPException(400, "Unsupported approval entity")
+    return {"ok": True, "approved": True, "approval_id": approval_id, "result": record}
 
 
 @router.get("/dm-consent")
@@ -412,22 +569,69 @@ async def update_external_key_write_access(
     scopes = [scope for scope in scopes if scope not in WRITE_SCOPES]
     if body.enabled:
         scopes.extend(sorted(WRITE_SCOPES))
+    audit_id = _write_audit_start({"tenant_id": tenant_id, "id": key_id}, "permission_change", "external_agent_api_key", {"key_id": key_id, "enabled": body.enabled}, [])
     updated = storage.client.table("external_agent_api_keys").update(
         {"scopes": scopes}
     ).eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").execute()
     if not updated.data:
+        _write_audit_finish(audit_id, "failed", error_code="key_update_empty")
         raise HTTPException(409, "External API key changed; refresh the key list and retry")
+    _write_audit_finish(audit_id, "succeeded", entity_id=key_id, result={"enabled": body.enabled})
     return {"id": key_id, "scopes": scopes}
 
 
 @router.delete("/keys/{key_id}")
 async def revoke_external_key(key_id: str, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    await _require_org_permission(user, tenant_id, "manage_whatsapp")
+    audit_id = _write_audit_start({"tenant_id": tenant_id, "id": key_id}, "revoke", "external_agent_api_key", {"key_id": key_id}, [])
     result = storage.client.table("external_agent_api_keys").update(
         {"revoked_at": datetime.now(timezone.utc).isoformat()}
     ).eq("id", key_id).eq("tenant_id", tenant_id).execute()
     if not result.data:
+        _write_audit_finish(audit_id, "failed", error_code="key_revoke_empty")
         raise HTTPException(404, "External API key not found")
+    _write_audit_finish(audit_id, "succeeded", entity_id=key_id, result={"revoked": True})
     return {"ok": True, "revoked": True}
+
+
+@router.post("/keys/{key_id}/rotate")
+async def rotate_external_key(
+    key_id: str,
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
+    """Issue a replacement secret and revoke the old secret immediately."""
+    await _require_org_permission(user, tenant_id, "manage_whatsapp")
+    old_result = storage.client.table("external_agent_api_keys").select(
+        "id,label,scopes"
+    ).eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").limit(1).execute()
+    old_key = (old_result.data or [None])[0] if old_result else None
+    if not old_key:
+        raise HTTPException(404, "Active external API key not found")
+    audit_key = {"tenant_id": tenant_id, "id": key_id}
+    audit_id = _write_audit_start(audit_key, "rotate", "external_agent_api_key", {"key_id": key_id}, [])
+    token = KEY_PREFIX + secrets.token_urlsafe(32)
+    created = storage.client.table("external_agent_api_keys").insert({
+        "tenant_id": tenant_id,
+        "created_by": user["id"],
+        "label": old_key.get("label") or "Instinct",
+        "key_prefix": token[:13],
+        "key_hash": _digest(token),
+        "scopes": old_key.get("scopes") or [],
+    }).execute()
+    replacement = (created.data or [None])[0] if created else None
+    if not replacement:
+        _write_audit_finish(audit_id, "failed", error_code="replacement_insert_empty")
+        raise HTTPException(503, "Replacement external API key could not be created")
+    revoked = storage.client.table("external_agent_api_keys").update({
+        "revoked_at": datetime.now(timezone.utc).isoformat(),
+        "replaced_by": replacement.get("id"),
+    }).eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").execute()
+    if not revoked.data:
+        _write_audit_finish(audit_id, "failed", error_code="old_key_revoke_empty")
+        raise HTTPException(409, "Could not revoke the old key; rotate again after refreshing")
+    _write_audit_finish(audit_id, "succeeded", entity_id=str(replacement.get("id") or ""), result={"old_key_revoked": True})
+    return {"ok": True, "key": replacement, "token": token, "warning": "The old token is revoked. Save this replacement now; it will not be shown again."}
 
 
 async def _tenant_parsed(*, limit: int, offset: int, kind: str, search: str = "") -> list[dict]:

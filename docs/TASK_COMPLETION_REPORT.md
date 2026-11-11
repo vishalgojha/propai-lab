@@ -1075,6 +1075,17 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Independent task-verifier verdict: **PARTIAL** — implementation and deployment pass; authenticated prompt-copy smoke verification is not available in this environment.
 - Next action: Copy the prompt from Account → Instinct and confirm it contains the `/health` scope-discovery instructions.
 
+### Add external-agent token rotation, write audit logs, and sensitive CRM approvals
+
+- Requested outcome: Rotate external-agent secrets, audit every external-agent write, and require explicit owner approval for sensitive CRM changes.
+- Files changed: Added `supabase/migrations/20261111170000_external_agent_write_security.sql`; updated `routers/external_agent.py`, `frontend/src/app/workspace/mcp/page.tsx`, `docs/EXTERNAL_AGENT_API.md`, `architecture.md`, and this report.
+- Behavior: Owners can rotate keys, which revokes the prior secret immediately. CRM write attempts create tenant-scoped audit records with redacted audit payloads. Writes containing contact identity/details, phones, quotes, or budgets pause as pending approvals; owners can review the request in Account → MCP and approve or reject it. Approval executes the original tenant-scoped write only if the key remains active.
+- Verification performed: `python3 -m py_compile routers/external_agent.py` passed; focused external-agent tests passed (5); targeted frontend ESLint completed with 0 errors; migration reviewed for RLS, tenant indexes, and service-role write access. Production deployment is pending migration/API/dashboard redeployment.
+- Deployment/push status: Not yet committed or pushed.
+- Known limitations: The migration must be applied before the new endpoints can operate. Approval payloads are visible only to authenticated workspace members with the existing `manage_whatsapp` permission. Production smoke verification will require creating a test approval and rotating a non-critical token.
+- Independent task-verifier verdict: **PARTIAL** pending migration application, deployment, and authenticated smoke verification.
+- Next action: Apply the migration, commit and push only the scoped files, redeploy `api` and `propai-lab:main-app`, then verify rotation, audit rows, sensitive-write pause, approval, rejection, and tenant isolation.
+
 ### Retire Google Drive setup and export UI in favor of Instinct
 
 - Requested outcome: Remove the Google Drive setup/export UI because Instinct/MCP is the supported external-agent workflow, and explain why Exports appeared in every workspace account.

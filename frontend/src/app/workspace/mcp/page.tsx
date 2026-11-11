@@ -24,6 +24,14 @@ type ExternalAgentKey = {
   created_at?: string;
 };
 
+type ExternalWriteApproval = {
+  id: string;
+  entity_type: string;
+  sensitive_fields: string[];
+  payload?: Record<string, unknown>;
+  requested_at: string;
+};
+
 export default function McpWorkspacePage() {
   const [copied, setCopied] = useState(false);
   const [externalToken, setExternalToken] = useState<string | null>(null);
@@ -32,6 +40,7 @@ export default function McpWorkspacePage() {
   const [writeAccess, setWriteAccess] = useState(false);
   const [externalKeys, setExternalKeys] = useState<ExternalAgentKey[]>([]);
   const [keyScopeBusy, setKeyScopeBusy] = useState<string | null>(null);
+  const [approvals, setApprovals] = useState<ExternalWriteApproval[]>([]);
   const [dmConsent, setDmConsent] = useState(false);
   const [dmConsentBusy, setDmConsentBusy] = useState(false);
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
@@ -42,6 +51,9 @@ export default function McpWorkspacePage() {
     void fetchJSON<{ keys: ExternalAgentKey[] }>("/external/v1/keys")
       .then((result) => setExternalKeys(result.keys || []))
       .catch(() => setKeyMessage("Could not load existing external API key permissions."));
+    void fetchJSON<{ approvals: ExternalWriteApproval[] }>("/external/v1/approvals")
+      .then((result) => setApprovals(result.approvals || []))
+      .catch(() => setKeyMessage("Could not load pending CRM approvals."));
     void fetchJSON<{ enabled: boolean }>("/external/v1/dm-consent")
       .then((result) => setDmConsent(Boolean(result.enabled)))
       .catch(() => setKeyMessage("Could not load private DM consent status."));
@@ -122,6 +134,34 @@ export default function McpWorkspacePage() {
       setKeyMessage(error instanceof Error ? error.message : "Could not update this API key's permissions.");
     } finally {
       setKeyScopeBusy(null);
+    }
+  }
+
+  async function rotateKey(key: ExternalAgentKey) {
+    setKeyScopeBusy(key.id);
+    setKeyMessage("");
+    try {
+      const result = await fetchJSON<{ token: string }>(`/external/v1/keys/${encodeURIComponent(key.id)}/rotate`, { method: "POST" });
+      setExternalToken(result.token);
+      setKeyMessage(`Token rotated for ${key.label}. The old token is revoked; save this replacement in Instinct Vault.`);
+      const refreshed = await fetchJSON<{ keys: ExternalAgentKey[] }>("/external/v1/keys");
+      setExternalKeys(refreshed.keys || []);
+    } catch (error) {
+      setKeyMessage(error instanceof Error ? error.message : "Could not rotate this API key.");
+    } finally {
+      setKeyScopeBusy(null);
+    }
+  }
+
+  async function decideApproval(approvalId: string, approved: boolean) {
+    try {
+      await fetchJSON(`/external/v1/approvals/${encodeURIComponent(approvalId)}/decision`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approved }),
+      });
+      setApprovals((current) => current.filter((item) => item.id !== approvalId));
+      setKeyMessage(approved ? "Approved. The CRM write has been applied." : "Approval rejected; no CRM record was changed.");
+    } catch (error) {
+      setKeyMessage(error instanceof Error ? error.message : "Could not decide this approval.");
     }
   }
 
@@ -206,12 +246,20 @@ export default function McpWorkspacePage() {
                   <code className="mt-1 block text-[11px] text-zinc-500">{key.key_prefix}</code>
                   <div className="mt-1 text-[11px] text-zinc-400">{hasWriteAccess ? "Private CRM writes enabled" : "Read only"} · {key.scopes.includes("raw_messages:dms") ? "DM key scope present; workspace consent still applies" : "No DM key scope"}</div>
                 </div>
-                <button type="button" onClick={() => void updateKeyWriteAccess(key, !hasWriteAccess)} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{keyScopeBusy === key.id ? "Updating…" : hasWriteAccess ? "Remove write access" : "Enable private CRM writes"}</button>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => void updateKeyWriteAccess(key, !hasWriteAccess)} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{keyScopeBusy === key.id ? "Updating…" : hasWriteAccess ? "Remove write access" : "Enable private CRM writes"}</button>
+                  <button type="button" onClick={() => void rotateKey(key)} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5 disabled:opacity-60">Rotate token</button>
+                </div>
               </div>;
             })}
             {!externalKeys.some((key) => !key.revoked_at) && <p className="rounded-lg border border-white/10 px-3 py-4 text-xs text-zinc-500">No active external API keys found. Create a key above.</p>}
           </div>
         </div>
+        {approvals.length > 0 && <div className="mt-5 rounded-xl border border-red-300/20 bg-red-300/[0.04] p-4">
+          <h3 className="text-sm font-semibold text-white">Sensitive CRM approvals</h3>
+          <p className="mt-1 text-xs leading-5 text-zinc-400">These changes are paused until you approve them. Review the request in Instinct or your CRM context before allowing it.</p>
+          <div className="mt-3 space-y-2">{approvals.map((approval) => <div key={approval.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 px-3 py-3"><div><div className="text-xs font-semibold text-white">{approval.entity_type}</div><div className="mt-1 text-[11px] text-zinc-400">Sensitive: {approval.sensitive_fields.join(", ")}</div><code className="mt-1 block max-w-xl break-all text-[11px] text-zinc-500">{JSON.stringify(approval.payload || {})}</code></div><div className="flex gap-2"><button type="button" onClick={() => void decideApproval(approval.id, false)} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300">Reject</button><button type="button" onClick={() => void decideApproval(approval.id, true)} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black">Approve</button></div></div>)}</div>
+        </div>}
         <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4">
           <div className="flex items-start justify-between gap-4">
             <div>

@@ -209,7 +209,11 @@ activate ads, or change budgets. Token creation and revocation remain
 authenticated workspace actions. A workspace owner may also enable or remove
 those two write scopes on one existing key through an authenticated,
 tenant-scoped permission action; the key secret and its unrelated scopes are
-preserved. DM reads remain gated separately by workspace consent.
+preserved. Sensitive CRM writes pause in a tenant-scoped approval queue until
+an authenticated workspace owner approves them; every external-agent write
+attempt is recorded with redacted payload metadata and an outcome. Key rotation
+revokes the prior secret immediately. DM reads remain gated separately by
+workspace consent.
 
 ### Plan entitlements
 
