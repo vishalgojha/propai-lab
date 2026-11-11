@@ -220,6 +220,12 @@ from active external tokens. Consent is an owner/administrator action. The REST 
 the source-evidence warning; no transport payload blobs or cross-tenant rows
 are returned.
 
+The public `GET /api/external/v1/docs` endpoint serves the versioned
+`docs/EXTERNAL_AGENT_API.md` bootstrap guide for new external-agent sessions.
+It contains endpoint, authentication, consent, and evidence-handling rules but
+no tenant data or credential values. The machine-readable OpenAPI schema remains
+available separately.
+
 WhatsApp history sync persists only direct-chat conversations. Historical raw
 messages are marked processed with extraction suppressed, so history is
 available as private source evidence to an authorized external agent but never

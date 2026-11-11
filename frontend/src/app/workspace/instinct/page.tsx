@@ -5,6 +5,10 @@ import { Check, Copy, ExternalLink, KeyRound } from "lucide-react";
 
 const INSTINCT_PROMPT = `Use my PropAI integration.
 
+At the start of every new instance, fetch and read the public API guide:
+https://api.propai.live/api/external/v1/docs
+Follow its authentication, permission, privacy, and evidence rules throughout this conversation.
+
 Retrieve the API secret from Instinct Vault using the exact secret name:
 PROPAI_API_KEY
 
@@ -17,6 +21,7 @@ Authenticate every request using:
 X-API-Key: <value from PROPAI_API_KEY>
 
 Available endpoints:
+- Read integration instructions: GET /docs (public; read this first for every new instance)
 - Search inventory: GET /listings/search
 - Search WhatsApp messages: GET /messages/search?scope=groups|dms&q=<query>&limit=25
 - Fetch a matching WhatsApp message: GET /messages/{raw_message_id}

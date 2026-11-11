@@ -4,8 +4,10 @@ import hashlib
 import logging
 import secrets
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from routers.common import _require_org_permission, require_tenant, require_user, storage
@@ -15,6 +17,7 @@ router = APIRouter(prefix="/api/external/v1", tags=["external_agent"])
 KEY_PREFIX = "ppai_"
 logger = logging.getLogger(__name__)
 RAW_MESSAGE_COLUMNS = "id,group_name,sender,sender_phone,message,message_type,timestamp,source,is_group,processed"
+EXTERNAL_AGENT_DOCS = Path(__file__).resolve().parents[1] / "docs" / "EXTERNAL_AGENT_API.md"
 
 
 class ApiKeyCreate(BaseModel):
@@ -76,6 +79,17 @@ async def external_auth(
 @router.get("/health")
 async def external_health(key: dict = Depends(external_auth)):
     return {"ok": True, "tenant_scoped": True, "scopes": key.get("scopes") or []}
+
+
+@router.get("/docs", response_class=PlainTextResponse)
+async def external_agent_docs():
+    """Public bootstrap guide; contains API instructions, never tenant data or credentials."""
+    try:
+        content = EXTERNAL_AGENT_DOCS.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.exception("External agent API guide is unavailable")
+        raise HTTPException(503, "External agent API guide is temporarily unavailable") from exc
+    return PlainTextResponse(content, headers={"Cache-Control": "public, max-age=300"})
 
 
 def _require_scope(key: dict, scope: str):

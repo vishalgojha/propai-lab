@@ -93,3 +93,14 @@ def test_search_rejects_unknown_scope(monkeypatch):
         if parameter["name"] == "scope"
     )
     assert scope_parameter["schema"]["pattern"] == "^(groups|dms|all)$"
+
+
+def test_public_agent_guide_is_fetchable_without_a_key():
+    response = asyncio.run(external_agent.external_agent_docs())
+    guide = response.body.decode("utf-8")
+    normalized_guide = " ".join(guide.split())
+    assert response.media_type == "text/plain"
+    assert "GET https://api.propai.live/api/external/v1/docs" in guide
+    assert "scope=dms" in guide
+    assert "Do not retry with `scope=all`" in normalized_guide
+    assert "ppai_" not in guide
