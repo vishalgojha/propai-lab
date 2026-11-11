@@ -1011,3 +1011,18 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
   - FAIL — live handset history population and authenticated browser display have not been confirmed.
 - Next action: Hard-refresh `app.propai.live`; confirm the header reads `Raw capture active`. Then ask Instinct to search the relevant private conversation using `/messages/search?scope=dms&q=<query>`; if no results arrive, reconnect the handset and confirm WhatsApp has completed its private-chat history sync.
 
+### Publish a fetchable API guide for every Instinct instance
+
+- Requested outcome: Give new Instinct sessions a stable PropAI API reference they can fetch to learn authentication, endpoints, DM consent, and evidence rules.
+- Files changed: Added `docs/EXTERNAL_AGENT_API.md`; exposed it through public `GET /api/external/v1/docs`; updated the Instinct setup prompt and public setup copy to fetch the guide first; updated `architecture.md` and `tests/test_external_agent_search.py`.
+- Behavior: The guide endpoint is public and contains no workspace data or credential values. It documents all read-only external endpoints, `X-API-Key` from Instinct Vault, tenant isolation, `scope=dms` consent, no `scope=all` fallback for Instinct, evidence handling, and common errors. The setup prompt directs each new instance to fetch and follow the guide before using PropAI.
+- Verification: Focused Python tests passed (8); Python compilation and `git diff --check` passed. Targeted ESLint had 0 errors with two pre-existing warnings. The UI detector returned no findings. Fetched the live production guide without a key and confirmed the expected instructions.
+- Push/deployment: Commit `efd3dcd5` pushed to `origin/main`. Coolify `api` deployment `sam4g1p8e6xgw1lutwv6dlwo` and `propai-lab:main-app` deployment `ckzjup8lyhffslqg3g64w7xz` finished on `efd3dcd5`.
+- Known limitations: A local Next.js build remains blocked by missing pre-existing Radix modules in the checkout; Coolify production deployment completed. An authenticated Instinct WhatsApp session was not available for testing the agent's own fetch, but the public endpoint was verified directly.
+- Independent task-verifier verdict: **PASS**.
+  - PASS — new sessions have a stable, public, fetchable API guide.
+  - PASS — the guide documents the current API surface and security boundaries without exposing credentials or tenant data.
+  - PASS — the dedicated Instinct prompt tells each new instance to fetch the guide first.
+  - PASS — tests pass, the production guide returns successfully, and both required services deployed.
+- Next action: In Account → Instinct, copy the updated prompt into any new Instinct instance; it will fetch the guide before using PropAI.
+
