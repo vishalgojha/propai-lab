@@ -1063,3 +1063,18 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
   - FAIL — production deployment and authenticated live smoke verification are pending.
 - Next action: Stage only the task files, commit and push, redeploy `api` and `propai-lab:main-app`, then verify token creation, scope rejection for read-only keys, and one confirmed private inventory/requirement write in the signed-in workspace.
 
+### Retire Google Drive setup and export UI in favor of Instinct
+
+- Requested outcome: Remove the Google Drive setup/export UI because Instinct/MCP is the supported external-agent workflow, and explain why Exports appeared in every workspace account.
+- Files changed: `frontend/src/app/layout.tsx`, `frontend/src/components/layout/MobileDrawer.tsx`, `frontend/src/components/layout/WorkspaceModuleMenu.tsx`, `frontend/src/app/account/page.tsx`, `frontend/src/app/inbox/page.tsx`, `frontend/src/lib/api.ts`, `frontend/src/app/workspace/google-drive/page.tsx`, `docs/PRODUCT.md`, `docs/DECISIONS.md`, `docs/GOOGLE_DRIVE_INTEGRATION.md`, `architecture.md`, and this report.
+- Behavior: Removed Exports from shared desktop/mobile/module navigation, removed the Google Drive Account tab and Market Inbox action, and redirected legacy Drive links to Account → Instinct. The Google Drive API and worker are retained for existing jobs and operational cleanup. Exports appeared on every account because the item was part of shared workspace navigation.
+- Verification performed: `rg` found no remaining visible Google Drive/Exports paths in frontend source except the compatibility mapping for old `?tab=google-drive` links. `git diff --check` passed. No tests were run. Independent task-verifier returned **PARTIAL**: local paths and docs pass; production deployment and live UI state are pending.
+- Push/deployment status: Pending commit, push, and redeployment of `propai-lab:main-app` (`y18kprfw29mu6wclzgpgfrvv`).
+- Known limitations: The legacy Google Drive route/API/worker are retained; no signed-in browser smoke check is available in this session.
+- Independent task-verifier verdict: **PARTIAL**.
+  - PASS — user-facing Drive setup/export paths are removed locally across shared navigation, Account, and Market Inbox.
+  - PASS — the old Drive route and tab links route to Instinct.
+  - PASS — product and operations docs describe the retired UI and retained backend.
+  - FAIL — deployed production UI is not yet verified.
+- Next action: Commit and push this UI retirement, redeploy `propai-lab:main-app`, then hard-refresh Account, navigation, and Market Inbox and confirm the legacy route opens Instinct.
+

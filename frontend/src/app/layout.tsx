@@ -40,7 +40,6 @@ import {
   PanelLeftOpen,
   ChevronDown,
   EyeOff,
-  HardDrive,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
@@ -85,7 +84,6 @@ const baseNavSections = [
       { href: "/clients", label: "Clients & Leads", icon: UserCheck },
       { href: "/leads", label: "Follow-ups", icon: Sparkles },
       { href: "/crm", label: "Inventory", icon: Briefcase },
-      { href: "/account?tab=google-drive", label: "Exports", icon: HardDrive },
       { href: "/deals", label: "Deals", icon: TrendingUp },
       { href: "/auto-matched", label: "Matches", icon: Sparkles },
     ],

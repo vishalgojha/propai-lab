@@ -1,6 +1,11 @@
 # Google Drive inventory integration
 
-Status: foundation implemented and pushed in commit `20e77b84`.
+Status: The broker-facing Account, navigation, and Market Inbox controls were
+retired on 2026-11-11 because Instinct/MCP is the supported external-agent
+path. The API routes and `google-drive-sync` worker remain for existing jobs
+and operational cleanup; no new Drive setup or export should be initiated from
+the workspace UI. The implementation details below are retained as an
+operations reference, not a user workflow.
 
 ## Purpose
 
@@ -84,7 +89,10 @@ Google scopes are `drive.file` and Sheets access.
 6. The old `/email-ingest` API compatibility route may remain in the backend,
    but Gmail is no longer an active Coolify worker or supported deployment path.
 
-## Broker workflow: Market Inbox to Meta AI on WhatsApp
+## Retired broker workflow: Market Inbox to Meta AI on WhatsApp
+
+Do not follow these steps for new workspaces; the UI that created and managed
+these exports has been removed.
 
 1. Connect the broker's own Google account from PropAI → Google Drive. PropAI
    creates and maintains a private folder and Sheet in that account.

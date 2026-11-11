@@ -2,6 +2,19 @@
 
 Record significant technical and product decisions. Format: date, decision, context, outcome.
 
+## 2026-11-11 — Retire Google Drive controls from the workspace UI
+
+**Decision:** Remove Google Drive setup and export actions from Account,
+workspace navigation, and Market Inbox. Route old Google Drive page links to
+the Instinct setup tab. Keep the API and worker code in place for existing jobs
+and operational cleanup.
+
+**Why:** Instinct/MCP is the supported external-agent path, so a separate
+Google Sheet integration creates a redundant setup and export workflow.
+
+**Outcome:** Users no longer see Drive setup or export actions. Existing
+backend routes and worker behavior are unchanged by this UI retirement.
+
 ## 2026-11-11 — Default eligible WhatsApp groups to included
 
 **Decision:** In the primary WhatsApp connection's extraction review, default

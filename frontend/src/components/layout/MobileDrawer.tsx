@@ -30,7 +30,6 @@ const baseNavSections = [
       { href: "/clients", label: "Clients & Leads" },
       { href: "/leads", label: "Follow-ups" },
       { href: "/crm", label: "Inventory" },
-      { href: "/account?tab=google-drive", label: "Exports" },
       { href: "/deals", label: "Deals" },
       { href: "/auto-matched", label: "Matches" },
     ],

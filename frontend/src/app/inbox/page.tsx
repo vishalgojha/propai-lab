@@ -42,7 +42,6 @@ import {
   Search,
   ListPlus,
   LoaderCircle,
-  HardDrive,
 } from "lucide-react";
 import { useLayout } from "@/hooks/useLayout";
 import { StatusBadge } from "@/components/ui/badge";
@@ -2013,8 +2012,6 @@ function UnifiedMarketInbox() {
   const [candidateBusy, setCandidateBusy] = useState(false);
   const [candidateMessage, setCandidateMessage] = useState("");
   const [undoSave, setUndoSave] = useState<{ clientId: number; clientName: string; candidateIds: number[] } | null>(null);
-  const [driveBusy, setDriveBusy] = useState(false);
-  const [driveMessage, setDriveMessage] = useState("");
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
   const [clientPickerLoading, setClientPickerLoading] = useState(false);
   const [clients, setClients] = useState<api.Client[]>([]);
@@ -2796,22 +2793,6 @@ function UnifiedMarketInbox() {
     return [...refs.values()];
   }, [marketItemKey, marketItemRef, selectedKeys, triageItems]);
 
-  const selectedMarketListingRefs = useMemo(
-    () => selectedCandidateRefs.filter((ref) => ref.source_schema.endsWith("_listings")),
-    [selectedCandidateRefs],
-  );
-
-  const exportSelectedToDrive = useCallback(async () => {
-    if (!selectedMarketListingRefs.length) { setDriveMessage("Select at least one Market Inbox listing first."); return; }
-    setDriveBusy(true); setDriveMessage("");
-    try {
-      await api.createGoogleDriveExport({ market_item_refs: selectedMarketListingRefs, file_name: "PropAI Market Inventory - Current" });
-      setDriveMessage(`${selectedMarketListingRefs.length} market listing${selectedMarketListingRefs.length === 1 ? "" : "s"} queued for your private Google Sheet. Broker phone numbers are included.`);
-      setSelectedKeys(new Set()); selectedRecordsRef.current = {};
-    } catch (reason) { setDriveMessage(reason instanceof Error ? reason.message : "Could not export the selected listings."); }
-    finally { setDriveBusy(false); }
-  }, [selectedMarketListingRefs]);
-
   const openClientPicker = useCallback(async () => {
     if (!selectedCandidateRefs.length) {
       setCandidateMessage("Select at least one loaded listing or requirement first.");
@@ -3154,17 +3135,12 @@ function UnifiedMarketInbox() {
             Select loaded results
           </label>
             <span className="text-[11px] text-zinc-500">{loadedSelectionCount} selected in this view · choose an action to continue</span>
-          {selectedMarketListingRefs.length > 0 && <Button type="button" variant="outline" size="sm" onClick={() => void exportSelectedToDrive()} disabled={driveBusy} className="h-8 border-emerald-300/30 px-3 text-[11px] font-bold text-emerald-200 hover:bg-emerald-300/10">
-            {driveBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <HardDrive className="h-3.5 w-3.5" />}
-            {driveBusy ? "Exporting…" : `Export ${selectedMarketListingRefs.length} to Google Drive`}
-          </Button>}
           {selectedCandidateRefs.length > 0 && <Button type="button" size="sm" onClick={() => void openClientPicker()} disabled={candidateBusy} className="h-8 bg-[var(--signal-lime)] px-3 text-[11px] font-bold text-[var(--asphalt)] hover:brightness-105">
             {candidateBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <ListPlus className="h-3.5 w-3.5" />}
             {candidateBusy ? "Saving…" : `Save ${selectedCandidateRefs.length} for a client`}
           </Button>}
           {selectedVisibleItems.length > 0 && <Button type="button" size="sm" onClick={startContactQueue} aria-label={`Open WhatsApp sequence for ${selectedVisibleItems.length} selected listing${selectedVisibleItems.length === 1 ? "" : "s"}`} className="h-8 gap-1.5 border border-emerald-300 bg-emerald-300 px-3 text-[11px] font-bold text-[#061015] shadow-sm shadow-emerald-300/20 hover:bg-emerald-200"> <MessageSquare className="h-3.5 w-3.5" /> Open WhatsApp sequence ({selectedVisibleItems.length})</Button>}
           {candidateMessage && <span role="status" className="text-[11px] text-cyan-200">{candidateMessage} {candidateMessage.includes("saved for a client") && <Link href="/clients" className="ml-1 font-semibold underline underline-offset-2">Open Private CRM</Link>} {undoSave && <button type="button" className="ml-2 font-semibold text-amber-200 underline underline-offset-2" onClick={() => void (async () => { try { await Promise.all(undoSave.candidateIds.map((id) => api.deleteClientCandidate(undoSave.clientId, id))); setUndoSave(null); setCandidateMessage(`Save undone for ${undoSave.clientName}.`); } catch { setCandidateMessage("Could not undo the save. Open Private CRM to remove it."); } })()}>Undo save</button>}</span>}
-          {driveMessage && <span role="status" className="text-[11px] text-emerald-200">{driveMessage} {driveMessage.includes("Connect Google Drive") && <Link href="/account?tab=google-drive" className="ml-1 font-semibold underline underline-offset-2">Connect Drive</Link>}</span>}
         </div>}
         {error && <Alert className="mb-4 border-[var(--alert-vermilion)]/50 bg-[var(--alert-vermilion)]/10 text-[var(--mist)]"><AlertTitle>Market feed unavailable</AlertTitle><AlertDescription className="flex items-center gap-3">{error}<Button type="button" variant="outline" size="sm" onClick={() => void load()} className="h-7 border-[var(--taxi-amber)] text-[var(--taxi-amber)]">Retry</Button></AlertDescription></Alert>}
         {loading ? <div className="grid gap-3 md:grid-cols-2" aria-label="Loading market feed"><Skeleton className="h-56 rounded-xl" /><Skeleton className="h-56 rounded-xl" /></div> : searching ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">{triageFilter === "raw" ? "Searching WhatsApp messages…" : "Searching parsed records…"}</div> : error && visibleItems.length === 0 ? null : triageFilter === "extracted" && (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 && !marketSetupDismissed ? (

@@ -119,6 +119,11 @@ and record browser checks. Third-party login, CAPTCHA, consent, and outbound
 WhatsApp sending remain explicit handoffs; the setup agent never claims those
 steps completed without evidence.
 
+Instinct and MCP are the supported external-agent paths. Google Drive account
+setup and sheet-export controls have been removed from the workspace UI; the
+legacy API and worker remain available for existing jobs and operational
+cleanup.
+
 ## Product Data Lifecycle
 
 Every market record follows this evidence-preserving lifecycle:
