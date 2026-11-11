@@ -212,12 +212,19 @@ exception only bypasses a self-chat-disabled flag for that configured number;
 it does not bypass an inactive WhatsApp connection or tenant resolution.
 
 External agent tokens may also carry `raw_messages:read` for tenant-scoped group
-evidence. The separate `raw_messages:dms` scope for private DMs is disabled by
-default and is issued only after the workspace owner explicitly enables
+evidence. Search supports `scope=groups` by default, `scope=dms` for explicitly
+consented private messages, and `scope=all` only when that same consent is on.
+The separate `raw_messages:dms` scope for private DMs is disabled by default and is issued only after the workspace owner explicitly enables
 `organizations.external_agent_dms_enabled`; disabling consent removes the scope
 from active external tokens. Consent is an owner/administrator action. The REST surface exposes paginated raw search and full-message lookup, while preserving
 the source-evidence warning; no transport payload blobs or cross-tenant rows
 are returned.
+
+WhatsApp history sync persists only direct-chat conversations. Historical raw
+messages are marked processed with extraction suppressed, so history is
+available as private source evidence to an authorized external agent but never
+enters automated inventory extraction. Group history is skipped; groups continue
+through live ingestion and existing group-selection paths.
 
 ### Google Drive inventory export
 

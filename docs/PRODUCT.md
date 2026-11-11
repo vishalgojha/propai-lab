@@ -192,8 +192,10 @@ only selected connected groups.
 - The primary connected WhatsApp account captures live raw evidence from
   groups and direct chats independently of the group-selection screen. That
   screen controls whether extraction can be started; it is not a raw-capture
-  filter. History-sync events stay suppressed unless a separately authorized
-  replay is performed. The agent's self-chat command path is stored separately
+  filter. WhatsApp history sync is restricted to private direct conversations;
+  imported history remains raw evidence and is suppressed from automated
+  extraction. External agents can read it only with explicit workspace DM
+  consent. The agent's self-chat command path is stored separately
   and is not property-source evidence.
 - Broker identity controls are owner-side reference and workflow controls; they
   do not create separate broker workspaces or alter source evidence.

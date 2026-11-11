@@ -1115,10 +1115,6 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 		go sm.handleMessage(s, v)
 
 	case *events.HistorySync:
-		if historySyncDisabled() {
-			log.Printf("[broker %s] history sync ignored by policy", s.brokerID)
-			break
-		}
 		go sm.handleHistorySync(s, v)
 
 	case *events.Receipt:
@@ -2011,9 +2007,9 @@ func (sm *SessionManager) handleHistorySync(s *BrokerSession, evt *events.Histor
 	if evt == nil || evt.Data == nil {
 		return
 	}
-	// History replay is never a valid source for a self-chat-only broker. Keep
-	// this guard local as well as the event-level guard so future callers cannot
-	// accidentally bulk-insert the account's chat history.
+	// Keep the existing self-chat control-plane boundary. Normal broker sessions
+	// may import direct-chat history, but history batches can also include group
+	// conversations, so filter every conversation before persistence.
 	if selfChatOnlyBroker(s.brokerID) {
 		log.Printf("[broker %s] history sync ignored: self-chat-only policy", s.brokerID)
 		return
@@ -2027,25 +2023,26 @@ func (sm *SessionManager) handleHistorySync(s *BrokerSession, evt *events.Histor
 			continue
 		}
 		chatID := conv.GetID()
+		if !historySyncDirectChat(chatID) {
+			continue
+		}
 		chatName := strings.TrimSpace(conv.GetName())
 		if chatName == "" {
 			chatName = strings.TrimSpace(conv.GetDisplayName())
 		}
-		if conversationType := whatsappConversationType(chatID); conversationType != "" {
-			lastMessageAt := whatsappConversationTimestamp(conv.GetLastMsgTimestamp())
-			if lastMessageAt == "" {
-				lastMessageAt = whatsappConversationTimestamp(conv.GetConversationTimestamp())
-			}
-			directory = append(directory, map[string]interface{}{
-				"jid":             chatID,
-				"type":            conversationType,
-				"name":            chatName,
-				"unread_count":    conv.GetUnreadCount(),
-				"message_count":   len(conv.GetMessages()),
-				"last_message_at": lastMessageAt,
-				"source":          "history_sync",
-			})
+		lastMessageAt := whatsappConversationTimestamp(conv.GetLastMsgTimestamp())
+		if lastMessageAt == "" {
+			lastMessageAt = whatsappConversationTimestamp(conv.GetConversationTimestamp())
 		}
+		directory = append(directory, map[string]interface{}{
+			"jid":             chatID,
+			"type":            "direct",
+			"name":            chatName,
+			"unread_count":    conv.GetUnreadCount(),
+			"message_count":   len(conv.GetMessages()),
+			"last_message_at": lastMessageAt,
+			"source":          "history_sync",
+		})
 
 		for _, historyMsg := range conv.GetMessages() {
 			if historyMsg == nil || historyMsg.GetMessage() == nil {
@@ -2100,6 +2097,10 @@ func whatsappConversationType(jid string) string {
 	default:
 		return "direct"
 	}
+}
+
+func historySyncDirectChat(chatID string) bool {
+	return whatsappConversationType(chatID) == "direct"
 }
 
 // WhatsApp history timestamps are normally seconds, but some sync payloads
@@ -3220,14 +3221,6 @@ func (sm *SessionManager) historyBackfillHandler(w http.ResponseWriter, r *http.
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if historySyncDisabled() {
-		w.WriteHeader(http.StatusGone)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ok":    false,
-			"error": "history sync is disabled; live messages and explicit group selection are the supported ingestion path",
-		})
-		return
-	}
 	brokerID := brokerIDFromRequest(r)
 	s := sm.Get(brokerID)
 	if s == nil || s.client == nil || !s.client.IsConnected() {
@@ -3292,7 +3285,7 @@ func (sm *SessionManager) historyBackfillHandler(w http.ResponseWriter, r *http.
 	skipped := 0
 	for _, cursor := range cursors {
 		info, ok := messageInfoFromCursor(cursor)
-		if !ok {
+		if !ok || info.IsGroup || !historySyncDirectChat(info.Chat.String()) {
 			skipped++
 			continue
 		}
@@ -3435,18 +3428,6 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
-}
-
-// WhatsApp may replay a large history snapshot after pairing or reconnecting.
-// PropAI keeps live ingestion and explicit group selection as the source of
-// new extraction input, so history replay is disabled unless explicitly
-// enabled for a controlled maintenance run.
-func historySyncDisabled() bool {
-	value := strings.ToLower(strings.TrimSpace(os.Getenv("PROPAI_DISABLE_HISTORY_SYNC")))
-	if value == "" {
-		return true
-	}
-	return value != "0" && value != "false" && value != "no" && value != "off"
 }
 
 // selfChatOnlyBroker makes the private WhatsApp control-plane policy explicit

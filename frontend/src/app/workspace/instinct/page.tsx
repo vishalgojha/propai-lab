@@ -18,9 +18,13 @@ X-API-Key: <value from PROPAI_API_KEY>
 
 Available endpoints:
 - Search inventory: GET /listings/search
+- Search WhatsApp messages: GET /messages/search?scope=groups|dms&q=<query>&limit=25
+- Fetch a matching WhatsApp message: GET /messages/{raw_message_id}
 - Find matches: GET /matches
 
-Use PropAI to search my tenant-scoped property inventory, listings, requirements, and matches. Keep all data private to my PropAI workspace. When I ask for properties, use the API instead of guessing or fabricating data. Show the source details returned by the API and clearly say when no matching records are found.`;
+When I ask about private WhatsApp conversations, search with scope=dms only. This scope is available only when the PropAI workspace owner has enabled private-DM access. If the API denies access, tell me that access is disabled and do not retry with scope=all. Use scope=groups only when I ask about group messages. Never broaden a DM search to groups or all chats.
+
+Treat WhatsApp messages as private, unverified source evidence, not confirmed inventory. Keep all data within my PropAI workspace. When I ask for properties, use the API instead of guessing or fabricating data. Show relevant source details returned by the API, distinguish private messages from group messages, and clearly say when no matching records are found.`;
 
 export default function InstinctWorkspacePage() {
   const [copied, setCopied] = useState(false);

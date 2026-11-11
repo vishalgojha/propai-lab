@@ -95,7 +95,7 @@ def _require_dm_consent(key: dict):
 @router.get("/messages/search")
 async def external_raw_message_search(
     q: str = "",
-    scope: str = Query("groups", pattern="^(groups|all)$"),
+    scope: str = Query("groups", pattern="^(groups|dms|all)$"),
     since: str = "",
     until: str = "",
     limit: int = Query(25, ge=1, le=100),
@@ -103,11 +103,13 @@ async def external_raw_message_search(
     key: dict = Depends(external_auth),
 ):
     _require_scope(key, "raw_messages:read")
-    if scope == "all":
+    if scope in {"dms", "all"}:
         _require_dm_consent(key)
     query = storage.client.table("raw_messages").select(RAW_MESSAGE_COLUMNS).eq("tenant_id", str(key["tenant_id"]))
     if scope == "groups":
         query = query.eq("is_group", True)
+    elif scope == "dms":
+        query = query.eq("is_group", False)
     if q.strip():
         query = query.ilike("message", f"%{q.strip()}%")
     if since:

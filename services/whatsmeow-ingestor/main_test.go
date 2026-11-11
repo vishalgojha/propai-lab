@@ -119,6 +119,19 @@ func TestMessageTextSupportsConversationAndExtendedText(t *testing.T) {
 	}
 }
 
+func TestHistorySyncAcceptsOnlyDirectChats(t *testing.T) {
+	for _, jid := range []string{"12345@s.whatsapp.net", "12345:7@s.whatsapp.net", "abcdef@lid"} {
+		if !historySyncDirectChat(jid) {
+			t.Errorf("history sync rejected direct chat %q", jid)
+		}
+	}
+	for _, jid := range []string{"12345-678@g.us", "status@broadcast", "12345@newsletter", "12345@broadcast", ""} {
+		if historySyncDirectChat(jid) {
+			t.Errorf("history sync accepted non-direct chat %q", jid)
+		}
+	}
+}
+
 func TestPairedQRSessionIsKeptAlive(t *testing.T) {
 	if !shouldRetryQRPairing(nil) || !shouldRetryQRPairing(&store.Device{}) {
 		t.Fatal("unpaired devices must retry QR pairing")
