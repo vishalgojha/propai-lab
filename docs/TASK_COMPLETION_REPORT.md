@@ -1080,11 +1080,11 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Requested outcome: Rotate external-agent secrets, audit every external-agent write, and require explicit owner approval for sensitive CRM changes.
 - Files changed: Added `supabase/migrations/20261111170000_external_agent_write_security.sql`; updated `routers/external_agent.py`, `frontend/src/app/workspace/mcp/page.tsx`, `docs/EXTERNAL_AGENT_API.md`, `architecture.md`, and this report.
 - Behavior: Owners can rotate keys, which revokes the prior secret immediately. CRM write attempts create tenant-scoped audit records with redacted audit payloads. Writes containing contact identity/details, phones, quotes, or budgets pause as pending approvals; owners can review the request in Account → MCP and approve or reject it. Approval executes the original tenant-scoped write only if the key remains active.
-- Verification performed: `python3 -m py_compile routers/external_agent.py` passed; focused external-agent tests passed (5); targeted frontend ESLint completed with 0 errors; migration reviewed for RLS, tenant indexes, and service-role write access. Production deployment is pending migration/API/dashboard redeployment.
-- Deployment/push status: Not yet committed or pushed.
+- Verification performed: `python3 -m py_compile routers/external_agent.py` passed; focused external-agent tests passed (5); targeted frontend ESLint completed with 0 errors; migration reviewed for RLS, tenant indexes, and service-role write access. API and dashboard deployments finished successfully.
+- Deployment/push status: Security commit `d5c9d12f` was pushed to `origin/main`; Coolify deployed current remote descendant `a69e18dc`. API deployment `wkphzgyuund4uollkefxc4io` and dashboard deployment `sieas6zltrlifdzxwvcpr8iv` finished successfully.
 - Known limitations: The migration must be applied before the new endpoints can operate. Approval payloads are visible only to authenticated workspace members with the existing `manage_whatsapp` permission. Production smoke verification will require creating a test approval and rotating a non-critical token.
-- Independent task-verifier verdict: **PARTIAL** pending migration application, deployment, and authenticated smoke verification.
-- Next action: Apply the migration, commit and push only the scoped files, redeploy `api` and `propai-lab:main-app`, then verify rotation, audit rows, sensitive-write pause, approval, rejection, and tenant isolation.
+- Independent task-verifier verdict: **PARTIAL** — code review, focused tests, and deployments pass; live migration application and authenticated smoke verification remain unconfirmed.
+- Next action: Verify the migration exists in production, then test rotation, audit rows, sensitive-write pause, approval, rejection, and tenant isolation with a non-critical token.
 
 ### Retire Google Drive setup and export UI in favor of Instinct
 
