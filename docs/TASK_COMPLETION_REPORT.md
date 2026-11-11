@@ -907,3 +907,5 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
   - FAIL — dashboard deployment and full ESLint verification remain outstanding.
 - Next action: Commit and push the scoped dashboard change, redeploy `propai-lab:main-app`, and verify `/whatsapp?tab=business-api` opens My Numbers in production.
 
+- Deployment follow-up: Coolify deployment `g7vdhcrwq7i3q8tfk6dmaqcb` finished successfully for `propai-lab:main-app` on commit `8ceb257e29dad97c32e6727506364d79424da84e` at 2026-11-11 08:35 UTC. The remaining verification is a browser hard refresh and production route check.
+
