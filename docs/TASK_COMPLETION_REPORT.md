@@ -1080,13 +1080,14 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Requested outcome: Remove the Google Drive setup/export UI because Instinct/MCP is the supported external-agent workflow, and explain why Exports appeared in every workspace account.
 - Files changed: `frontend/src/app/layout.tsx`, `frontend/src/components/layout/MobileDrawer.tsx`, `frontend/src/components/layout/WorkspaceModuleMenu.tsx`, `frontend/src/app/account/page.tsx`, `frontend/src/app/inbox/page.tsx`, `frontend/src/lib/api.ts`, `frontend/src/app/workspace/google-drive/page.tsx`, `docs/PRODUCT.md`, `docs/DECISIONS.md`, `docs/GOOGLE_DRIVE_INTEGRATION.md`, `architecture.md`, and this report.
 - Behavior: Removed Exports from shared desktop/mobile/module navigation, removed the Google Drive Account tab and Market Inbox action, and redirected legacy Drive links to Account → Instinct. The Google Drive API and worker are retained for existing jobs and operational cleanup. Exports appeared on every account because the item was part of shared workspace navigation.
-- Verification performed: `rg` found no remaining visible Google Drive/Exports paths in frontend source except the compatibility mapping for old `?tab=google-drive` links. `git diff --check` passed. No tests were run. Independent task-verifier returned **PARTIAL**: local paths and docs pass; production deployment and live UI state are pending.
-- Push/deployment status: Pending commit, push, and redeployment of `propai-lab:main-app` (`y18kprfw29mu6wclzgpgfrvv`).
+- Verification performed: `rg` found no remaining visible Google Drive/Exports paths in frontend source except the compatibility mapping for old `?tab=google-drive` links. `git diff --check` passed. No tests were run. Independent task-verifier returned **PARTIAL**: deployed commit/source passes; signed-in live UI behavior was not independently inspected.
+- Push/deployment status: Commit `855d6ec` pushed to `origin/main`. Coolify deployment `sz2a9bzxissvakcqnew777tt` for `propai-lab:main-app` (`y18kprfw29mu6wclzgpgfrvv`) finished successfully on descendant commit `cafbe1def2cead708b2744b86c4d308cc0f52870` at 2026-11-11 15:03 UTC.
 - Known limitations: The legacy Google Drive route/API/worker are retained; no signed-in browser smoke check is available in this session.
 - Independent task-verifier verdict: **PARTIAL**.
   - PASS — user-facing Drive setup/export paths are removed locally across shared navigation, Account, and Market Inbox.
   - PASS — the old Drive route and tab links route to Instinct.
   - PASS — product and operations docs describe the retired UI and retained backend.
-  - FAIL — deployed production UI is not yet verified.
-- Next action: Commit and push this UI retirement, redeploy `propai-lab:main-app`, then hard-refresh Account, navigation, and Market Inbox and confirm the legacy route opens Instinct.
+  - PASS — the deployed source includes the UI retirement and legacy route redirect.
+  - FAIL — signed-in live UI behavior was not independently confirmed.
+- Next action: Hard-refresh the app and confirm Account, shared navigation, and Market Inbox no longer show Drive controls; opening the old Google Drive URL should land on Instinct.
 
