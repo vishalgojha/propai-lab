@@ -924,3 +924,19 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
   - FAIL — production deployment and authenticated browser smoke verification remain outstanding.
 - Next action: Commit and push the scoped change, redeploy `propai-lab:main-app`, then open Account → Instinct and test copying the prompt.
 
+### Fix false disconnected status in WhatsApp Groups view
+
+- Requested outcome: Keep raw WhatsApp ingestion automatic and show the actual live capture state in the Groups view; group opt-out selection should not be treated as the raw-ingestion switch.
+- Files changed: `frontend/src/app/connections/page.tsx` and this report.
+- Behavior: The Groups panel now receives the same live WhatsApp status used by the page header and reports capture as connected when that live status matches the phone. Raw capture remains independent of extraction/group selection.
+- Evidence: Production ingestor logs for the linked phone show `connected to WhatsApp server`, direct/group message receipts, and group directory sync after reconnect. The screenshot’s disconnected label was caused by the Groups panel using the durable phone fetch without the separately polled live status.
+- Verification performed: Impeccable UI detector returned no findings; `git diff --check` passed. Full frontend TypeScript/ESLint verification remains unavailable because the workspace dependency installation is incomplete and the repository has unrelated existing type/module errors.
+- Deployment/push status: Pending scoped commit and push. Coolify service needing redeployment: `propai-lab:main-app` (`y18kprfw29mu6wclzgpgfrvv`).
+- Known limitations or failures: Extraction is intentionally a separate manual control and will remain stopped until the user starts it; this change does not import WhatsApp history.
+- Independent task-verifier verdict: **PARTIAL**.
+  - PASS — live status is passed into the Groups panel and used for the capture indicator/copy.
+  - PASS — raw capture remains independent of group extraction selection.
+  - PASS — production logs show automatic raw message receipt after connection.
+  - FAIL — dashboard deployment and browser smoke verification remain outstanding.
+- Next action: Commit and push, redeploy `propai-lab:main-app`, then refresh WhatsApp → Groups and confirm the capture banner says Connected.
+

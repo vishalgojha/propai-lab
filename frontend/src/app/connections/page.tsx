@@ -1156,7 +1156,7 @@ function EmptyConnectionsHint() {
   );
 }
 
-function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: () => Promise<void> | void; }) {
+function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; liveStatus: WhatsAppStatus | null; onRefresh: () => Promise<void> | void; }) {
   // The group directory is persisted independently of the live socket. A
   // paired phone may be temporarily disconnected or have an unavailable
   // status probe; that must not hide the extraction controls.
@@ -1420,6 +1420,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
     selectedGroups.size !== persistedSelectedJids.size
     || Array.from(selectedGroups).some((jid) => !persistedSelectedJids.has(jid))
   );
+  const captureConnected = isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus);
 
   if (!hasPairingIdentity) {
     return (
@@ -1459,16 +1460,16 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       {message && <div className="mt-3 text-xs text-emerald-300">{message}</div>}
 
       <div className={`mt-4 rounded-lg border px-3 py-2.5 text-xs ${
-        isConnectedPhone(phone)
+        captureConnected
           ? "border-emerald-400/25 bg-emerald-500/[0.05] text-emerald-100"
           : "border-amber-400/25 bg-amber-500/[0.05] text-amber-100"
       }`}>
         <div className="flex items-center gap-2 font-semibold">
           <MessageSquare className="h-3.5 w-3.5" />
-          Live WhatsApp capture · {isConnectedPhone(phone) ? "Connected" : "Disconnected"}
+          Live WhatsApp capture · {captureConnected ? "Connected" : "Disconnected"}
         </div>
         <p className="mt-1 leading-5">
-          {isConnectedPhone(phone)
+          {captureConnected
             ? "New messages from this phone’s groups and direct chats are saved as raw evidence for chat search."
             : "Reconnect this phone to resume saving new group and direct messages for chat search."}
           {" "}The group choices below do not limit raw capture. Starting extraction does not import chat history.
@@ -2144,6 +2145,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
                       <OnboardingGroupPanel
                         key={`active-groups-${phone.id}`}
                         phone={phone}
+                        liveStatus={liveStatus}
                         onRefresh={refreshData}
                       />
                     ))}
