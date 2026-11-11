@@ -192,7 +192,9 @@ only selected connected groups.
 - The primary connected WhatsApp account captures live raw evidence from
   groups and direct chats independently of the group-selection screen. That
   screen controls whether extraction can be started; it is not a raw-capture
-  filter. WhatsApp history sync is restricted to private direct conversations;
+  filter. Every eligible group starts checked, groups can be excluded with
+  Opt out, and the broker must confirm the selection before extraction uses it.
+  WhatsApp history sync is restricted to private direct conversations;
   imported history remains raw evidence and is suppressed from automated
   extraction. External agents can read it only with explicit workspace DM
   consent. The agent's self-chat command path is stored separately

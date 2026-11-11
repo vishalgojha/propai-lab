@@ -2,6 +2,19 @@
 
 Record significant technical and product decisions. Format: date, decision, context, outcome.
 
+## 2026-11-11 — Default eligible WhatsApp groups to included
+
+**Decision:** In the primary WhatsApp connection's extraction review, default
+all eligible groups to checked and let the operator opt out individual groups.
+Keep explicit confirmation before the selection becomes active for extraction.
+
+**Why:** Persisting a partial selection caused newly discovered, otherwise
+eligible groups to appear unchecked and required manually selecting each one.
+Raw capture remains independent of this extraction choice.
+
+**Outcome:** The review draft includes eligible groups except saved opt-outs;
+the operator still confirms the draft before it changes extraction eligibility.
+
 ## 2026-11-06 — Restore strict multi-tenant private workspaces
 
 **Decision:** PropAI is a multi-tenant authenticated workspace product again.

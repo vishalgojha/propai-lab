@@ -1178,16 +1178,10 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
 
   const applyDirectorySelection = useCallback((next: OnboardingGroupState) => {
     const selectable = (next.groups || []).filter((group) => group.selectable !== false && !group.opted_out);
-    const persisted = selectable
-      .filter((group) => group.connected)
-      .map((group) => group.group_jid);
-    // A fresh connection should be ready to review in one click: pre-check
-    // every eligible group, but keep the explicit confirmation step. Once
-    // the API reports a saved selection, preserve that selection on reload.
-    const initialSelection = next.selected_count === 0
-      ? selectable.map((group) => group.group_jid)
-      : persisted;
-    setSelectedGroups(new Set(initialSelection));
+    // Default to opt-out: every eligible group is checked until the broker
+    // explicitly opts it out. Keep the separate confirmation step so this
+    // draft does not change extraction eligibility until the broker confirms.
+    setSelectedGroups(new Set(selectable.map((group) => group.group_jid)));
   }, []);
 
   const loadGroups = useCallback(async () => {
@@ -2198,9 +2192,9 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
               <div>
                 <HealthRow label="WhatsApp" status={connectedCount > 0 ? "healthy" : "error"} detail={`${connectedCount} connected`} />
                 <HealthRow
-                  label="Database"
+                  label="Market counters"
                   status={statsAvailable ? "healthy" : "warning"}
-                  detail={statsAvailable ? `${totalParsed.toLocaleString()} market opportunities` : "Live counters unavailable"}
+                  detail={statsAvailable ? `${totalParsed.toLocaleString()} market opportunities` : "Aggregate counts unavailable · capture unaffected"}
                 />
                 <HealthRow
                   label="Messages read"
