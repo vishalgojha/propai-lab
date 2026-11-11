@@ -1032,8 +1032,8 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Files changed: `frontend/src/app/connections/page.tsx`, `docs/PRODUCT.md`, `docs/DECISIONS.md`, `architecture.md`, and this report.
 - Behavior: The group review draft now checks every eligible group except saved opt-outs, while retaining explicit confirmation before the draft becomes active for extraction. The health row is labeled “Market counters” and says aggregate count unavailability does not affect capture.
 - Verification performed: Independent task-verifier returned **PARTIAL**: local behavior and confirmation flow pass, but live deployment/browser verification is pending. Impeccable detector returned no findings; `git diff --check` passed. No tests were run. Production API access logs show `/api/stats` returns HTTP 200; code inspection confirms the warning is driven by `stats_available=false` after any exact-count query fails. The specific failing Supabase count was not present in captured application logs.
-- Push/deployment status: Pending scoped commit, push, and redeployment of `propai-lab:main-app` (`y18kprfw29mu6wclzgpgfrvv`).
-- Known limitations: The exact failing aggregate count query and live post-deployment checkbox state are not yet verified.
-- Independent task-verifier verdict: **PARTIAL**.
-- Next action: Push and redeploy the dashboard, then verify all non-opted-out groups are checked in the signed-in UI; inspect the stats query failure separately if the Market counters warning persists.
+- Push/deployment status: Commit `f0dbe3c3eed76f46fa17be2acd99ebc2b59ed067` pushed to `origin/main`. Coolify deployment `l5qftlj58pekgaw7qxzvw8rt` for `propai-lab:main-app` finished successfully on that commit at 2026-11-11 13:24 UTC.
+- Known limitations: The exact failing aggregate count query and authenticated post-deployment checkbox state are not yet verified; no signed-in browser control is available in this session.
+- Independent task-verifier verdict: **PARTIAL** — local logic and deployed commit pass review; live signed-in UI confirmation remains pending.
+- Next action: Hard-refresh WhatsApp → Groups and confirm all eligible, non-opted-out groups start checked. If the Market counters warning remains, inspect the exact Supabase count error in API application logs.
 
