@@ -855,3 +855,14 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Independent task-verifier verdict: **PARTIAL** pending deployment and authenticated smoke verification.
 - Next action: Commit/push, redeploy the dashboard, and click Prepare Instinct once to confirm the Instinct tab opens.
 
+### Add actionable WhatsApp pairing instructions
+
+- Requested outcome: Show the QR/linking-code recovery instructions directly to the user during pairing.
+- Files changed: `frontend/src/app/connections/page.tsx` and this report.
+- Behavior: The QR and code dialogs now explain the exact WhatsApp menu path, using one method at a time, keeping the latest code/QR active, avoiding Reconnect while pairing, and removing an old linked device before one fresh retry.
+- Verification performed: Pending focused frontend lint and mechanical UI detector.
+- Deployment/push status: Pending commit, push, and dashboard redeployment.
+- Known limitations or failures: These instructions cannot complete the handset-side WhatsApp confirmation; the user must approve the link in WhatsApp.
+- Independent task-verifier verdict: **PARTIAL** pending verification and deployment.
+- Next action: Run lint/detector, commit/push, redeploy `propai-lab:main-app`, and verify the dialog copy in production.
+

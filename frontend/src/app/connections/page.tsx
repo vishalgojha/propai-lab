@@ -972,8 +972,12 @@ function PhoneCard({
                   ) : (
                     <div className="mx-auto flex h-60 w-60 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-xs text-zinc-400">Waiting for WhatsApp…</div>
                   )}
-                  <p className="mt-4 text-xs leading-5 text-zinc-300">On your phone, open WhatsApp → Settings → Linked devices → Link a device, then scan this code.</p>
-                  <p className="mt-2 text-[11px] text-zinc-500">Keep this window open. The code refreshes automatically.</p>
+                  <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2.5 text-left text-xs leading-5 text-emerald-100">
+                    <div className="font-semibold text-white">On your phone</div>
+                    <div>WhatsApp → Settings → Linked devices → Link a device, then scan the QR currently shown here.</div>
+                  </div>
+                  <p className="mt-2 text-[11px] leading-5 text-zinc-500">Use only one method at a time. Keep this window open, scan the latest QR before it refreshes, and do not click Reconnect WhatsApp while pairing.</p>
+                  <p className="mt-2 text-[11px] leading-5 text-zinc-500">If linking fails, remove an old linked device from WhatsApp and try one fresh QR code.</p>
                   {actionError && <p className="mt-3 text-xs text-red-400">{actionError}</p>}
                 </div>
                 <div className="flex justify-between gap-2 px-5 py-3 border-t border-white/10">
@@ -1067,7 +1071,7 @@ function PhoneCard({
                   <div className="rounded-lg border border-emerald-400/20 bg-emerald-500/[0.06] px-3 py-2.5 text-left text-xs leading-5 text-emerald-100">
                     <span className="font-semibold text-white">On your phone:</span> WhatsApp → Settings → Linked devices → Link a device → <span className="font-semibold text-white">Link with phone number instead</span>.
                   </div>
-                  <p className="text-[11px] text-zinc-500">Enter this one-time code in WhatsApp. It may refresh when the pairing window expires.</p>
+                  <p className="text-[11px] leading-5 text-zinc-500">Enter this latest one-time code in WhatsApp before the countdown ends. Use only this method—do not click Reconnect WhatsApp or request another code while this one is active.</p>
                   <button
                     type="button"
                     onClick={() => {
@@ -1087,6 +1091,7 @@ function PhoneCard({
                   <p className="text-[11px] text-zinc-500" aria-live="polite">
                     Pairing session closes in <span className="font-mono text-zinc-300">{formatPairingCountdown(pairCodeSecondsRemaining)}</span>
                   </p>
+                  <p className="text-[11px] leading-5 text-zinc-500">If it fails, remove an old linked device from WhatsApp, close this window, and request one fresh code.</p>
                 </div>
                 <div className="flex justify-end px-5 py-3 border-t border-white/10">
                   <button onClick={closePairCodeDialog} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Done</button>
