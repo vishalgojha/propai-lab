@@ -1217,3 +1217,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Known limitations: No authenticated Instinct client smoke test was run because no external-agent API secret was available in the session. The API remains intentionally suggestion-only for automatch and does not schedule or send outbound follow-ups.
 - Next action: Connect Instinct with the workspace key, call `GET /health`, then exercise one standing search, one automatch read, and one private follow-up draft from the owner-approved workspace.
 
+### Update the Instinct operating prompt for workflow tools
+
+- Requested outcome: Update the prompt Instinct receives so it knows about standing searches, automatch, workspace attention, and private follow-ups while obeying the new tenant and approval boundaries.
+- Files/services changed: `frontend/src/app/workspace/instinct/page.tsx` and `frontend/src/app/BrokerLandingClient.tsx` update both copyable prompt surfaces; this report was updated. Coolify `propai-lab:main-app` was redeployed.
+- Behavior: The prompt now requires `/health` scope discovery, documents all new REST endpoints, requires confirmation before writes and `confirmed:true` for standing-search creation, describes automatch as read-only suggestion-only, and explicitly forbids cross-tenant access, shared-market promotion, messaging, ads, budget changes, deletion, and fabricated data.
+- Verification performed: `git diff --check` passed; prompt-content inspection confirmed all new endpoints and boundary rules are present. Independent task-verifier verdict: **PASS** for the requested prompt update; both runtime copy surfaces were changed together.
+- Deployment/push status: Commit `0612b277` was pushed to `origin/main`. Coolify dashboard deployment `jbht84z60dorlxilgw4pow0q` finished successfully on that commit. Required service: `propai-lab:main-app`.
+- Known limitations: I did not perform an authenticated browser click-through of Copy prompt in this session; the deployed source contains the updated prompt.
+- Next action: Hard-refresh Account → Instinct and copy the prompt into Instinct; it should call `/health` first and then use only the scopes returned.
+
