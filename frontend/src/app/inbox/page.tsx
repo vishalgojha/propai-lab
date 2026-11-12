@@ -1971,7 +1971,7 @@ function UnifiedMarketInbox() {
   const [searching, setSearching] = useState(false);
   const [corridorLabel, setCorridorLabel] = useState("");
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
-  const [triageFilter, setTriageFilter] = useState<TriageFilter>("extracted");
+  const [triageFilter, setTriageFilter] = useState<TriageFilter>("raw");
   const [rawScope, setRawScope] = useState<"groups" | "dms">("groups");
   const rawScopeRef = useRef<"groups" | "dms">("groups");
   const [freshOnly, setFreshOnly] = useState(false);
@@ -2947,8 +2947,8 @@ function UnifiedMarketInbox() {
         </div>
         <div className="mt-4 inline-flex w-fit max-w-full overflow-x-auto rounded-lg border border-[var(--zone-light-border)] bg-[var(--surface)] p-1" role="tablist" aria-label="Market Inbox data views">
           {([
-            ["extracted", "Extracted records", triageCounts.extracted],
             ["raw", "Raw messages", triageCounts.raw],
+            ["extracted", "Extracted records", triageCounts.extracted],
           ] as [TriageFilter, string, number | null][]).map(([value, label, count]) => (
             <button
               key={value}

@@ -1479,7 +1479,7 @@ async def select_groups(
             "p_group_jid": group_jid,
             "p_group_name": by_jid[group_jid].get("group_name") or group_jid,
             "p_public_market_source": True,
-        }).execute()
+        })
 
     # Do not rewrite raw_messages here.  This endpoint is the control-plane
     # commit for the user's explicit selection, while the extraction worker
@@ -1579,7 +1579,7 @@ async def opt_out_group(
             "p_group_jid": body.group_jid,
             "p_group_name": group.get("group_name") or body.group_jid,
             "p_public_market_source": False,
-        }).execute()
+        })
         return {
             "ok": True,
             "group": group,
@@ -1624,7 +1624,7 @@ async def opt_in_group(
         "p_group_jid": body.group_jid,
         "p_group_name": body.group_name or body.group_jid,
         "p_public_market_source": False,
-    }).execute()
+    })
     return {
         "ok": True,
         "message": "Group re-enabled for extraction",
