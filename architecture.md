@@ -149,7 +149,9 @@ session rejects a new QR-pairing request.
 The earliest active WhatsApp connection is the sole continuous-extraction
 owner for this single-tenant workspace. Its live group and direct-message
 events are captured into tenant-scoped `raw_messages` independently of the
-group-selection screen. Every eligible group is checked by default, and the
+group-selection screen. Group selection controls extraction eligibility only;
+an unselected group is retained as suppressed raw evidence rather than being
+dropped. Every eligible group is checked by default, and the
 operator can opt out groups individually. The draft selection must still be
 explicitly confirmed before extraction uses it; the screen gates starting
 extraction and is not a raw-capture filter. When extraction runs, eligible

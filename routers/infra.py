@@ -1661,9 +1661,14 @@ async def webhook(request: Request):
             print(f"[webhook] group name upsert error: {exc}", flush=True)
     message_id = msg_data.get("key", {}).get("id") or msg_data.get("id") or str(uuid.uuid4())
     message_uid = f"{webhook_broker_id or resolved_tenant_id}:{group}:{message_id}"
+    # Group selection controls extraction consent, not raw capture. Keep every
+    # authenticated WhatsApp message as tenant-scoped evidence; non-selected
+    # groups are stored raw-only and are released if the operator later opts
+    # the group in.
+    group_extraction_allowed = True
     if not is_dm:
         try:
-            allowed = await asyncio.to_thread(
+            group_extraction_allowed = await asyncio.to_thread(
                 extraction_allowed_for_group,
                 resolved_tenant_id,
                 str(group),
@@ -1672,21 +1677,11 @@ async def webhook(request: Request):
                 message_from_me=message_from_me,
                 sender_phone=sender_phone,
             )
-            if not allowed:
-                # Do not insert unselected group traffic into raw_messages.
-                # This is the ingestion boundary: suppressed traffic must not
-                # consume database space or enter the extraction queue.
-                return {
-                    "status": "suppressed_unselected_group",
-                    "stored": False,
-                    "message_uid": message_uid,
-                    "recoverable": False,
-                }
         except Exception as exc:
-            # Fail closed. A consent lookup outage must never turn into
-            # all-group ingestion, and no raw payload should be persisted.
-            print(f"[webhook] group selection check failed; dropping group message: {exc}", flush=True)
-            raise HTTPException(503, "WhatsApp group selection is temporarily unavailable")
+            # Fail closed for extraction, but preserve raw evidence. A group
+            # selection lookup outage must not silently drop WhatsApp traffic.
+            print(f"[webhook] group selection check failed; storing raw-only message: {exc}", flush=True)
+            group_extraction_allowed = False
     try:
         existing = await asyncio.to_thread(
             storage.get_raw_by_uid, message_uid, tenant_id=resolved_tenant_id
@@ -1723,6 +1718,8 @@ async def webhook(request: Request):
             finally:
                 set_tenant_id(previous)
         raw_id = await asyncio.to_thread(save_scoped_raw)
+        if not group_extraction_allowed:
+            await asyncio.to_thread(storage.set_raw_message_extraction_suppressed, raw_id, True)
         conversation_type = "group" if str(group).endswith("@g.us") else "broadcast" if str(group).endswith("@broadcast") else "direct"
         try:
             await asyncio.to_thread(storage.touch_whatsapp_conversation, resolved_tenant_id, webhook_broker_id or "legacy", instance, group, conversation_type, message_timestamp)
@@ -1745,9 +1742,14 @@ async def webhook(request: Request):
         "reply_context": msg.get("extendedTextMessage", {}).get("contextInfo", {}) or msg.get("imageMessage", {}).get("contextInfo", {}) or msg.get("videoMessage", {}).get("contextInfo", {}) or {},
         "source": "WHATSAPP", "is_group": not is_dm, "timestamp": message_timestamp,
         "synced_at": now, "event_id": message_id}
-    if not _schedule_raw_extraction(raw_id, extraction_ctx):
+    if group_extraction_allowed and not _schedule_raw_extraction(raw_id, extraction_ctx):
         _retry_schedule_raw_extraction(raw_id, extraction_ctx)
-    return {"status": "ok", "raw_id": raw_id, "message": "saved"}
+    return {
+        "status": "ok",
+        "raw_id": raw_id,
+        "message": "saved" if group_extraction_allowed else "saved_raw_only",
+        "extraction_suppressed": not group_extraction_allowed,
+    }
 
 @router.post("/ingest")
 async def ingest(req: IngestRequest, user: dict = Depends(require_user)):

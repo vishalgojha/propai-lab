@@ -1128,3 +1128,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Known limitations or failures: `PROPAI_PUBLIC_TENANT_ID` must be set on the public www service to restore public lead capture. Existing tenantless legacy CRM rows are not migrated by this code change. The full client route suite hangs in the pre-existing matcher mock test; the client module suite has one unrelated failure because its fake `listings_unified_matching` fixture does not satisfy current storage behavior. Frontend TypeScript has unrelated existing errors in dirty files.
 - Next action: Set `PROPAI_PUBLIC_TENANT_ID` to the owning organization UUID, deploy the API and public www service, then run authenticated cross-tenant read/write smoke tests and a public lead capture test.
 
+### Preserve raw WhatsApp capture for groups not selected for extraction
+
+- Requested outcome: Fix the low message count shown in WhatsApp capture by ensuring incoming messages are not dropped merely because their group is not selected for extraction.
+- Files/services changed: `routers/infra.py`, `architecture.md`, and this report.
+- Behavior: Authenticated group messages are now persisted as tenant-scoped raw evidence regardless of extraction selection. Non-selected groups, or groups whose consent lookup is temporarily unavailable, are marked `extraction_suppressed` and are not scheduled for parsing. Selected groups continue through the existing extraction queue.
+- Verification performed: `python3 -m py_compile routers/infra.py` passed; `git diff --check` passed. Live ingestor logs showed continuous group message receipt and API webhook `200` responses. Independent task-verifier verdict: **PARTIAL** because the focused webhook test module cannot import in this checkout without the pre-existing `langgraph` dependency.
+- Push/deployment status: Pending commit, push, and API redeployment. Required service: `api`; the dashboard reads the corrected API metric and does not require a frontend redeploy.
+- Known limitations or failures: Existing messages previously dropped before persistence cannot be recovered from PropAI; future messages will be retained. Existing unselected groups remain extraction-suppressed until opted in.
+- Next action: Redeploy the API and confirm `Total Raw` rises independently of `Processed` when new WhatsApp traffic arrives.
+
