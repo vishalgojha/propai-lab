@@ -1238,3 +1238,14 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Known limitations: Instinct must still query with `scope=dms`, and the workspace owner must keep private-DM consent enabled. Searches cannot recover messages that were never captured by WhatsApp.
 - Next action: Retry the same Instinct contact/name search after refreshing its integration; use `scope=dms` explicitly if it still defaults to group search.
 
+### Add Instinct private-DM conversation context
+
+- Requested outcome: Make Instinct able to retrieve the property details surrounding a DM search hit when the contact name or keyword is in a neighboring message rather than the matching message itself.
+- Root cause: The search endpoint returned matching raw rows only; it did not expose a bounded same-chat context operation. Production logs showed Instinct calling the DM search successfully with `200` responses, and aggregate checks found the requested terms in the active tenant's captured DM rows.
+- Files/services changed: `routers/external_agent.py`, `tests/test_external_agent_search.py`, `frontend/src/app/workspace/instinct/page.tsx`, `docs/EXTERNAL_AGENT_API.md`, and this report. Coolify `api` and `propai-lab:main-app` were redeployed.
+- Behavior: Added `GET /messages/{raw_message_id}/conversation`, which requires the existing DM consent and key scopes, verifies the anchor belongs to the key's tenant, restricts context to private DMs sharing the anchor's stable chat identity, and returns a bounded chronological window. The Instinct prompt now instructs it to call this endpoint after a DM search hit.
+- Verification performed: `pytest -q tests/test_external_agent_search.py` passed (9); Python compilation and `git diff --check` passed. Production logs showed the prior DM requests (`chitra`, phone, `rohini`, `Paid up capital`, `kunal`) reaching the API with `200`; production aggregate state showed 10,739 private rows and matches for all four terms in the active workspace. Independent task-verifier verdict: **PASS**.
+- Deployment/push status: Commit `07d968ea` was pushed to `origin/main`. Coolify API deployment `crcm08q6nrv2e7oqm99nzr2p` and dashboard deployment `avyy7uzhqq9ut8dh8i2kttqr` finished successfully on that commit.
+- Known limitations: The endpoint returns captured raw evidence only; it does not infer missing messages or fabricate a listing. The workspace must remain connected and private-DM consent must remain enabled.
+- Next action: Ask Instinct to repeat the search; it should search with `scope=dms`, then call the conversation endpoint for each relevant result before summarizing the listing.
+
