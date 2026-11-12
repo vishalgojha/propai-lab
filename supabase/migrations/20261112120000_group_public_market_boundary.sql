@@ -70,7 +70,6 @@ begin
   ] loop
     execute format('drop trigger if exists trg_%s_market_visibility on public.%I', table_name, table_name);
     execute format('create trigger trg_%s_market_visibility before insert or update of raw_message_id on public.%I for each row execute function public.apply_raw_market_visibility()', table_name, table_name);
-    execute format('update public.%I typed set visibility = case when public.raw_message_has_public_group_source(typed.raw_message_id) then ''shared_market'' else ''workspace_private'' end, source_scope = case when public.raw_message_has_public_group_source(typed.raw_message_id) then ''whatsapp_group_public'' else ''whatsapp_private'' end where typed.raw_message_id is not null', table_name);
   end loop;
 end;
 $$;
