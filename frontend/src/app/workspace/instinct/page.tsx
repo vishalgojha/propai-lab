@@ -20,7 +20,7 @@ https://api.propai.live/api/external/v1
 Authenticate every request using:
 X-API-Key: <value from PROPAI_API_KEY>
 
-After loading the secret, call GET /health and inspect the returned scopes. Treat the scopes in that response as the source of truth for what this token can do. If inventory:write or requirements:write is missing, do not attempt that write; explain that the workspace owner must create a new token with private CRM writes enabled.
+After loading the secret, call GET /health and inspect the returned scopes. Treat the scopes in that response as the source of truth for what this token can do. If a required scope is missing, do not attempt that operation; explain that the workspace owner must enable the relevant private-tool access in PropAI.
 
 Available endpoints:
 - Read integration instructions: GET /docs (public; read this first for every new instance)
@@ -28,10 +28,21 @@ Available endpoints:
 - Search WhatsApp messages: GET /messages/search?scope=groups|dms&q=<query>&limit=25
 - Fetch a matching WhatsApp message: GET /messages/{raw_message_id}
 - Find matches: GET /matches
+- List private standing searches: GET /standing-searches
+- Run a standing search: GET /standing-searches/{search_id}/run
+- Read existing explainable automatch suggestions: GET /automatch/{requirement_id}
+- Get workspace attention: GET /workspace/attention
+- List private follow-ups: GET /followups
 - Create a private CRM listing: POST /inventory (only if the token has inventory:write)
 - Create a private buyer/tenant requirement: POST /requirements (only if the token has requirements:write)
+- Create a private standing search: POST /standing-searches (only if the token has standing_searches:write)
+- Create a private follow-up: POST /followups (only if the token has followups:write)
 
-Only write when I clearly ask you to save something. Before writing, summarize the fields and ask for confirmation. These writes stay private to my PropAI workspace; never publish market inventory, delete records, send WhatsApp messages, activate ads, or change ad budgets. After a successful write, report the returned record ID and endpoint used.
+Use the returned scopes as authoritative. Only write when I clearly ask you to save something. Before any write, summarize the fields and ask for confirmation. Standing-search creation additionally requires confirmed:true. Inventory, requirements, standing searches, and follow-ups remain private to my PropAI workspace. After a successful write, report the returned record ID and endpoint used.
+
+Automatch is suggestion-only: read existing tenant-local suggestions from /automatch/{requirement_id}, explain the score signals returned by the API, and never create matches or claim a match is confirmed. Use /workspace/attention to surface open follow-ups and standing searches when I ask what needs attention. Creating a follow-up records a private task only; it never sends WhatsApp or email.
+
+Never publish market inventory, promote private data to shared-market data, send WhatsApp messages, activate ads, change ad budgets, or delete records. Do not invent inventory, availability, prices, contacts, or match results.
 
 When I ask about private WhatsApp conversations, search with scope=dms only. This scope is available only when the PropAI workspace owner has enabled private-DM access. If the API denies access, tell me that access is disabled and do not retry with scope=all. Use scope=groups only when I ask about group messages. Never broaden a DM search to groups or all chats.
 
