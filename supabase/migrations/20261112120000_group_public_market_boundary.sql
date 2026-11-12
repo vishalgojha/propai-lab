@@ -108,36 +108,18 @@ grant execute on function public.sync_group_market_visibility(uuid, text, text, 
 -- Keep the existing privacy-shaped card-fact columns unchanged.
 create or replace view public.listings_unified_public as
 select
-  l.*,
-  case
-    when l.card_type = 'residential_sale' then (select r.bathroom_count from public.residential_sale_listings r where r.id = l.id)
-    when l.card_type = 'residential_rent' then (select r.bathroom_count from public.residential_rent_listings r where r.id = l.id)
-    else null
-  end as bathroom_count,
-  case
-    when l.card_type = 'residential_sale' then (select r.car_parking_count from public.residential_sale_listings r where r.id = l.id)
-    when l.card_type = 'residential_rent' then (select r.car_parking_count from public.residential_rent_listings r where r.id = l.id)
-    when l.card_type = 'commercial_sale' then (select r.car_parking_count from public.commercial_sale_listings r where r.id = l.id)
-    when l.card_type = 'commercial_rent' then (select r.car_parking_count from public.commercial_rent_listings r where r.id = l.id)
-    else null
-  end as car_parking_count,
-  case
-    when l.card_type = 'residential_sale' then (select r.parking_type from public.residential_sale_listings r where r.id = l.id)
-    when l.card_type = 'residential_rent' then (select r.parking_type from public.residential_rent_listings r where r.id = l.id)
-    when l.card_type = 'commercial_sale' then (select r.parking_type from public.commercial_sale_listings r where r.id = l.id)
-    when l.card_type = 'commercial_rent' then (select r.parking_type from public.commercial_rent_listings r where r.id = l.id)
-    else null
-  end as parking_type,
-  case
-    when l.card_type = 'commercial_sale' then (select r.has_lift from public.commercial_sale_listings r where r.id = l.id)
-    when l.card_type = 'commercial_rent' then (select r.has_lift from public.commercial_rent_listings r where r.id = l.id)
-    else null
-  end as has_lift,
-  case
-    when l.card_type = 'commercial_sale' then (select r.has_power_backup from public.commercial_sale_listings r where r.id = l.id)
-    when l.card_type = 'commercial_rent' then (select r.has_power_backup from public.commercial_rent_listings r where r.id = l.id)
-    else null
-  end as has_power_backup
+  l.card_type, l.id, l.building_name, l.micro_market, l.bhk, l.area_sqft, l.price,
+  l.price_unit, l.price_model, l.price_per_sqft, l.price_raw_text, l.price_qualifier,
+  l.furnishing, l.furnishing_status, l.fitout_status, l.floor_description,
+  l.view, l.property_view, l.location_label, l.locality_raw, l.locality_resolved,
+  l.locality_confidence, l.landmark_name, l.street_name, l.summary_title,
+  l.deal_tags, l.additional_charges, l.needs_review, l.created_at, l.updated_at,
+  l.first_seen, l.last_seen, l.observation_count, l.group_count,
+  l.representative_listing_index, l.canonical_micro_market_slug,
+  l.source_fingerprint, l.asset_type, l.property_type, l.intent,
+  l.transaction_type, l.transaction_nature, l.broker_id, l.fingerprint,
+  l.developer, l.orientation, l.listing_source, l.location_raw,
+  l.opportunity_key, l.broker_name
 from public.listings_unified_public_legacy l
 where exists (select 1 from public.residential_sale_listings r where l.card_type = 'residential_sale' and r.id = l.id and r.visibility = 'shared_market')
    or exists (select 1 from public.residential_rent_listings r where l.card_type = 'residential_rent' and r.id = l.id and r.visibility = 'shared_market')

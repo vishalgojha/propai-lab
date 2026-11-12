@@ -1149,3 +1149,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Independent task-verifier verdict: **PARTIAL** — code paths and local checks support the requested boundary, but production migration application and live cross-tenant/public-read verification are not available in this session.
 - Next action: Apply the migration to production, redeploy `api` so group-selection actions call the new synchronization RPC, and run authenticated tests proving DM/private-group isolation plus selected-group shared-market visibility.
 
+### Apply and deploy the WhatsApp group publication boundary
+
+- Requested outcome: Apply the explicit boundary in production: DMs and all groups remain tenant-scoped/private by default; only selected groups may publish shared-market inventory.
+- Files/services changed: `supabase/migrations/20261112120000_group_public_market_boundary.sql` was aligned with the live public-view column contract; production Supabase schema was migrated; Coolify `api` was redeployed.
+- Production behavior: `organization_group_connections.public_market_source` exists with safe default `false`; the source-check and synchronization functions exist; eight typed-row visibility triggers are installed; the public listing view requires `visibility = 'shared_market'`. Historical typed rows were backfilled and currently produce zero shared-market rows, which is the safe default until a group is explicitly selected.
+- Verification performed: Production Management API query returned `column_exists=true`, `raw_fn=true`, `sync_fn=true`, `trigger_count=8`, and `view_has_boundary=true`; all eight historical backfill statements completed successfully. Local `pytest -q tests/test_onboarding_backfill.py` passed (6), `python3 -m py_compile routers/whatsapp_group_controls.py` passed, and `git diff --check` passed. Independent second-pass task-verifier verdict: **PARTIAL** — implementation, migration state, and deployment passed; authenticated adversarial cross-tenant smoke tests were not available in this session.
+- Deployment/push status: Coolify API deployment `us95apzi28v40t5t6bnrwjgk` finished successfully on commit `d760a39b`. The migration/report alignment commit is pending push.
+- Known limitations: No authenticated test account was used to select a real group and verify one shared listing against a second tenant. The management token supplied for this operation should be revoked/rotated after use.
+- Next action: Select an approved group in the signed-in workspace, verify its typed rows become `shared_market`, and confirm DMs/unselected groups remain `workspace_private` from two tenant sessions.
+
