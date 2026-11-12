@@ -872,7 +872,7 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Files changed: `frontend/src/app/connections/page.tsx` and this report.
 - Behavior: The QR dialog now shows a live session countdown, expires the UI state with an actionable message, and allows the longer documented pairing window before declaring QR preparation stuck.
 - Verification performed: Pending focused frontend lint and mechanical UI detector.
-- Deployment/push status: Pending commit, push, and dashboard redeployment.
+- Deployment/push status: Commit `7d3f7d82` was pushed to `origin/main`. Coolify dashboard deployment `yjunjxbrk2irlkj9fnj137kz` finished successfully on that commit.
 - Known limitations or failures: WhatsApp still controls whether the handset accepts the QR; the timer reflects PropAI’s pairing session window, not a guarantee of WhatsApp’s exact server-side expiry.
 - Independent task-verifier verdict: **PARTIAL** pending verification and deployment.
 - Next action: Run lint/detector, commit/push, redeploy `propai-lab:main-app`, and verify the countdown in production.
@@ -1195,5 +1195,5 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Verification performed: `git diff --check` and the Impeccable detector passed with no findings. Targeted ESLint remains unavailable because this checkout lacks a local ESLint binary and pnpm cannot open its dependency store in the sandbox.
 - Deployment/push status: Pending commit, push, and dashboard redeployment.
 - Independent second-pass task-verifier verdict: **PARTIAL** — the modal-removal flow passes local review; live browser smoke verification remains pending.
-- Next action: Deploy and reload Connections; individual Include group clicks should stage immediately, with one confirmation above the grid.
+- Next action: Reload Connections; individual Include group clicks should stage immediately, with one confirmation above the grid.
 
