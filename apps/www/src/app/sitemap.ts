@@ -154,8 +154,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // The query is already restricted to rows with a real last_seen value.
     // Never substitute request/build time: that would publish a false
     // freshness signal to crawlers.
-    if (l.last_seen && Number.isFinite(new Date(l.last_seen).getTime())) {
-      entry.lastModified = new Date(l.last_seen);
+    // This block currently sits below an unconditional `return []`, so
+    // TypeScript treats it as unreachable and skips control-flow narrowing.
+    // The explicit cast keeps the build type-checking if the sitemap is
+    // re-enabled; the truthiness guard keeps the value real.
+    const lastSeen = l.last_seen;
+    if (lastSeen) {
+      const lastSeenDate = new Date(lastSeen as string);
+      if (Number.isFinite(lastSeenDate.getTime())) {
+        entry.lastModified = lastSeenDate;
+      }
     }
     urls.push(entry);
   }
