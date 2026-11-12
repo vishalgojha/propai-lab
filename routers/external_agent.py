@@ -93,8 +93,13 @@ def _key_row(token: str) -> dict:
     row["external_agent_dms_enabled"] = bool(
         ((consent.data or [{}])[0] or {}).get("external_agent_dms_enabled")
     )
-    set_tenant_id(str(row["tenant_id"]))
+    # Workspace consent is the owner-controlled gate for DM access. Keep
+    # older active Instinct keys usable when consent is enabled, even if the
+    # per-key scope predates the consent UI's scope synchronization.
     row["scopes"] = sorted(set(row.get("scopes") or []) | TOOL_READ_SCOPES)
+    if row["external_agent_dms_enabled"]:
+        row["scopes"] = sorted(set(row["scopes"]) | {"raw_messages:dms"})
+    set_tenant_id(str(row["tenant_id"]))
     return row
 
 

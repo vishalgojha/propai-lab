@@ -2947,16 +2947,21 @@ function UnifiedMarketInbox() {
         </div>
         <div className="mt-4 inline-flex w-fit max-w-full overflow-x-auto rounded-lg border border-[var(--zone-light-border)] bg-[var(--surface)] p-1" role="tablist" aria-label="Market Inbox data views">
           {([
-            ["raw", "Raw messages", triageCounts.raw],
+            ["groups", "Groups", triageCounts.raw],
+            ["dms", "DMs", null],
             ["extracted", "Extracted records", triageCounts.extracted],
-          ] as [TriageFilter, string, number | null][]).map(([value, label, count]) => (
+          ] as ["groups" | "dms" | TriageFilter, string, number | null][]).map(([value, label, count]) => {
+            const selected = value === "extracted"
+              ? triageFilter === "extracted"
+              : triageFilter === "raw" && rawScope === value;
+            return (
             <button
               key={value}
               type="button"
               role="tab"
               id={`market-inbox-tab-${value}`}
               aria-controls="market-inbox-panel"
-              aria-selected={triageFilter === value}
+              aria-selected={selected}
               onKeyDown={(event) => {
                 const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"][aria-controls="market-inbox-panel"]'));
                 const currentIndex = tabs.indexOf(event.currentTarget);
@@ -2970,8 +2975,13 @@ function UnifiedMarketInbox() {
                 }
               }}
               onClick={() => {
-                if (triageFilter === value) return;
-                setTriageFilter(value);
+                if (value === "extracted") {
+                  if (triageFilter === "extracted") return;
+                  setTriageFilter("extracted");
+                } else {
+                  setTriageFilter("raw");
+                  setRawScope(value);
+                }
                 setFreshOnly(false);
                 setSimilarForKey(null);
                 setSelectedKeys(new Set());
@@ -2979,19 +2989,17 @@ function UnifiedMarketInbox() {
                 feedRawOffsetRef.current = 0;
                 setRawSpamHidden(0);
               }}
-              className={`relative flex min-h-9 flex-none items-center justify-start gap-2 rounded-md border px-3 text-left text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111822] ${triageFilter === value ? "border-emerald-300 bg-emerald-300 text-[#061015] shadow-sm" : "border-transparent text-white hover:border-white/10 hover:bg-white/[0.04] hover:text-white"}`}
+              className={`relative flex min-h-9 flex-none items-center justify-start gap-2 rounded-md border px-3 text-left text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111822] ${selected ? "border-emerald-300 bg-emerald-300 text-[#061015] shadow-sm" : "border-transparent text-white hover:border-white/10 hover:bg-white/[0.04] hover:text-white"}`}
             >
-              <span className="min-w-0 truncate">{label}</span>{count !== null && <span className={`shrink-0 rounded-full px-2 py-0.5 tabular-nums ${triageFilter === value ? "bg-[#061015]/10 text-[#061015]" : "bg-white/10 text-slate-200"}`}>{count}</span>}
+              <span className="min-w-0 truncate">{label}</span>{count !== null && <span className={`shrink-0 rounded-full px-2 py-0.5 tabular-nums ${selected ? "bg-[#061015]/10 text-[#061015]" : "bg-white/10 text-slate-200"}`}>{count}</span>}
             </button>
-          ))}
+          );})}
         </div>
         {triageFilter === "extracted" && <div className="mt-2 flex flex-wrap items-center gap-2">
           <button type="button" aria-pressed={!freshOnly} onClick={() => setFreshOnly(false)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${!freshOnly ? "border-white/20 bg-white/[0.06] text-zinc-100" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>All recency</button>
           <button type="button" aria-pressed={freshOnly} onClick={() => setFreshOnly(true)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${freshOnly ? "border-[var(--signal-lime)]/50 bg-[var(--signal-lime)]/10 text-[var(--signal-lime)]" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Fresh today</button>
         </div>}
         {triageFilter === "raw" && <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button type="button" aria-pressed={rawScope === "groups"} onClick={() => setRawScope("groups")} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${rawScope === "groups" ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-100" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Groups</button>
-          <button type="button" aria-pressed={rawScope === "dms"} onClick={() => setRawScope("dms")} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${rawScope === "dms" ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-100" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Direct messages</button>
           <button type="button" aria-pressed={!includeSpam} onClick={() => setIncludeSpam(false)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${!includeSpam ? "border-white/20 bg-white/[0.06] text-zinc-100" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Hide hiring spam</button>
           <button type="button" aria-pressed={includeSpam} onClick={() => setIncludeSpam(true)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${includeSpam ? "border-[var(--signal-lime)]/50 bg-[var(--signal-lime)]/10 text-[var(--signal-lime)]" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Show everything</button>
           {rawSpamHidden > 0 && <span className="rounded-full border border-amber-300/25 bg-amber-300/[0.06] px-2 py-1 text-[10px] font-semibold text-amber-200" role="status">{rawSpamHidden} hiring message{rawSpamHidden === 1 ? "" : "s"} in this batch hidden</span>}
