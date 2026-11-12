@@ -203,7 +203,14 @@ async def external_raw_message_search(
     elif scope == "dms":
         query = query.eq("is_group", False)
     if q.strip():
-        query = query.ilike("message", f"%{q.strip()}%")
+        # DM searches commonly name the contact rather than quote the message.
+        # Search the captured text and chat identity fields without widening the
+        # tenant or group/DM predicate above.
+        term = q.strip().replace("\\", "\\\\").replace(",", "\\,")
+        query = query.or_(
+            f"message.ilike.%{term}%,sender.ilike.%{term}%,"
+            f"sender_phone.ilike.%{term}%,group_name.ilike.%{term}%"
+        )
     if since:
         query = query.gte("timestamp", since)
     if until:

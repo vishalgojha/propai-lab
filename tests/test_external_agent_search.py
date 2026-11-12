@@ -20,6 +20,10 @@ class Query:
     def ilike(self, *_args):
         return self
 
+    def or_(self, expression):
+        self.or_expression = expression
+        return self
+
     def gte(self, *_args):
         return self
 
@@ -82,6 +86,22 @@ def test_group_search_remains_group_only(monkeypatch):
         key={"tenant_id": "tenant-1", "scopes": ["raw_messages:read"]},
     ))
     assert ("is_group", True) in client.query.filters
+
+
+def test_search_matches_contact_identity_as_well_as_message(monkeypatch):
+    client = Client()
+    monkeypatch.setattr(external_agent, "storage", type("Storage", (), {"client": client})())
+    asyncio.run(external_agent.external_raw_message_search(
+        q="Sheetal", scope="dms", limit=25, offset=0,
+        key={
+            "tenant_id": "tenant-1",
+            "scopes": ["raw_messages:read", "raw_messages:dms"],
+            "external_agent_dms_enabled": True,
+        },
+    ))
+    assert "message.ilike.%Sheetal%" in client.query.or_expression
+    assert "sender.ilike.%Sheetal%" in client.query.or_expression
+    assert "sender_phone.ilike.%Sheetal%" in client.query.or_expression
 
 
 def test_search_rejects_unknown_scope(monkeypatch):
