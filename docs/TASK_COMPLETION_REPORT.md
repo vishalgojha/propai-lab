@@ -1207,3 +1207,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Independent second-pass task-verifier verdict: **PARTIAL** — the UI state handling and live log diagnosis pass; a signed-in browser smoke test remains unavailable.
 - Next action: Reload the Connections page; the panel should show a non-blocking warning when a refresh hiccups while keeping the active selection visible.
 
+### Add tenant-scoped Instinct workflow tools
+
+- Requested outcome: Give Instinct useful standing-search, automatch, workspace-attention, and follow-up tools while preserving the tenant boundary and keeping outbound actions approval-gated.
+- Files/services changed: `routers/external_agent.py`, `supabase/migrations/20261112120000_external_agent_instinct_tools.sql`, `docs/EXTERNAL_AGENT_API.md`, `architecture.md`, and `tests/test_external_agent_search.py`. Coolify `api` was redeployed; no dashboard or worker redeploy was required.
+- Behavior: Instinct now has tenant-derived standing-search list/create/run, read-only existing-match automatch with explanations, workspace attention summary, and private follow-up list/create endpoints. Standing-search and follow-up writes require explicit write scopes; standing-search creation also requires `confirmed:true`. Automatch does not create matches, message anyone, publish inventory, activate ads, change budgets, or delete records. Existing active keys received the four new read scopes through the production migration; private write scopes remain owner-controlled.
+- Verification performed: `pytest -q tests/test_external_agent_auth.py tests/test_external_agent_consent.py tests/test_external_agent_search.py` passed (13); Python compilation, OpenAPI route inspection, and `git diff --check` passed. Production scope migration returned `row_count: 16`. Independent task-verifier verdict: **PASS** for the requested API slice; the committed diff contains only the task files, and the deployed Coolify commit matches the pushed commit.
+- Deployment/push status: Commits `3fc4c42d` and `52634fca` were pushed to `origin/main`. Coolify API deployment `e113dbyce8tda9jp8mpcegi2` finished successfully on `52634fca`. Required service: `api`.
+- Known limitations: No authenticated Instinct client smoke test was run because no external-agent API secret was available in the session. The API remains intentionally suggestion-only for automatch and does not schedule or send outbound follow-ups.
+- Next action: Connect Instinct with the workspace key, call `GET /health`, then exercise one standing search, one automatch read, and one private follow-up draft from the owner-approved workspace.
+
