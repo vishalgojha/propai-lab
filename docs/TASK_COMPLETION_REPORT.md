@@ -1178,3 +1178,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Independent second-pass task-verifier verdict: **PARTIAL** — the bulk-selection control is implemented and scoped correctly; live browser confirmation remains pending.
 - Next action: Reload Connections, click `Include all eligible`, then click the single confirmation action above the group grid.
 
+### Allow explicit inclusion of broadcast groups
+
+- Requested outcome: Include broadcast groups in the same bulk selection flow instead of silently excluding them as `network_owned`.
+- Files changed: `routers/whatsapp_group_controls.py` no longer marks network-owned groups unavailable for this connection; `frontend/src/app/connections/page.tsx` now labels the action `Include all groups` and explains that network-covered broadcasts can be selected here too.
+- Behavior: The user can include all groups, including broadcasts, with one bulk action and one confirmation. Groups already covered by another active connection remain blocked to avoid cross-connection duplication.
+- Verification performed: Python compilation, `git diff --check`, and the Impeccable detector passed with no new findings.
+- Deployment/push status: Pending commit, push, and API/dashboard redeployment.
+- Independent second-pass task-verifier verdict: **PARTIAL** — selection policy and UI path pass local review; live confirmation of the full group set remains pending.
+- Next action: Deploy, click `Include all groups`, confirm once, and start optional extraction.
+

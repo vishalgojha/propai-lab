@@ -793,16 +793,10 @@ def _group_directory(
             opted_out = bool(connection_state.get(group_jid, {}).get("opted_out"))
             network_owned = group_jid in network_owned_jids
             network_member_overlap = group_jid in network_member_jids
-            # Network ownership protects ordinary workspaces from selecting a
-            # group already captured by PropAI's shared number. Super Admin
-            # needs an explicit override so a pilot group can be selected on
-            # this connection without changing the shared-network guard.
-            opted_out = opted_out or (network_owned and not allow_managed_selection)
             novelty_data = novelty.get(group_jid, {})
             covered_by_other = group_jid in covered_elsewhere
             selectable = (
-                (allow_managed_selection or not network_owned)
-                and (allow_managed_selection or not covered_by_other)
+                not covered_by_other
             )
 
             scored_groups.append({
@@ -824,9 +818,7 @@ def _group_directory(
             if network_owned:
                 scored_groups[-1]["selection_reason"] = (
                     "Already captured by PropAI's shared WhatsApp network; "
-                    "Super Admin may explicitly select it for this connection"
-                    if allow_managed_selection
-                    else "Already captured by PropAI's shared WhatsApp network"
+                    "selecting it here also enables this phone's extraction"
                 )
             elif covered_by_other:
                 scored_groups[-1]["selection_reason"] = "Already selected on another active WhatsApp connection"
@@ -1443,7 +1435,7 @@ async def select_groups(
         if not by_jid[jid].get("selectable", True)
     ]
     if blocked:
-        raise HTTPException(409, "A selected group is already covered by PropAI or another active connection")
+        raise HTTPException(409, "A selected group is already covered by another active connection")
 
     now = datetime.now(timezone.utc).isoformat()
     if not _is_propai_connection(connection):

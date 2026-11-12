@@ -1592,7 +1592,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       {networkGroupCount > 0 && (
         <div className="mt-3 rounded-lg border border-emerald-400/20 bg-emerald-500/[0.05] px-3 py-2 text-[11px] text-emerald-100">
           <span className="font-semibold text-emerald-300">PropAI network coverage: {networkGroupCount} groups</span>
-          <span className="ml-1.5">These groups are already captured by PropAI&apos;s shared WhatsApp network. Their inventory is available in Market Inbox and is not part of this phone&apos;s selectable sync queue.</span>
+          <span className="ml-1.5">These groups are already captured by PropAI&apos;s shared WhatsApp network. Include them here too when you want this phone&apos;s broadcasts and messages processed.</span>
         </div>
       )}
 
@@ -1624,7 +1624,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                   disabled={savingSelection}
                   className="rounded-lg border border-cyan-400/30 px-2.5 py-1.5 text-[11px] font-semibold text-cyan-200 hover:bg-cyan-500/10 disabled:opacity-50"
                 >
-                  Include all eligible
+                  Include all groups
                 </button>
                 <button
                   type="button"
