@@ -1164,7 +1164,8 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Requested outcome: Make raw WhatsApp evidence the first Market Inbox view, remove the extraction-control 500, and stop ordinary groups from remaining excluded because of the retired three-group cap.
 - Files/services changed: `frontend/src/app/inbox/page.tsx` now defaults to `Raw messages`; `routers/whatsapp_group_controls.py` now treats the custom Supabase RPC return correctly instead of calling `.execute()` on its integer result; the current connection's 33 stale non-network cap exclusions were restored to active/public selection and synchronized. Network-owned groups remain excluded by design.
 - Verification performed: `python3 -m py_compile routers/whatsapp_group_controls.py`, `pytest -q tests/test_onboarding_backfill.py` (6 passed), and `git diff --check` passed. Production repair completed successfully; the remaining connection state preserves network-owned exclusions.
-- Deployment/push status: Code commit, push, and API/dashboard redeploy are pending.
+- Deployment/push status: Commit `4cde46cf` was pushed to `origin/main`. Coolify API deployment `fyhfdva9ru14q1zm8qpvishh` and dashboard deployment `v3wynb1fgkrfwxqq94xaw1sx` finished successfully on that commit.
 - Known limitations: Explicitly opted-out groups cannot be distinguished from old cap-generated exclusions in the legacy rows; this repair targeted only the affected connection's non-network exclusions. The management token supplied for this operation should be revoked/rotated after use.
-- Next action: Deploy the API and dashboard, reload Connections, then confirm the group selection screen shows ordinary groups included and the prior 500 is gone.
+- Independent second-pass task-verifier verdict: **PARTIAL** — code, production state repair, local tests, and both deployments passed; a signed-in browser smoke test of clicking Start/Confirm was not available in this session.
+- Next action: Reload Connections and confirm ordinary groups are included, the previous 500 is gone, and Market Inbox opens on Raw Messages.
 
