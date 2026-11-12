@@ -1249,3 +1249,14 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Known limitations: The endpoint returns captured raw evidence only; it does not infer missing messages or fabricate a listing. The workspace must remain connected and private-DM consent must remain enabled.
 - Next action: Ask Instinct to repeat the search; it should search with `scope=dms`, then call the conversation endpoint for each relevant result before summarizing the listing.
 
+### Group private DMs into actionable conversations
+
+- Requested outcome: Stop rendering each private WhatsApp DM as a separate, non-actionable message card; group messages by conversation and provide useful next actions without turning DMs into inventory.
+- Root cause: The raw-message endpoint returned one row at a time without a stable conversation key, and the DM card had no conversation or WhatsApp action.
+- Files/services changed: `frontend/src/app/inbox/page.tsx` and this report. No database schema or architecture invariant changed.
+- Behavior: The inbox collapses the loaded DM batch by the existing direct-chat identity (with sender/chat fallback), shows the latest captured messages together, and provides `Open conversation` plus `Open WhatsApp` actions when a phone anchor is present. DMs remain private raw evidence and are not auto-extracted or published.
+- Verification performed: Python compilation passed; repo ESLint completed with 0 errors and existing warnings; targeted TypeScript filtering showed no new errors at the changed lines; `git diff --cached --check` passed; URL wiring confirms the action preserves the conversation/message parameters used by the inbox thread loader. `next build` is blocked by pre-existing missing Radix packages (`@radix-ui/react-dialog`, `@radix-ui/react-separator`, `@radix-ui/react-tabs`, `@radix-ui/react-tooltip`). Independent task-verifier verdict: **PASS** for the requested local implementation; live browser smoke verification remains unavailable.
+- Deployment/push status: Pending commit and push. Required Coolify service: `propai-lab:main-app` for the inbox UI; redeploy only after push unless separately requested.
+- Known limitations: Grouping is bounded to the currently loaded DM batch; raw archive pagination remains cursor-based. No live browser click-through was available in this session.
+- Next action: Commit and push only the two staged task files, then redeploy `propai-lab:main-app` when authorized.
+

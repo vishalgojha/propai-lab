@@ -2872,6 +2872,35 @@ function UnifiedMarketInbox() {
   const selectedVisibleItems = triageItems.filter((item) => selectedKeys.has(marketItemKey(item)));
   const similarFeedItems = similarForKey ? (similarResults[similarForKey] || []) : null;
   const displayedItems = similarFeedItems || triageItems;
+  const renderedItems = useMemo(() => {
+    if (triageFilter !== "raw" || rawScope !== "dms" || similarFeedItems) return displayedItems;
+    const conversations = new Map<string, any[]>();
+    for (const item of displayedItems) {
+      const key = String(
+        item.conversation_key
+        || item.chat_id
+        || item.sender_jid
+        || item.sender_phone
+        || item.group_name
+        || item.sender
+        || item.id,
+      );
+      const messages = conversations.get(key) || [];
+      messages.push(item);
+      conversations.set(key, messages);
+    }
+    return Array.from(conversations.values()).map((messages) => {
+      const ordered = [...messages].sort((a, b) => String(a.last_seen || a.created_at || "").localeCompare(String(b.last_seen || b.created_at || "")));
+      const latest = ordered[ordered.length - 1] || messages[0];
+      return {
+        ...latest,
+        conversation_key: latest.conversation_key || latest.chat_id,
+        conversation_name: latest.conversation_name || latest.sender || latest.sender_phone || "Direct Message",
+        _dm_thread_messages: ordered,
+        _dm_thread_count: ordered.length,
+      };
+    });
+  }, [displayedItems, rawScope, similarFeedItems, triageFilter]);
   const searchHasMore = searchItems !== null && searchItems.length < searchTotal;
   const similarAnchor = similarForKey ? visibleItems.find((item) => marketItemKey(item) === similarForKey) : null;
   const similarSearchMarkets = similarAnchor ? similarMarketLabels(similarAnchor) : [];
@@ -3197,7 +3226,7 @@ function UnifiedMarketInbox() {
             <Button type="button" variant="outline" size="sm" onClick={() => setSimilarForKey(null)} className="h-8 rounded-lg border-cyan-300/25 px-3 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-300/10">Back to market feed</Button>
           </div>}
           <div className="market-inbox-grid">
-            {displayedItems.map((item) => {
+            {renderedItems.map((item) => {
               const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
               const expiry = expiryLabel(item);
               const freshness = marketFreshness(item);
@@ -3233,24 +3262,40 @@ function UnifiedMarketInbox() {
                 const rawDetailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`;
                 const rawDetail = expandedDetails[rawDetailKey];
                 const fullSourceMessage = String(rawDetail?.raw?.message || "");
+                const dmMessages = Array.isArray(item._dm_thread_messages) ? item._dm_thread_messages : [];
+                const dmPhone = String(item.sender_phone || item.sender || item.group_name || "").match(/(?:\+?91[\s-]?)?[6-9]\d{9}/)?.[0] || "";
+                const dmDigits = dmPhone.replace(/\D/g, "").slice(-10);
+                const dmWaUrl = dmDigits && /^[6-9]\d{9}$/.test(dmDigits) ? `https://wa.me/91${dmDigits}` : "";
+                const conversationUrl = `/inbox?conversation=${encodeURIComponent(String(item.conversation_key || item.chat_id || ""))}&message=${encodeURIComponent(String(item.raw_message_id || item.id || ""))}`;
                 return (
                   <article key={`raw-message-${item.raw_message_id || item.id}`}>
                     <MarketInboxCard className="market-raw-message-card">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-zinc-100">WhatsApp message</span>
+                        <span className="text-xs font-semibold text-zinc-100">{rawScope === "dms" ? "WhatsApp conversation" : "WhatsApp message"}</span>
                         <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${item.is_unparsed ? "border-amber-300/25 bg-amber-300/[0.06] text-amber-200" : "border-cyan-300/25 bg-cyan-300/[0.06] text-cyan-100"}`}>{item.is_unparsed ? "Not extracted" : "Captured source"}</span>
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-500">
-                        {item.group_name && <span>{item.group_name}</span>}
+                        {rawScope === "dms" && <span className="font-semibold text-zinc-300">{item.conversation_name || item.sender || dmPhone || "Direct Message"}</span>}
+                        {rawScope !== "dms" && item.group_name && <span>{item.group_name}</span>}
                         {item.sender && <span>From {item.sender}</span>}
                         {receivedAt && <time dateTime={receivedAt}>{formatDateTimeIST(receivedAt)}</time>}
+                        {rawScope === "dms" && item._dm_thread_count > 1 && <span>{item._dm_thread_count} captured messages in this chat</span>}
                       </div>
                       <div className="mt-3 border-t border-white/10 pt-3">
                         <div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Original WhatsApp message</div>
-                        {originalMessage
-                          ? <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words font-sans text-xs leading-5 text-zinc-300">{originalMessage}</pre>
+                        {rawScope === "dms" && dmMessages.length > 1
+                          ? <div className="mt-2 space-y-2">
+                            {dmMessages.slice(-4).map((message: any) => <div key={message.id} className="rounded-lg border border-white/[0.06] bg-black/15 px-3 py-2"><div className="mb-1 text-[10px] text-zinc-500">{formatDateTimeIST(String(message.last_seen || message.created_at || ""))}</div><p className="whitespace-pre-wrap break-words text-xs leading-5 text-zinc-300">{String(message.raw_message || message.source_message || message.original_message || "").trim() || "Media or unsupported message"}</p></div>)}
+                          </div>
+                          : originalMessage
+                            ? <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words font-sans text-xs leading-5 text-zinc-300">{originalMessage}</pre>
                           : <p className="mt-2 text-xs text-zinc-500">The original message text is unavailable.</p>}
                       </div>
+                      {rawScope === "dms" && <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
+                        <Link href={conversationUrl} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--signal-lime)] px-2.5 text-[10px] font-bold text-[var(--asphalt)] hover:brightness-105"><MessageSquare className="h-3 w-3" aria-hidden="true" />Open conversation</Link>
+                        {dmWaUrl && <a href={dmWaUrl} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-300/30 px-2.5 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-300/10"><MessageSquare className="h-3 w-3" aria-hidden="true" />Open WhatsApp</a>}
+                        <span className="text-[10px] text-zinc-500">DMs stay private raw evidence until you explicitly act on them.</span>
+                      </div>}
                       <details
                         className="mt-3 border-t border-white/10 pt-3"
                         onToggle={(event) => {
