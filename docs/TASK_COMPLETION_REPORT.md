@@ -1184,7 +1184,7 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Files changed: `routers/whatsapp_group_controls.py` no longer marks network-owned groups unavailable for this connection; `frontend/src/app/connections/page.tsx` now labels the action `Include all groups` and explains that network-covered broadcasts can be selected here too.
 - Behavior: The user can include all groups, including broadcasts, with one bulk action and one confirmation. Groups already covered by another active connection remain blocked to avoid cross-connection duplication.
 - Verification performed: Python compilation, `git diff --check`, and the Impeccable detector passed with no new findings.
-- Deployment/push status: Pending commit, push, and API/dashboard redeployment.
+- Deployment/push status: Commit `53773fc6` was pushed to `origin/main`. Coolify API deployment `m967hwq6mhdi88kyiq6fk37n` and dashboard deployment `g8084ps0y3k4ejovizg1esnk` finished successfully on that commit.
 - Independent second-pass task-verifier verdict: **PARTIAL** — selection policy and UI path pass local review; live confirmation of the full group set remains pending.
-- Next action: Deploy, click `Include all groups`, confirm once, and start optional extraction.
+- Next action: Reload Connections, click `Include all groups`, confirm once, and start optional extraction.
 
