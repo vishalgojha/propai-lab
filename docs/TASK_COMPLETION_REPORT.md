@@ -1197,3 +1197,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Independent second-pass task-verifier verdict: **PARTIAL** — the modal-removal flow passes local review; live browser smoke verification remains pending.
 - Next action: Reload Connections; individual Include group clicks should stage immediately, with one confirmation above the grid.
 
+### Clarify transient extraction-directory errors
+
+- Requested outcome: Remove the misleading red `500: Internal Server Error` presentation when the group directory is already loaded and extraction/capture continue.
+- Files changed: `frontend/src/app/connections/page.tsx` now converts a transient refresh failure with loaded data into an amber recovery message and does not expose the raw internal error string.
+- Production diagnosis: API logs show the group directory and extraction-start routes returning 200. The extraction worker is processing normally but some messages are rejected by the configured provider's content filter; those rows are retried/failed individually while raw capture continues.
+- Verification performed: `git diff --check`, Python compilation, and the Impeccable detector passed with no findings.
+- Deployment/push status: Pending commit, push, and dashboard redeployment.
+- Independent second-pass task-verifier verdict: **PARTIAL** — the UI state handling and live log diagnosis pass; a signed-in browser smoke test remains unavailable.
+- Next action: Deploy and reload the Connections page; the panel should show a non-blocking warning when a refresh hiccups while keeping the active selection visible.
+

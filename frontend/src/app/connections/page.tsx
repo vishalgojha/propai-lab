@@ -1495,7 +1495,13 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       </div>
 
       {loading && <div className="mt-3 text-xs text-zinc-500">Loading group directory...</div>}
-      {error && <div className="mt-3 text-xs text-red-400">{error}</div>}
+      {error && (
+        <div className={`mt-3 text-xs ${data ? "text-amber-200" : "text-red-400"}`}>
+          {data
+            ? "Group settings refresh was temporarily unavailable; the loaded selection is still active."
+            : error}
+        </div>
+      )}
       {message && <div className="mt-3 text-xs text-emerald-300">{message}</div>}
 
       <div className={`mt-4 rounded-lg border px-3 py-2.5 text-xs ${
