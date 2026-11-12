@@ -1188,3 +1188,12 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Independent second-pass task-verifier verdict: **PARTIAL** — selection policy and UI path pass local review; live confirmation of the full group set remains pending.
 - Next action: Reload Connections, click `Include all groups`, confirm once, and start optional extraction.
 
+### Remove per-broadcast confirmation friction
+
+- Requested outcome: Stop opening a confirmation dialog for every broadcast when including groups.
+- Files changed: `frontend/src/app/connections/page.tsx` now stages an individual `Include group` click locally and routes it through the existing single bulk confirmation instead of calling the immediate opt-in endpoint.
+- Verification performed: `git diff --check` and the Impeccable detector passed with no findings. Targeted ESLint remains unavailable because this checkout lacks a local ESLint binary and pnpm cannot open its dependency store in the sandbox.
+- Deployment/push status: Pending commit, push, and dashboard redeployment.
+- Independent second-pass task-verifier verdict: **PARTIAL** — the modal-removal flow passes local review; live browser smoke verification remains pending.
+- Next action: Deploy and reload Connections; individual Include group clicks should stage immediately, with one confirmation above the grid.
+

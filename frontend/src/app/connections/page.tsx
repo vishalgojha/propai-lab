@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square, Search, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, optOutOnboardingGroup, optInOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry } from "@/lib/api";
+import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, optOutOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry } from "@/lib/api";
 import QRCode from "qrcode";
 
 type HealthStatus = "healthy" | "warning" | "error";
@@ -1419,22 +1419,17 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     }
   };
 
-  const handleOptIn = async (group: OnboardingGroup) => {
+  const stageGroupForSelection = (group: OnboardingGroup) => {
     const displayName = whatsappGroupDisplayName(group);
-    if (!window.confirm(`Include ${displayName} in syncing again?`)) return;
-    setActiveGroup(group.group_jid);
     setError(null);
-    setMessage(null);
-    try {
-      await optInOnboardingGroup(phone.id, group.group_jid);
-      setMessage(`Re-enabled syncing for ${displayName}.`);
-      await loadGroups();
-      await onRefresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not re-enable the group.");
-    } finally {
-      setActiveGroup(null);
-    }
+    setSelectedGroups((current) => new Set(current).add(group.group_jid));
+    setData((current) => current ? {
+      ...current,
+      groups: current.groups.map((item) => item.group_jid === group.group_jid
+        ? { ...item, opted_out: false, connected: true }
+        : item),
+    } : current);
+    setMessage(`${displayName} is staged. Confirm the full group selection once above.`);
   };
 
   const filteredGroups = (data?.groups || []).filter((group) => {
@@ -1744,11 +1739,11 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                 <span className="shrink-0 text-[11px] text-zinc-500">Already covered by another connection</span>
               ) : group.opted_out && data.unlimited ? (
                 <button
-                  onClick={() => void handleOptIn(group)}
-                  disabled={activeGroup === group.group_jid}
+                  onClick={() => stageGroupForSelection(group)}
+                  disabled={savingSelection}
                   className="connection-group-action connection-group-action-success rounded-lg border px-3 py-1.5 text-[11px] font-semibold hover:bg-emerald-500/10 disabled:opacity-50"
                 >
-                  {activeGroup === group.group_jid ? "Including..." : "Include group"}
+                  Include group
                 </button>
               ) : data.unlimited ? (
                 <div className="flex shrink-0 items-center gap-2">
