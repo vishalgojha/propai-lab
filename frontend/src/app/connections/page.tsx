@@ -1226,6 +1226,14 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     });
   };
 
+  const includeAllEligibleGroups = () => {
+    if (savingSelection || !data) return;
+    const eligible = (data.groups || []).filter((group) => group.selectable !== false);
+    setSelectedGroups(new Set(eligible.map((group) => group.group_jid)));
+    setMessage(`All ${eligible.length} eligible groups are ready. Confirm once above to include them.`);
+    setError(null);
+  };
+
   const handleCheckGroup = async (group: OnboardingGroup) => {
     if (checkingGroup) return;
     setCheckingGroup(group.group_jid);
@@ -1610,6 +1618,14 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
             <div className="mb-3 flex items-center justify-between gap-2">
               <span className="text-[11px] text-zinc-500">Sort groups</span>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={includeAllEligibleGroups}
+                  disabled={savingSelection}
+                  className="rounded-lg border border-cyan-400/30 px-2.5 py-1.5 text-[11px] font-semibold text-cyan-200 hover:bg-cyan-500/10 disabled:opacity-50"
+                >
+                  Include all eligible
+                </button>
                 <button
                   type="button"
                   onClick={() => void handleRefreshDirectory()}
