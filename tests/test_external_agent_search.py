@@ -20,6 +20,9 @@ class Query:
     def ilike(self, *_args):
         return self
 
+    def like(self, *_args):
+        return self
+
     def or_(self, expression):
         self.or_expression = expression
         return self
@@ -111,7 +114,7 @@ def test_dm_conversation_context_stays_tenant_and_chat_scoped(monkeypatch):
         def execute(self):
             self.calls += 1
             if self.calls == 1:
-                return type("Result", (), {"data": [{"id": 42, "is_group": False, "sender_jid": "chat-1"}]})()
+                return type("Result", (), {"data": [{"id": 42, "is_group": False, "message_uid": "tenant:chat-1:message-42"}]})()
             return type("Result", (), {"data": []})()
 
     query = ConversationQuery()

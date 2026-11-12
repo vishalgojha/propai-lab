@@ -1,6 +1,7 @@
 """Small tenant-scoped REST surface for external agents such as Instinct."""
 import asyncio
 import hashlib
+import json
 import logging
 import secrets
 from datetime import date, datetime, timezone
@@ -263,7 +264,9 @@ async def external_raw_message_conversation(
     _require_scope(key, "raw_messages:read")
     _require_dm_consent(key)
     tenant_id = str(key["tenant_id"])
-    source = storage.client.table("raw_messages").select(RAW_MESSAGE_COLUMNS).eq(
+    source = storage.client.table("raw_messages").select(
+        RAW_MESSAGE_COLUMNS + ",message_uid,raw_payload"
+    ).eq(
         "tenant_id", tenant_id
     ).eq("id", raw_message_id).limit(1).execute()
     anchor = (source.data or [None])[0] if source else None
@@ -272,15 +275,28 @@ async def external_raw_message_conversation(
     if anchor.get("is_group"):
         raise HTTPException(400, "Conversation context is available only for private DMs")
 
+    payload = anchor.get("raw_payload")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, ValueError):
+            payload = {}
+    payload = payload if isinstance(payload, dict) else {}
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    message_key = data.get("key") if isinstance(data.get("key"), dict) else {}
+    chat_id = str(
+        message_key.get("remoteJid") or data.get("remoteJid") or data.get("from") or ""
+    ).strip()
+    if not chat_id:
+        uid_parts = str(anchor.get("message_uid") or "").split(":")
+        if len(uid_parts) >= 3:
+            chat_id = uid_parts[1]
+    if not chat_id:
+        raise HTTPException(422, "This DM has no stable conversation identity")
+
     query = storage.client.table("raw_messages").select(RAW_MESSAGE_COLUMNS).eq(
         "tenant_id", tenant_id
-    ).eq("is_group", False)
-    if anchor.get("sender_jid"):
-        query = query.eq("sender_jid", anchor["sender_jid"])
-    elif anchor.get("sender_phone"):
-        query = query.eq("sender_phone", anchor["sender_phone"])
-    else:
-        raise HTTPException(422, "This DM has no stable conversation identity")
+    ).eq("is_group", False).like("message_uid", f"%:{chat_id}:%")
     rows = query.order("timestamp", desc=True).limit(limit).execute().data or []
     rows.reverse()
     return {
