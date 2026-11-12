@@ -1450,6 +1450,7 @@ async def select_groups(
         storage.client.table("organization_group_connections").update({
             "is_active": False,
             "opted_out": True,
+            "public_market_source": False,
             "updated_at": now,
         }).eq("organization_id", org_id).eq("whatsapp_connection_id", body.whatsapp_connection_id).execute()
 
@@ -1462,12 +1463,23 @@ async def select_groups(
                 "group_name": by_jid[jid].get("group_name") or jid,
                 "is_active": True,
                 "opted_out": False,
+                "public_market_source": True,
                 "network_owned": False,
                 "updated_at": now,
                 "connected_at": now,
             }
             for jid in requested
         ], on_conflict="organization_id,whatsapp_connection_id,group_jid").execute()
+
+    # Confirmed selection is the publication consent. This updates existing
+    # typed rows as well as future extraction; raw evidence stays tenant-scoped.
+    for group_jid in requested:
+        storage.client.rpc("sync_group_market_visibility", {
+            "p_organization_id": org_id,
+            "p_group_jid": group_jid,
+            "p_group_name": by_jid[group_jid].get("group_name") or group_jid,
+            "p_public_market_source": True,
+        }).execute()
 
     # Do not rewrite raw_messages here.  This endpoint is the control-plane
     # commit for the user's explicit selection, while the extraction worker
@@ -1557,10 +1569,17 @@ async def opt_out_group(
             "group_name": group["group_name"],
             "opted_out": True,
             "is_active": False,
+            "public_market_source": False,
             "updated_at": now,
             "connected_at": now,
         }, on_conflict="organization_id,whatsapp_connection_id,group_jid").execute()
         _set_group_extraction_suppressed(org_id, body.group_jid, True)
+        storage.client.rpc("sync_group_market_visibility", {
+            "p_organization_id": org_id,
+            "p_group_jid": body.group_jid,
+            "p_group_name": group.get("group_name") or body.group_jid,
+            "p_public_market_source": False,
+        }).execute()
         return {
             "ok": True,
             "group": group,
@@ -1590,7 +1609,7 @@ async def opt_in_group(
     unlimited = await asyncio.to_thread(_organization_has_unlimited_group_access, org_id)
     result = (
         storage.client.table("organization_group_connections")
-        .update({"opted_out": False, "is_active": False, "updated_at": datetime.now(timezone.utc).isoformat()})
+        .update({"opted_out": False, "is_active": False, "public_market_source": False, "updated_at": datetime.now(timezone.utc).isoformat()})
         .eq("organization_id", org_id)
         .eq("whatsapp_connection_id", body.whatsapp_connection_id)
         .eq("group_jid", body.group_jid)
@@ -1600,6 +1619,12 @@ async def opt_in_group(
     if not result.data:
         raise HTTPException(404, "Opted-out group not found")
     _set_group_extraction_suppressed(org_id, body.group_jid, False)
+    storage.client.rpc("sync_group_market_visibility", {
+        "p_organization_id": org_id,
+        "p_group_jid": body.group_jid,
+        "p_group_name": body.group_name or body.group_jid,
+        "p_public_market_source": False,
+    }).execute()
     return {
         "ok": True,
         "message": "Group re-enabled for extraction",

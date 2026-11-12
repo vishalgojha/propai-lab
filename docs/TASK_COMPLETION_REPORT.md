@@ -1138,3 +1138,14 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Known limitations or failures: Existing messages previously dropped before persistence cannot be recovered from PropAI; future messages will be retained. Existing unselected groups remain extraction-suppressed until opted in.
 - Next action: Redeploy the API and confirm `Total Raw` rises independently of `Processed` when new WhatsApp traffic arrives.
 
+### Draw explicit WhatsApp group publication boundary
+
+- Requested outcome: Keep all DMs and group raw evidence tenant-scoped, while allowing only explicitly selected groups to produce shared public-market data.
+- Files/services changed: `supabase/migrations/20261112120000_group_public_market_boundary.sql`, `routers/whatsapp_group_controls.py`, `architecture.md`, and this report. No production service was redeployed.
+- Behavior: Added `organization_group_connections.public_market_source`. Confirmed selected groups set it true; deselected, opted-out, and opted-in-but-not-selected groups set it false. Typed rows are assigned `shared_market` only when their raw source is a currently selected group; DMs and other rows become `workspace_private`. Existing typed rows are synchronized when group selection changes, and the anonymous listing projection now requires `shared_market` visibility.
+- Verification performed: `pytest -q tests/test_onboarding_backfill.py` passed (6); `python3 -m py_compile routers/whatsapp_group_controls.py` passed; `git diff --check` passed. The onboarding route regression suite has a pre-existing unrelated failure in `test_super_admin_has_no_group_count_cap_but_still_uses_explicit_selection` (`unlimited` expectation), and its remaining run was interrupted after hanging in an existing test path. No live SQL migration/query was possible because `psql` is unavailable and no Supabase execution tool is connected.
+- Deployment/push status: Local implementation is ready; migration application, API redeployment, and public projection smoke tests remain pending. Push status will be recorded after the scoped commit is created.
+- Known limitations or failures: Existing public inventory will be reduced to rows whose source group is an existing confirmed selection after the migration backfill. Historical rows whose retained raw payload no longer contains the group JID rely on the stored group name match. No raw WhatsApp text is made cross-tenant by this change.
+- Independent task-verifier verdict: **PARTIAL** — code paths and local checks support the requested boundary, but production migration application and live cross-tenant/public-read verification are not available in this session.
+- Next action: Apply the migration to production, redeploy `api` so group-selection actions call the new synchronization RPC, and run authenticated tests proving DM/private-group isolation plus selected-group shared-market visibility.
+
