@@ -1429,3 +1429,14 @@ version, and includes the extracted candidates, provider provenance, and exact
 source text. Public SSR pages, counters, freshness gates, and matching remain
 on the existing typed projections; query-time extraction is an agentic
 long-tail path, not a replacement for those contracts.
+
+## Instinct external-agent boundary
+
+The `/api/external/v1` Instinct surface derives its tenant exclusively from the
+authenticated external key; callers cannot supply or override a tenant ID.
+Standing searches, automatch suggestions, workspace attention, and follow-ups
+are tenant-private reads or CRM records. Standing-search creation and follow-up
+creation require explicit write scopes, while automatch is read-only over
+existing tenant-local matcher rows. These tools never send WhatsApp messages,
+publish inventory, activate ads, change budgets, delete records, or promote
+private data into the shared market.

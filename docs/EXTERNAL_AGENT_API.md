@@ -43,6 +43,11 @@ Read endpoints:
 | `GET /listings/search` | Search workspace inventory | `q`, `locality`, `bhk`, `transaction_type`, `budget_max`, `limit`, `offset` |
 | `GET /requirements` | Read workspace requirements | `limit`, `offset` |
 | `GET /matches` | Search listing matches | `q`, `limit` |
+| `GET /standing-searches` | List private standing searches | None |
+| `GET /standing-searches/{search_id}/run` | Run one saved search against tenant inventory | `limit` |
+| `GET /automatch/{requirement_id}` | Read existing explainable match suggestions | `limit` |
+| `GET /workspace/attention` | Summarise open follow-ups and standing searches | None |
+| `GET /followups` | List private follow-ups | None |
 | `GET /messages/search` | Search captured WhatsApp source messages | `q`, `scope`, `since`, `until`, `limit`, `offset` |
 | `GET /messages/{raw_message_id}` | Fetch one full source message | `raw_message_id` from search results |
 
@@ -50,12 +55,19 @@ Optional private CRM writes (only for a key with the matching write scope):
 
 | `POST /inventory` | Create private CRM inventory | `inventory:write`; requires `building_name` or `location` |
 | `POST /requirements` | Create a private buyer/tenant requirement | `requirements:write`; requires `raw_text` or `location_pref` |
+| `POST /standing-searches` | Create a private standing search | `standing_searches:write`; requires `confirmed:true` |
+| `POST /followups` | Create a private follow-up record | `followups:write`; never sends a message |
 
 These writes are tenant-scoped to the key, remain private CRM records, and do
 not become WhatsApp source evidence or public inventory. Send an
 `Idempotency-Key` with inventory requests when the caller may retry. Ads,
 publishing, outbound WhatsApp, deletion, and budget changes remain outside this
 API and require a separate approval flow.
+
+Automatch is suggestion-only: it reads existing tenant-local matcher rows and
+does not create matches, alter CRM records, message a broker, publish inventory,
+or activate an ad. Standing searches are private to the workspace and are not
+shared-market data.
 
 Writes containing sensitive CRM fields such as contact details, owner/contact
 identity, quotes, budgets, or phone numbers return `202 approval_required` and

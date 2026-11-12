@@ -104,3 +104,35 @@ def test_public_agent_guide_is_fetchable_without_a_key():
     assert "scope=dms" in guide
     assert "Do not retry with `scope=all`" in normalized_guide
     assert "ppai_" not in guide
+
+
+def test_standing_search_creation_requires_explicit_confirmation():
+    with pytest.raises(HTTPException, match="explicit confirmation"):
+        asyncio.run(external_agent.external_create_standing_search(
+            external_agent.StandingSearchCreate(
+                name="Bandra rentals", query_text="3 BHK rent Bandra", confirmed=False,
+            ),
+            key={"tenant_id": "tenant-1", "scopes": ["standing_searches:write"]},
+        ))
+
+
+def test_followup_write_is_private_and_never_outbound(monkeypatch):
+    class InsertQuery:
+        def insert(self, payload):
+            self.payload = payload
+            return self
+
+        def execute(self):
+            return type("Result", (), {"data": [{"id": 8, **self.payload}]})()
+
+    query = InsertQuery()
+    monkeypatch.setattr(external_agent, "storage", type("Storage", (), {
+        "client": type("Client", (), {"table": lambda self, _: query})(),
+    })())
+    result = asyncio.run(external_agent.external_create_followup(
+        external_agent.FollowupCreate(title="Review match", due_date="2026-11-13"),
+        key={"tenant_id": "tenant-1", "scopes": ["followups:write"]},
+    ))
+    assert query.payload["tenant_id"] == "tenant-1"
+    assert query.payload["status"] == "pending"
+    assert result["outbound_sent"] is False

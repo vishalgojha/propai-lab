@@ -3,7 +3,7 @@ import asyncio
 import hashlib
 import logging
 import secrets
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 RAW_MESSAGE_COLUMNS = "id,group_name,sender,sender_phone,message,message_type,timestamp,source,is_group,processed"
 EXTERNAL_AGENT_DOCS = Path(__file__).resolve().parents[1] / "docs" / "EXTERNAL_AGENT_API.md"
 WRITE_SCOPES = {"inventory:write", "requirements:write"}
+TOOL_READ_SCOPES = {
+    "standing_searches:read", "automatch:read", "workspace:attention", "followups:read",
+}
+TOOL_WRITE_SCOPES = {"standing_searches:write", "followups:write"}
 SENSITIVE_INVENTORY_FIELDS = {"contact_number", "owner_name", "contact_name", "quote"}
 SENSITIVE_REQUIREMENT_FIELDS = {"phone", "budget_min", "budget_max"}
 
@@ -39,6 +43,25 @@ class ApprovalDecision(BaseModel):
 
 class DmConsentUpdate(BaseModel):
     enabled: bool = Field(description="Allow external agents to read this workspace's private WhatsApp DMs")
+
+
+class StandingSearchCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    query_text: str = Field(min_length=1, max_length=500)
+    filters: dict = Field(default_factory=dict)
+    confirmed: bool = False
+
+
+class FollowupCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    due_date: date
+    due_time: str | None = Field(default=None, max_length=20)
+    follow_up_type: str = Field(default="agent_review", max_length=80)
+    notes: str = Field(default="", max_length=2000)
+    client_id: int | None = Field(default=None, ge=1)
+    message_id: int | None = Field(default=None, ge=1)
+    building_name: str | None = Field(default=None, max_length=200)
+    broker_phone: str | None = Field(default=None, max_length=40)
 
 
 def _digest(token: str) -> str:
@@ -71,6 +94,7 @@ def _key_row(token: str) -> dict:
         ((consent.data or [{}])[0] or {}).get("external_agent_dms_enabled")
     )
     set_tenant_id(str(row["tenant_id"]))
+    row["scopes"] = sorted(set(row.get("scopes") or []) | TOOL_READ_SCOPES)
     return row
 
 
@@ -254,9 +278,12 @@ async def external_matches(q: str = "", limit: int = Query(20, ge=1, le=50), key
 @router.post("/keys")
 async def create_external_key(body: ApiKeyCreate, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
     token = KEY_PREFIX + secrets.token_urlsafe(32)
-    scopes = ["inventory:read", "requirements:read", "matches:read", "raw_messages:read"]
+    scopes = [
+        "inventory:read", "requirements:read", "matches:read", "raw_messages:read",
+        *sorted(TOOL_READ_SCOPES),
+    ]
     if body.write_access:
-        scopes.extend(sorted(WRITE_SCOPES))
+        scopes.extend(sorted(WRITE_SCOPES | TOOL_WRITE_SCOPES))
     payload = {
         "tenant_id": tenant_id,
         "created_by": user["id"],
@@ -437,6 +464,120 @@ async def external_create_requirement(
     return {"ok": True, "private": True, "entity": "client_requirements", "client_id": client_id, "record": row}
 
 
+@router.get("/standing-searches")
+async def external_list_standing_searches(key: dict = Depends(external_auth)):
+    _require_scope(key, "standing_searches:read")
+    rows = await asyncio.to_thread(storage.list_saved_market_searches, str(key["tenant_id"]))
+    return {"searches": rows, "count": len(rows), "tenant_scoped": True}
+
+
+@router.post("/standing-searches")
+async def external_create_standing_search(
+    body: StandingSearchCreate, key: dict = Depends(external_auth),
+):
+    _require_scope(key, "standing_searches:write")
+    if not body.confirmed:
+        raise HTTPException(409, "Standing-search creation requires explicit confirmation")
+    try:
+        row = await asyncio.to_thread(
+            storage.create_saved_market_search,
+            str(key["tenant_id"]), body.name, body.query_text, body.filters,
+            created_by=str(key.get("created_by") or "") or None,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"ok": True, "private": True, "search": row}
+
+
+@router.get("/standing-searches/{search_id}/run")
+async def external_run_standing_search(
+    search_id: int, limit: int = Query(20, ge=1, le=100), key: dict = Depends(external_auth),
+):
+    _require_scope(key, "standing_searches:read")
+    tenant_id = str(key["tenant_id"])
+    result = storage.client.table("saved_market_searches").select(
+        "id,tenant_id,name,query_text,filters,saved_at,last_viewed_at,last_seen_record_at"
+    ).eq("tenant_id", tenant_id).eq("id", search_id).limit(1).execute()
+    search = (result.data or [None])[0] if result else None
+    if not search:
+        raise HTTPException(404, "Standing search not found")
+    rows = await _tenant_parsed(limit=limit, offset=0, kind="listing", search=search["query_text"])
+    storage.client.table("saved_market_searches").update({
+        "last_viewed_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("tenant_id", tenant_id).eq("id", search_id).execute()
+    return {"search": search, "results": [_public_listing(row) for row in rows], "count": len(rows)}
+
+
+@router.get("/automatch/{requirement_id}")
+async def external_automatch_requirement(
+    requirement_id: int, limit: int = Query(20, ge=1, le=50), key: dict = Depends(external_auth),
+):
+    """Return existing tenant-local suggestions; never creates matches or contacts anyone."""
+    _require_scope(key, "automatch:read")
+    tenant_id = str(key["tenant_id"])
+    requirement = storage.client.table("requirements_unified_matching").select(
+        "id,matching_id,req_type,building_name,micro_market,bhk_options,budget_min,budget_max,status,created_at"
+    ).eq("tenant_id", tenant_id).eq("id", requirement_id).limit(1).execute()
+    req = (requirement.data or [None])[0] if requirement else None
+    if not req:
+        raise HTTPException(404, "Requirement not found")
+    matches = storage.client.table("requirement_matches").select(
+        "id,requirement_type,requirement_typed_id,listing_type,listing_typed_id,match_score,bhk_match,market_match,price_match,building_match"
+    ).eq("tenant_id", tenant_id).eq("requirement_typed_id", requirement_id).order(
+        "match_score", desc=True
+    ).limit(limit).execute()
+    rows = matches.data or []
+    return {
+        "requirement": req,
+        "suggestions": rows,
+        "count": len(rows),
+        "mode": "existing_matches_only",
+        "explanation": "Suggestions are tenant-local matcher rows. No CRM, messaging, publishing, or matching mutation was performed.",
+    }
+
+
+@router.get("/workspace/attention")
+async def external_workspace_attention(key: dict = Depends(external_auth)):
+    _require_scope(key, "workspace:attention")
+    tenant_id = str(key["tenant_id"])
+    followups = storage.client.table("follow_ups").select(
+        "id,title,due_date,due_time,follow_up_type,status,notes,client_id,building_name,created_at"
+    ).eq("tenant_id", tenant_id).in_("status", ["pending", "open", "drafted"]).order(
+        "due_date", desc=False
+    ).limit(50).execute()
+    searches = await asyncio.to_thread(storage.list_saved_market_searches, tenant_id)
+    return {
+        "attention": {
+            "open_followups": followups.data or [],
+            "standing_searches": searches,
+            "counts": {"open_followups": len(followups.data or []), "standing_searches": len(searches)},
+        },
+        "tenant_scoped": True,
+        "outbound_actions": "not performed",
+    }
+
+
+@router.get("/followups")
+async def external_list_followups(key: dict = Depends(external_auth)):
+    _require_scope(key, "followups:read")
+    result = storage.client.table("follow_ups").select(
+        "id,title,due_date,due_time,follow_up_type,status,notes,client_id,message_id,building_name,created_at"
+    ).eq("tenant_id", str(key["tenant_id"])).order("due_date", desc=False).limit(100).execute()
+    return {"followups": result.data or [], "count": len(result.data or []), "private": True}
+
+
+@router.post("/followups")
+async def external_create_followup(body: FollowupCreate, key: dict = Depends(external_auth)):
+    _require_scope(key, "followups:write")
+    payload = body.model_dump(mode="json")
+    payload.update({"tenant_id": str(key["tenant_id"]), "status": "pending"})
+    result = storage.client.table("follow_ups").insert(payload).execute()
+    row = (result.data or [None])[0] if result else None
+    if not row:
+        raise HTTPException(503, "Private follow-up could not be saved")
+    return {"ok": True, "private": True, "outbound_sent": False, "followup": row}
+
+
 @router.get("/approvals")
 async def list_external_write_approvals(
     user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant),
@@ -566,9 +707,9 @@ async def update_external_key_write_access(
         raise HTTPException(404, "Active external API key not found")
 
     scopes = list(key.get("scopes") or [])
-    scopes = [scope for scope in scopes if scope not in WRITE_SCOPES]
+    scopes = [scope for scope in scopes if scope not in (WRITE_SCOPES | TOOL_WRITE_SCOPES)]
     if body.enabled:
-        scopes.extend(sorted(WRITE_SCOPES))
+        scopes.extend(sorted(WRITE_SCOPES | TOOL_WRITE_SCOPES))
     audit_id = _write_audit_start({"tenant_id": tenant_id, "id": key_id}, "permission_change", "external_agent_api_key", {"key_id": key_id, "enabled": body.enabled}, [])
     updated = storage.client.table("external_agent_api_keys").update(
         {"scopes": scopes}
