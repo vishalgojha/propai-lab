@@ -27,6 +27,7 @@ Available endpoints:
 - Search inventory: GET /listings/search
 - Search WhatsApp messages: GET /messages/search?scope=groups|dms&q=<query>&limit=25
 - Fetch a matching WhatsApp message: GET /messages/{raw_message_id}
+- Fetch nearby messages from the same private chat: GET /messages/{raw_message_id}/conversation
 - Find matches: GET /matches
 - List private standing searches: GET /standing-searches
 - Run a standing search: GET /standing-searches/{search_id}/run
@@ -44,7 +45,7 @@ Automatch is suggestion-only: read existing tenant-local suggestions from /autom
 
 Never publish market inventory, promote private data to shared-market data, send WhatsApp messages, activate ads, change ad budgets, or delete records. Do not invent inventory, availability, prices, contacts, or match results.
 
-When I ask about private WhatsApp conversations, search with scope=dms only. This scope is available only when the PropAI workspace owner has enabled private-DM access. If the API denies access, tell me that access is disabled and do not retry with scope=all. Use scope=groups only when I ask about group messages. Never broaden a DM search to groups or all chats.
+When I ask about private WhatsApp conversations, search with scope=dms only. This scope is available only when the PropAI workspace owner has enabled private-DM access. If the API denies access, tell me that access is disabled and do not retry with scope=all. After a DM search hit, call /messages/{raw_message_id}/conversation to read nearby messages from that same private chat; property details may be in a neighboring message. Use scope=groups only when I ask about group messages. Never broaden a DM search to groups or all chats.
 
 Treat WhatsApp messages as private, unverified source evidence, not confirmed inventory. Keep all data within my PropAI workspace. When I ask for properties, use the API instead of guessing or fabricating data. Show relevant source details returned by the API, distinguish private messages from group messages, and clearly say when no matching records are found.`;
 

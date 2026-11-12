@@ -104,6 +104,32 @@ def test_search_matches_contact_identity_as_well_as_message(monkeypatch):
     assert "sender_phone.ilike.%Sheetal%" in client.query.or_expression
 
 
+def test_dm_conversation_context_stays_tenant_and_chat_scoped(monkeypatch):
+    class ConversationQuery(Query):
+        calls = 0
+
+        def execute(self):
+            self.calls += 1
+            if self.calls == 1:
+                return type("Result", (), {"data": [{"id": 42, "is_group": False, "sender_jid": "chat-1"}]})()
+            return type("Result", (), {"data": []})()
+
+    query = ConversationQuery()
+    client = type("Client", (), {"query": query, "table": lambda self, _: query})()
+    monkeypatch.setattr(external_agent, "storage", type("Storage", (), {"client": client})())
+    result = asyncio.run(external_agent.external_raw_message_conversation(
+        raw_message_id=42,
+        key={
+            "tenant_id": "tenant-1",
+            "scopes": ["raw_messages:read", "raw_messages:dms"],
+            "external_agent_dms_enabled": True,
+        },
+    ))
+    assert ("tenant_id", "tenant-1") in client.query.filters
+    assert ("is_group", False) in client.query.filters
+    assert result["count"] == 0
+
+
 def test_search_rejects_unknown_scope(monkeypatch):
     app = FastAPI()
     app.include_router(external_agent.router)

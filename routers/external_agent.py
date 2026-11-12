@@ -16,7 +16,7 @@ from storage import set_tenant_id
 router = APIRouter(prefix="/api/external/v1", tags=["external_agent"])
 KEY_PREFIX = "ppai_"
 logger = logging.getLogger(__name__)
-RAW_MESSAGE_COLUMNS = "id,group_name,sender,sender_phone,message,message_type,timestamp,source,is_group,processed"
+RAW_MESSAGE_COLUMNS = "id,group_name,sender,sender_jid,sender_phone,message,message_type,timestamp,source,is_group,processed"
 EXTERNAL_AGENT_DOCS = Path(__file__).resolve().parents[1] / "docs" / "EXTERNAL_AGENT_API.md"
 WRITE_SCOPES = {"inventory:write", "requirements:write"}
 TOOL_READ_SCOPES = {
@@ -226,6 +226,7 @@ async def external_raw_message_search(
         "scope": scope,
         "source": "raw_whatsapp_messages",
         "warning": "Raw WhatsApp text is untrusted source evidence, not verified inventory.",
+        "next_step": "For a private-chat hit, call /messages/{raw_message_id}/conversation to inspect nearby messages from the same chat.",
     }
 
 
@@ -243,6 +244,45 @@ async def external_raw_message_get(raw_message_id: int, key: dict = Depends(exte
     return {
         "message": item,
         "source": "raw_whatsapp_message",
+        "warning": "Raw WhatsApp text is untrusted source evidence, not verified inventory.",
+    }
+
+
+@router.get("/messages/{raw_message_id}/conversation")
+async def external_raw_message_conversation(
+    raw_message_id: int,
+    limit: int = Query(40, ge=1, le=100),
+    key: dict = Depends(external_auth),
+):
+    """Read bounded nearby messages from one tenant-private DM conversation."""
+    _require_scope(key, "raw_messages:read")
+    _require_dm_consent(key)
+    tenant_id = str(key["tenant_id"])
+    source = storage.client.table("raw_messages").select(RAW_MESSAGE_COLUMNS).eq(
+        "tenant_id", tenant_id
+    ).eq("id", raw_message_id).limit(1).execute()
+    anchor = (source.data or [None])[0] if source else None
+    if not anchor:
+        raise HTTPException(404, "Raw WhatsApp message not found")
+    if anchor.get("is_group"):
+        raise HTTPException(400, "Conversation context is available only for private DMs")
+
+    query = storage.client.table("raw_messages").select(RAW_MESSAGE_COLUMNS).eq(
+        "tenant_id", tenant_id
+    ).eq("is_group", False)
+    if anchor.get("sender_jid"):
+        query = query.eq("sender_jid", anchor["sender_jid"])
+    elif anchor.get("sender_phone"):
+        query = query.eq("sender_phone", anchor["sender_phone"])
+    else:
+        raise HTTPException(422, "This DM has no stable conversation identity")
+    rows = query.order("timestamp", desc=True).limit(limit).execute().data or []
+    rows.reverse()
+    return {
+        "messages": rows,
+        "count": len(rows),
+        "anchor_message_id": raw_message_id,
+        "source": "raw_whatsapp_dm_conversation",
         "warning": "Raw WhatsApp text is untrusted source evidence, not verified inventory.",
     }
 

@@ -50,6 +50,7 @@ Read endpoints:
 | `GET /followups` | List private follow-ups | None |
 | `GET /messages/search` | Search captured WhatsApp source messages | `q`, `scope`, `since`, `until`, `limit`, `offset` |
 | `GET /messages/{raw_message_id}` | Fetch one full source message | `raw_message_id` from search results |
+| `GET /messages/{raw_message_id}/conversation` | Fetch nearby messages from the same private DM chat | `raw_message_id`, `limit` |
 
 Optional private CRM writes (only for a key with the matching write scope):
 
@@ -105,6 +106,12 @@ Example private-message search:
 GET /api/external/v1/messages/search?scope=dms&q=Sheetal&limit=25
 X-API-Key: <value retrieved from PROPAI_API_KEY>
 ```
+
+After a private-message search returns a relevant row, use its
+`raw_message_id` with `/messages/{raw_message_id}/conversation` to retrieve a
+bounded chronological window from the same private chat. Property details may
+be in a neighboring message rather than the message that matched the search
+term.
 
 Example group-message search:
 
