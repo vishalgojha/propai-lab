@@ -1174,7 +1174,7 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Requested outcome: Remove the need to include groups individually while preserving the explicit confirmation/publication boundary.
 - Files changed: `frontend/src/app/connections/page.tsx` adds `Include all eligible`, which selects every group available to this connection in one action; the existing confirmation saves them together. PropAI/network-owned groups remain unavailable because their inventory is already captured by the shared network.
 - Verification performed: Impeccable detector completed with only two pre-existing gray-on-color warnings in `frontend/src/app/inbox/page.tsx`; `git diff --check` and Python compilation passed. Targeted ESLint could not run because this checkout has no local ESLint binary and pnpm attempted an unavailable dependency-store/network operation.
-- Deployment/push status: Pending commit, push, and dashboard redeployment.
+- Deployment/push status: Commit `b6cd466d` was pushed to `origin/main`. Coolify dashboard deployment `yys6jnusin6ppzzij5lsscg2` finished successfully on that commit.
 - Independent second-pass task-verifier verdict: **PARTIAL** — the bulk-selection control is implemented and scoped correctly; live browser confirmation remains pending.
 - Next action: Reload Connections, click `Include all eligible`, then click the single confirmation action above the group grid.
 
@@ -1205,5 +1205,5 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Verification performed: `git diff --check`, Python compilation, and the Impeccable detector passed with no findings.
 - Deployment/push status: Pending commit, push, and dashboard redeployment.
 - Independent second-pass task-verifier verdict: **PARTIAL** — the UI state handling and live log diagnosis pass; a signed-in browser smoke test remains unavailable.
-- Next action: Deploy and reload the Connections page; the panel should show a non-blocking warning when a refresh hiccups while keeping the active selection visible.
+- Next action: Reload the Connections page; the panel should show a non-blocking warning when a refresh hiccups while keeping the active selection visible.
 
