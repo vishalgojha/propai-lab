@@ -113,6 +113,7 @@ application as runtime environment variables (not only build arguments):
 | `SUPABASE_SERVICE_KEY` | Supabase service role key; preferred for server-side reads |
 | `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key; safe read-only fallback for public views |
+| `PROPAI_PUBLIC_TENANT_ID` | Organization UUID that owns public website lead capture; required for CRM writes |
 
 The public site falls back to the anon key when `SUPABASE_SERVICE_KEY` is not
 present, but the service key should still be configured so all public data

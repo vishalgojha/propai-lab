@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { env } from "node:process";
 import { getServerSupabase } from "@/lib/supabase";
 import { parseNaturalSearchQuery } from "@/lib/natural-search";
 
@@ -40,6 +41,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "database_unavailable" }, { status: 503 });
   }
 
+  // Public lead capture is routed to the owning brokerage workspace. Never
+  // create a tenantless CRM row or guess a tenant from a public request.
+  const tenantId = env.PROPAI_PUBLIC_TENANT_ID?.trim();
+  if (!tenantId) {
+    return NextResponse.json({ error: "public_lead_capture_not_configured" }, { status: 503 });
+  }
+
   const parsed = await parseNaturalSearchQuery(query);
   const notes = [
     "Captured from www no-results flow.",
@@ -55,6 +63,7 @@ export async function POST(request: Request) {
   const { data: clientRow, error: clientError } = await db
     .from("clients")
     .insert({
+      tenant_id: tenantId,
       name,
       phone: phone || null,
       email: email || null,
@@ -71,6 +80,7 @@ export async function POST(request: Request) {
   }
 
   const requirementData = {
+    tenant_id: tenantId,
     client_id: clientRow.id,
     intent: parsed.intent === "rent" ? "RENT" : "BUY",
     bhk: parsed.bhk == null ? null : parsed.bhk === 0 ? "Studio" : `${parsed.bhk} BHK`,

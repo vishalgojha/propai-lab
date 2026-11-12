@@ -20,6 +20,12 @@ not visible to ordinary tenant queries and require an explicit reviewed
 migration before becoming tenant-owned data. Cross-tenant reads are reserved
 for explicitly authorized administration and audit paths.
 
+Client CRM routes are fail-closed workspace routes: the clients router resolves
+`get_tenant_context` before any client, requirement, note, alias, candidate, or
+message handler runs. Public lead capture is a separate owner-routing path and
+must use the explicitly configured `PROPAI_PUBLIC_TENANT_ID`; it must never
+insert tenantless CRM rows or infer a tenant from an unauthenticated request.
+
 MCP-created inventory is always `workspace_private`, regardless of legacy
 organization sharing flags. The MCP write path must not create
 `shared_market` rows; any future co-broking exchange requires a separate,

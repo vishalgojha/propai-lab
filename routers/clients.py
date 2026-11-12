@@ -7,7 +7,10 @@ from fastapi.responses import JSONResponse
 
 from routers.common import storage, require_tenant, require_user
 
-router = APIRouter(tags=["clients"])
+# Every client/requirement/candidate route is workspace-private.  Resolving the
+# tenant at router level also initializes the request-scoped storage tenant
+# before any handler can read or write CRM rows.
+router = APIRouter(tags=["clients"], dependencies=[Depends(require_tenant)])
 
 
 def _get_client_store():

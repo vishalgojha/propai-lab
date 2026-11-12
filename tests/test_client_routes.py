@@ -30,6 +30,14 @@ def test_list_clients_trims_to_limit(store):
     store.get_clients.assert_called_once_with("")
 
 
+def test_clients_router_resolves_tenant_before_handlers():
+    assert any(
+        dependency.call == clients.require_tenant
+        for route in clients.router.routes
+        for dependency in route.dependant.dependencies
+    )
+
+
 def test_get_client_embeds_requirements_and_candidates(store):
     store.get_client.return_value = {"id": 4, "name": "Ravi"}
     store.get_client_requirements.return_value = [{"id": 9}]

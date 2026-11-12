@@ -1118,3 +1118,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
   - FAIL — the existing key scope change itself has not been confirmed.
 - Next action: In Account → MCP, enable private CRM writes for the prefix matching Instinct's saved key, then ask Instinct to call `/health` and confirm the two write scopes. Leave the DM consent switch disabled to keep searches groups-only.
 
+### Close client CRM tenant-boundary gap
+
+- Requested outcome: Prevent cross-workspace client CRM reads/writes and prevent public lead capture from creating tenantless client or requirement rows.
+- Files/services changed: `routers/clients.py`, `apps/www/src/app/api/public/requirements/route.ts`, `tests/test_client_routes.py`, `architecture.md`, and `deploy/coolify/README.md`. No production service was redeployed.
+- Behavior: All 21 client-router endpoints now resolve `get_tenant_context` through a router-level `require_tenant` dependency and fail closed without organization membership. Public requirement capture requires `PROPAI_PUBLIC_TENANT_ID` and writes that tenant ID to both `clients` and `client_requirements`; it returns 503 when unset rather than creating tenantless data.
+- Verification performed: FastAPI route introspection found zero client routes missing the tenant dependency; `pytest -q tests/test_client_routes.py -k 'not requirement_match_routes'` passed (10); `python3 -m py_compile routers/clients.py` passed; `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** because live environment configuration and production smoke verification are pending; the implementation and local boundary checks passed.
+- Push/deployment status: Pending commit and push. Required redeployment targets after push: the API service for `routers/clients.py`, and `propai-lab:main` (public www) for the public requirement route. Do not redeploy until configured/authorized.
+- Known limitations or failures: `PROPAI_PUBLIC_TENANT_ID` must be set on the public www service to restore public lead capture. Existing tenantless legacy CRM rows are not migrated by this code change. The full client route suite hangs in the pre-existing matcher mock test; the client module suite has one unrelated failure because its fake `listings_unified_matching` fixture does not satisfy current storage behavior. Frontend TypeScript has unrelated existing errors in dirty files.
+- Next action: Set `PROPAI_PUBLIC_TENANT_ID` to the owning organization UUID, deploy the API and public www service, then run authenticated cross-tenant read/write smoke tests and a public lead capture test.
+
