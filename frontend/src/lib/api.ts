@@ -710,6 +710,15 @@ export function stopSync() {
   return fetchJSON<any>("/sources/stop", { method: "POST" });
 }
 
+/**
+ * Ask WhatsApp for older direct-message history. The phone returns the
+ * messages asynchronously, so the response only confirms the request was sent.
+ */
+export function syncHistoryBackfill(limit = 25, count = 50) {
+  const params = new URLSearchParams({ limit: String(limit), count: String(count) });
+  return fetchJSON<any>(`/sync/history-backfill?${params.toString()}`, { method: "POST" });
+}
+
 export function getInboxEvidence(id: number) {
   return fetchJSON<any>(`/inbox/evidence/${id}`);
 }

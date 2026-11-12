@@ -42,6 +42,8 @@ import {
   Search,
   ListPlus,
   LoaderCircle,
+  History,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useLayout } from "@/hooks/useLayout";
 import { StatusBadge } from "@/components/ui/badge";
@@ -1980,6 +1982,12 @@ function UnifiedMarketInbox() {
   // silently edited client-side.
   const [includeSpam, setIncludeSpam] = useState(false);
   const [rawSpamHidden, setRawSpamHidden] = useState(0);
+  // Raw-message totals are per scope (groups vs DMs). The two scopes are
+  // separate server queries, so a single shared total would show the group
+  // count on the DM tab. Each scope keeps its own last known count.
+  const [rawScopeTotals, setRawScopeTotals] = useState<{ groups: number | null; dms: number | null }>({ groups: null, dms: null });
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillMessage, setBackfillMessage] = useState("");
   // The raw-messages API pages by a stable source-row cursor, not by result
   // position, because dedupe can shrink a page. Track that cursor here so
   // "load more" never re-reads or skips rows.
@@ -2158,6 +2166,7 @@ function UnifiedMarketInbox() {
           const rawPage = await api.getInboxRawMessages(args[0], args[1], args[3], "", Boolean(args[10]), rawScope);
           feedRawOffsetRef.current = rawPage.next_source_offset ?? 0;
           setRawSpamHidden(rawPage.spam_hidden ?? 0);
+          setRawScopeTotals((current) => ({ ...current, [rawScope]: rawPage.total ?? null }));
           return {
             items: rawPage.items,
             total: rawPage.total,
@@ -2295,7 +2304,7 @@ function UnifiedMarketInbox() {
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [assetFilter, feedSourceState, includeSpam, mode, transactionFilter]);
+  }, [assetFilter, feedSourceState, includeSpam, mode, rawScope, transactionFilter]);
 
   const refreshData = useCallback(async () => {
     setRefreshing(true);
@@ -2365,6 +2374,7 @@ function UnifiedMarketInbox() {
           ? result.next_source_offset
           : feedRawOffsetRef.current + result.items.length;
         setRawSpamHidden("spam_hidden" in result ? (result.spam_hidden ?? 0) : 0);
+        setRawScopeTotals((current) => ({ ...current, [rawScope]: result.total ?? null }));
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "More market listings could not be loaded.");
@@ -2948,12 +2958,61 @@ function UnifiedMarketInbox() {
   const draftMarketLabels = useMemo(() => marketInput.split(/[\n,]/).map((value) => value.trim()).filter(Boolean).filter((value, index, values) => values.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index), [marketInput]);
   const isMarketScopedFeed = selectedMarketLabels.length > 0 && query.trim().length < 2;
   const triageCounts = useMemo(() => ({
-    // Raw source evidence is tenant-scoped. Its total is only meaningful
-    // while that source-only feed is loaded; do not borrow the extracted
-    // shared-market total and make a private raw queue look populated.
-    raw: triageFilter === "raw" ? marketTotal : null,
+    // Raw source evidence is tenant-scoped. Each scope keeps the total from
+    // its own last load so the Groups and DMs tabs never share a number.
+    groups: rawScopeTotals.groups,
+    dms: rawScopeTotals.dms,
     extracted: marketQualityCounts?.visible ?? null,
-  }), [marketQualityCounts, marketTotal, triageFilter]);
+  }), [rawScopeTotals, marketQualityCounts]);
+
+  const handleBackfillDMs = useCallback(async () => {
+    setBackfilling(true);
+    setBackfillMessage("");
+    try {
+      const result = await api.syncHistoryBackfill(25, 50);
+      if (result?.ok) {
+        const requested = Number(result.requested ?? 0);
+        setBackfillMessage(
+          requested > 0
+            ? `Requested older history for ${requested} chat${requested === 1 ? "" : "s"}. WhatsApp sends it in the background — refresh in a minute.`
+            : "No direct chats were available to backfill.",
+        );
+        window.setTimeout(() => { void load(); }, 8000);
+      } else {
+        setBackfillMessage(result?.error || result?.message || "Backfill could not be started.");
+      }
+    } catch (err) {
+      setBackfillMessage(err instanceof Error ? err.message : "Backfill could not be started.");
+    } finally {
+      setBackfilling(false);
+    }
+  }, [load]);
+
+  const activeFilterChips = useMemo(() => {
+    const chips: Array<{ key: string; label: string; clear: () => void }> = [];
+    if (triageFilter === "extracted") {
+      if (assetFilter !== "all") chips.push({ key: "asset", label: assetFilter === "residential" ? "Residential" : "Commercial", clear: () => setAssetFilter("all") });
+      if (mode !== "all") chips.push({ key: "mode", label: mode === "listings" ? "Listings" : "Requirements", clear: () => setMode("all") });
+      if (transactionFilter !== "all") chips.push({ key: "deal", label: transactionFilter === "rent" ? "Rent" : "Sale", clear: () => setTransactionFilter("all") });
+      if (freshOnly) chips.push({ key: "fresh", label: "Fresh today", clear: () => setFreshOnly(false) });
+      if (query.trim()) chips.push({ key: "query", label: `“${query.trim()}”`, clear: () => setQuery("") });
+    } else {
+      if (rawScope === "groups" && includeSpam) chips.push({ key: "spam", label: "Hiring spam shown", clear: () => setIncludeSpam(false) });
+      if (query.trim()) chips.push({ key: "query", label: `“${query.trim()}”`, clear: () => setQuery("") });
+    }
+    return chips;
+  }, [assetFilter, freshOnly, includeSpam, mode, query, rawScope, transactionFilter, triageFilter]);
+
+  const resetAllFilters = useCallback(() => {
+    setAssetFilter("all");
+    setMode("all");
+    setTransactionFilter("all");
+    setFreshOnly(false);
+    setQuery("");
+    setIncludeSpam(false);
+    setBackfillMessage("");
+  }, []);
+
   return (
     <div className="unified-market-inbox market-intelligence-screen flex min-h-[calc(100dvh-44px)] flex-1 flex-col overflow-hidden bg-[var(--zone-light-background)] text-[var(--zone-light-text-primary)]">
       <div className="market-feed-header shrink-0 border-b border-[var(--zone-light-border)] bg-[var(--zone-light-card)] px-4 py-4 sm:px-6 lg:px-8">
@@ -2974,10 +3033,23 @@ function UnifiedMarketInbox() {
             {lastRefreshedAt && <span className="text-[10px] text-[var(--text-secondary)]" role="status">Updated {formatFeedTimestamp(lastRefreshedAt)}</span>}
           </div>
         </div>
-        <div className="mt-4 inline-flex w-fit max-w-full overflow-x-auto rounded-lg border border-[var(--zone-light-border)] bg-[var(--surface)] p-1" role="tablist" aria-label="Market Inbox data views">
+        <section className="mt-4 rounded-xl border border-[var(--zone-light-border)] bg-[var(--surface)] p-2.5" aria-label="Inbox view">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-0.5">
+            <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--text-secondary)]">View</span>
+            <div className="flex min-w-0 items-center gap-2">
+              {backfillMessage && <span role="status" className="max-w-[40rem] truncate text-[10px] text-[var(--text-secondary)]">{backfillMessage}</span>}
+              {triageFilter === "raw" && rawScope === "dms" && (
+                <button type="button" onClick={() => void handleBackfillDMs()} disabled={backfilling} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--signal-lime)]/40 bg-[var(--signal-lime)]/10 px-2.5 py-1.5 text-[10px] font-semibold text-[var(--signal-lime)] transition hover:bg-[var(--signal-lime)]/20 disabled:opacity-50">
+                  <History className="h-3 w-3" aria-hidden="true" />
+                  {backfilling ? "Requesting…" : "Backfill old DMs"}
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="mt-2 inline-flex w-fit max-w-full overflow-x-auto rounded-lg border border-[var(--zone-light-border)] bg-[var(--zone-light-background)] p-1" role="tablist" aria-label="Market Inbox data views">
           {([
-            ["groups", "Groups", triageCounts.raw],
-            ["dms", "DMs", null],
+            ["groups", "Groups", triageCounts.groups],
+            ["dms", "DMs", triageCounts.dms],
             ["extracted", "Extracted records", triageCounts.extracted],
           ] as ["groups" | "dms" | TriageFilter, string, number | null][]).map(([value, label, count]) => {
             const selected = value === "extracted"
@@ -3009,7 +3081,7 @@ function UnifiedMarketInbox() {
                   setTriageFilter("extracted");
                 } else {
                   setTriageFilter("raw");
-                  setRawScope(value);
+                  setRawScope(value as "groups" | "dms");
                 }
                 setFreshOnly(false);
                 setSimilarForKey(null);
@@ -3017,55 +3089,76 @@ function UnifiedMarketInbox() {
                 selectedRecordsRef.current = {};
                 feedRawOffsetRef.current = 0;
                 setRawSpamHidden(0);
+                setBackfillMessage("");
               }}
               className={`relative flex min-h-9 flex-none items-center justify-start gap-2 rounded-md border px-3 text-left text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111822] ${selected ? "border-emerald-300 bg-emerald-300 text-[#061015] shadow-sm" : "border-transparent text-white hover:border-white/10 hover:bg-white/[0.04] hover:text-white"}`}
             >
               <span className="min-w-0 truncate">{label}</span>{count !== null && <span className={`shrink-0 rounded-full px-2 py-0.5 tabular-nums ${selected ? "bg-[#061015]/10 text-[#061015]" : "bg-white/10 text-slate-200"}`}>{count}</span>}
             </button>
           );})}
-        </div>
-        {triageFilter === "extracted" && <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button type="button" aria-pressed={!freshOnly} onClick={() => setFreshOnly(false)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${!freshOnly ? "border-white/20 bg-white/[0.06] text-zinc-100" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>All recency</button>
-          <button type="button" aria-pressed={freshOnly} onClick={() => setFreshOnly(true)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${freshOnly ? "border-[var(--signal-lime)]/50 bg-[var(--signal-lime)]/10 text-[var(--signal-lime)]" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Fresh today</button>
-        </div>}
-        {triageFilter === "raw" && <div className="mt-2 flex flex-wrap items-center gap-2">
+          </div>
+          {triageFilter === "extracted" && <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[var(--zone-light-border)] pt-2">
+            <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Recency</span>
+            <button type="button" aria-pressed={!freshOnly} onClick={() => setFreshOnly(false)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${!freshOnly ? "border-white/20 bg-white/[0.06] text-zinc-100" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>All recency</button>
+            <button type="button" aria-pressed={freshOnly} onClick={() => setFreshOnly(true)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${freshOnly ? "border-[var(--signal-lime)]/50 bg-[var(--signal-lime)]/10 text-[var(--signal-lime)]" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Fresh today</button>
+          </div>}
+          {triageFilter === "raw" && <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[var(--zone-light-border)] pt-2">
+            <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Quality</span>
           <button type="button" aria-pressed={!includeSpam} onClick={() => setIncludeSpam(false)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${!includeSpam ? "border-white/20 bg-white/[0.06] text-zinc-100" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Hide hiring spam</button>
           <button type="button" aria-pressed={includeSpam} onClick={() => setIncludeSpam(true)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${includeSpam ? "border-[var(--signal-lime)]/50 bg-[var(--signal-lime)]/10 text-[var(--signal-lime)]" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Show everything</button>
           {rawSpamHidden > 0 && <span className="rounded-full border border-amber-300/25 bg-amber-300/[0.06] px-2 py-1 text-[10px] font-semibold text-amber-200" role="status">{rawSpamHidden} hiring message{rawSpamHidden === 1 ? "" : "s"} in this batch hidden</span>}
-        </div>}
-        <div className={`mt-3 grid gap-2 lg:items-center ${triageFilter === "raw" || assetFilter === "all" ? "lg:grid-cols-[minmax(0,1fr)_auto]" : "lg:grid-cols-[minmax(0,1fr)_auto_auto]"}`}>
+          </div>}
+        </section>
+
+        <section className="mt-3 rounded-xl border border-[var(--zone-light-border)] bg-[var(--surface)] p-2.5" aria-label="Search and filters">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-0.5">
+            <span className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--text-secondary)]">
+              <SlidersHorizontal className="h-3 w-3" aria-hidden="true" />
+              {triageFilter === "raw" ? "Search messages" : "Search & filter records"}
+            </span>
+            {activeFilterChips.length > 0 && (
+              <button type="button" onClick={resetAllFilters} className="text-[10px] font-semibold text-[var(--text-secondary)] underline underline-offset-2 hover:text-[var(--text-primary)]">Clear all</button>
+            )}
+          </div>
+        <div className="mt-2 grid gap-2 lg:items-center">
           <div className="relative min-w-[260px] flex-1">
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={triageFilter === "raw" ? "Search captured WhatsApp messages" : "Try ‘3 BHK rent between Bandra and Andheri under 3 Lakh’"} className="h-9 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 pr-24 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none focus:border-[var(--signal-lime)]/50" />
             {searching && triageFilter === "extracted" ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-wider text-[var(--accent-text-on-light)]">Searching…</span> : query.trim().length >= 2 ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">{triageFilter === "raw" ? `${visibleItems.length} in loaded batch` : `${searchTotal} found`}</span> : null}
           </div>
-          {triageFilter === "extracted" && <div className="flex items-center gap-2">
-            <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Asset</span>
-            <Tabs value={assetFilter} onValueChange={(value) => { const next = value as "all" | "residential" | "commercial"; if (assetFilter !== next) { setMode("all"); setTransactionFilter("all"); } setAssetFilter(next); }}>
-              <TabsList aria-label="Asset type">
-                <TabsTrigger value="all">All</TabsTrigger>
-                <TabsTrigger value="residential">Residential</TabsTrigger>
-                <TabsTrigger value="commercial">Commercial</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>}
-          {triageFilter === "extracted" && assetFilter !== "all" && <div className="flex items-center gap-2">
-            <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Show</span>
-            <Tabs value={mode} onValueChange={(value) => { const next = value as "all" | "listings" | "requirements"; setMode(next); setTransactionFilter("all"); }}>
-              <TabsList aria-label="Record type">
-                <TabsTrigger value="listings">Listings</TabsTrigger>
-                <TabsTrigger value="requirements">Requirements</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>}
-          {triageFilter === "extracted" && assetFilter !== "all" && mode !== "all" && <div className="flex items-center gap-2">
-            <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Deal</span>
-            <Tabs value={transactionFilter} onValueChange={(value) => setTransactionFilter(value as "all" | "rent" | "sale")}>
-              <TabsList aria-label="Transaction type">
-                <TabsTrigger value="rent">Rent</TabsTrigger>
-                <TabsTrigger value="sale">Sale</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>}
+          {triageFilter === "extracted" && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-[var(--zone-light-border)] bg-[var(--zone-light-background)] px-2.5 py-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Asset</span>
+                <Tabs value={assetFilter} onValueChange={(value: string) => setAssetFilter(value as AssetFilter)}>
+                  <TabsList aria-label="Asset type">
+                    <TabsTrigger value="all">All</TabsTrigger>
+                    <TabsTrigger value="residential">Residential</TabsTrigger>
+                    <TabsTrigger value="commercial">Commercial</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Type</span>
+                <Tabs value={mode} onValueChange={(value: string) => setMode(value as "all" | "listings" | "requirements")}>
+                  <TabsList aria-label="Record type">
+                    <TabsTrigger value="all">All</TabsTrigger>
+                    <TabsTrigger value="listings">Listings</TabsTrigger>
+                    <TabsTrigger value="requirements">Requirements</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Deal</span>
+                <Tabs value={transactionFilter} onValueChange={(value: string) => setTransactionFilter(value as TransactionFilter)}>
+                  <TabsList aria-label="Transaction type">
+                    <TabsTrigger value="all">All</TabsTrigger>
+                    <TabsTrigger value="rent">Rent</TabsTrigger>
+                    <TabsTrigger value="sale">Sale</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+            </div>
+          )}
           {triageFilter === "extracted" && query.trim().length >= 2 && mode !== "requirements" && <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-[10px] font-semibold text-zinc-400 hover:border-cyan-300/30 hover:text-zinc-200">
             <input
               type="checkbox"
@@ -3076,6 +3169,17 @@ function UnifiedMarketInbox() {
             Include buyer requirements
           </label>}
         </div>
+        {activeFilterChips.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5" aria-label="Active filters">
+            {activeFilterChips.map((chip) => (
+              <button key={chip.key} type="button" onClick={chip.clear} title={`Remove ${chip.label}`} className="inline-flex items-center gap-1 rounded-full border border-[var(--signal-lime)]/35 bg-[var(--signal-lime)]/10 px-2 py-1 text-[10px] font-semibold text-[var(--signal-lime)] transition hover:bg-[var(--signal-lime)]/20">
+                {chip.label}
+                <X className="h-3 w-3" aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        )}
+        </section>
         {triageFilter === "extracted" && query.trim().length >= 2 && <div className="mt-3 flex flex-wrap items-center gap-2">
           <input value={savedSearchName} onChange={(event) => setSavedSearchName(event.target.value)} placeholder="Name this search" className="h-8 w-44 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-2.5 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none focus:border-cyan-300/40" />
           <Button type="button" variant="outline" size="sm" onClick={() => void saveCurrentSearch()} disabled={savedSearchBusy} className="h-8 border-[var(--monsoon-teal)] px-3 text-[10px] uppercase tracking-wider text-[var(--mist)] hover:bg-[var(--monsoon-teal)]/15">{savedSearchBusy ? "Saving…" : "Save this search"}</Button>
@@ -3149,13 +3253,16 @@ function UnifiedMarketInbox() {
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. Extracted records stay limited to your selected market areas.</p></div>
           </div>
         </details>
-        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
-          {triageFilter === "raw" && query.trim().length >= 2
-            ? `Showing ${visibleItems.length} matching raw messages in the loaded batch`
-            : triageFilter === "raw"
-              ? `Showing ${visibleItems.length} raw messages${marketTotal === null ? " in the loaded batch" : ` in the recent sample of ${marketTotal}`}`
-              : marketCountLabel({ searching, hasSearch: searchItems !== null, visibleCount: triageItems.length, searchTotal, marketTotal, marketTotalScope, assetFilter, mode, isMarketScopedFeed })}
-          {corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}
+        {!loading && !error && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--zone-light-border)] bg-[var(--zone-light-background)] px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+          <span className="h-3 w-0.5 shrink-0 rounded-full bg-[var(--signal-lime)]" aria-hidden="true" />
+          <span>
+            {triageFilter === "raw" && query.trim().length >= 2
+              ? `Showing ${visibleItems.length} matching raw messages in the loaded batch`
+              : triageFilter === "raw"
+                ? `Showing ${visibleItems.length} raw messages${marketTotal === null ? " in the loaded batch" : ` in the recent sample of ${marketTotal}`}`
+                : marketCountLabel({ searching, hasSearch: searchItems !== null, visibleCount: triageItems.length, searchTotal, marketTotal, marketTotalScope, assetFilter, mode, isMarketScopedFeed })}
+          </span>
+          {corridorLabel ? <span className="ml-auto rounded-full border border-cyan-300/30 px-2 py-0.5 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}
         </div>}
       </div>
 
