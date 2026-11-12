@@ -1227,3 +1227,14 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Known limitations: I did not perform an authenticated browser click-through of Copy prompt in this session; the deployed source contains the updated prompt.
 - Next action: Hard-refresh Account → Instinct and copy the prompt into Instinct; it should call `/health` first and then use only the scopes returned.
 
+### Fix Instinct private-DM contact searches
+
+- Requested outcome: Make Instinct able to find captured private WhatsApp messages when the query names the contact rather than quoting message text.
+- Root cause: `GET /messages/search` applied `q` only to `raw_messages.message`. DM contact names commonly live in `sender`, `sender_phone`, or the chat identity field, so authorized rows could be present but return no matches.
+- Files/services changed: `routers/external_agent.py`, `tests/test_external_agent_search.py`, and this report. Coolify `api` was redeployed.
+- Behavior: The search now matches message text, sender, sender phone, or group/chat name while retaining the existing tenant filter, `scope=dms` `is_group=false` filter, consent gate, pagination, and raw-evidence warning. No access boundary was widened.
+- Verification performed: `pytest -q tests/test_external_agent_search.py` passed (8); Python compilation and `git diff --check` passed. Production aggregate inspection confirmed DM consent and `raw_messages:dms` on the affected enabled workspace, with 10,734 captured DM rows and messages arriving today. Independent task-verifier verdict: **PASS**.
+- Deployment/push status: Commit `f17a9bbf` was pushed to `origin/main`. Coolify API deployment `ehdd4h61cbfv3lik8n5rm1j1` finished successfully on that commit. Required service: `api`.
+- Known limitations: Instinct must still query with `scope=dms`, and the workspace owner must keep private-DM consent enabled. Searches cannot recover messages that were never captured by WhatsApp.
+- Next action: Retry the same Instinct contact/name search after refreshing its integration; use `scope=dms` explicitly if it still defaults to group search.
+
