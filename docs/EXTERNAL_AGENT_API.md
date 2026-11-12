@@ -80,11 +80,12 @@ phone values into an audit note.
 
 Workspace owners can grant the write scopes to an existing key without
 rotating its secret. In Account → MCP, use the key's **Enable private CRM
-writes** control. The authenticated owner endpoint is
+writes** control; this enables the two existing CRM write scopes plus the
+standing-search and follow-up write scopes. The authenticated owner endpoint is
 `PUT /api/external/v1/keys/{key_id}/write-access` with
-`{"enabled":true}`. Setting `enabled` to `false` removes only the two CRM write
-scopes. Other scopes, including `raw_messages:dms`, are preserved; DM reads
-still require the separate workspace consent switch.
+`{"enabled":true}`. Setting `enabled` to `false` removes those four private
+write scopes. Other scopes, including `raw_messages:dms`, are preserved; DM
+reads still require the separate workspace consent switch.
 
 Pending sensitive changes are visible only to authenticated workspace owners
 at `GET /approvals`. Approve or reject one with
