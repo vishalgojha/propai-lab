@@ -861,7 +861,7 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Files changed: `frontend/src/app/connections/page.tsx` and this report.
 - Behavior: The QR and code dialogs now explain the exact WhatsApp menu path, using one method at a time, keeping the latest code/QR active, avoiding Reconnect while pairing, and removing an old linked device before one fresh retry.
 - Verification performed: Pending focused frontend lint and mechanical UI detector.
-- Deployment/push status: Pending commit, push, and dashboard redeployment.
+- Deployment/push status: Commit `b7dd609a` was pushed to `origin/main`. Coolify dashboard deployment `pft5tgisyys1ozppfdvl0wuo` finished successfully on that commit.
 - Known limitations or failures: These instructions cannot complete the handset-side WhatsApp confirmation; the user must approve the link in WhatsApp.
 - Independent task-verifier verdict: **PARTIAL** pending verification and deployment.
 - Next action: Run lint/detector, commit/push, redeploy `propai-lab:main-app`, and verify the dialog copy in production.
@@ -1176,5 +1176,5 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Verification performed: Impeccable detector completed with only two pre-existing gray-on-color warnings in `frontend/src/app/inbox/page.tsx`; `git diff --check` and Python compilation passed. Targeted ESLint could not run because this checkout has no local ESLint binary and pnpm attempted an unavailable dependency-store/network operation.
 - Deployment/push status: Pending commit, push, and dashboard redeployment.
 - Independent second-pass task-verifier verdict: **PARTIAL** — the bulk-selection control is implemented and scoped correctly; live browser confirmation remains pending.
-- Next action: Deploy the dashboard, click `Include all eligible`, then click the single confirmation action above the group grid.
+- Next action: Reload Connections, click `Include all eligible`, then click the single confirmation action above the group grid.
 
