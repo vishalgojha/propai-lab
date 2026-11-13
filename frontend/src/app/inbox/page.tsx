@@ -3369,6 +3369,7 @@ function UnifiedMarketInbox() {
                 const rawDetailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`;
                 const rawDetail = expandedDetails[rawDetailKey];
                 const fullSourceMessage = String(rawDetail?.raw?.message || "");
+                const needsFullSourceDisclosure = !originalMessage || Boolean(item.message_truncated);
                 const dmMessages = Array.isArray(item._dm_thread_messages) ? item._dm_thread_messages : [];
                 const dmPhone = String(item.sender_phone || item.sender || item.group_name || "").match(/(?:\+?91[\s-]?)?[6-9]\d{9}/)?.[0] || "";
                 const dmDigits = dmPhone.replace(/\D/g, "").slice(-10);
@@ -3403,22 +3404,22 @@ function UnifiedMarketInbox() {
                         {dmWaUrl && <a href={dmWaUrl} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-300/30 px-2.5 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-300/10"><MessageSquare className="h-3 w-3" aria-hidden="true" />Open WhatsApp</a>}
                         <span className="text-[10px] text-zinc-500">DMs stay private raw evidence until you explicitly act on them.</span>
                       </div>}
-                      <details
+                      {needsFullSourceDisclosure && <details
                         className="mt-3 border-t border-white/10 pt-3"
                         onToggle={(event) => {
                           if (event.currentTarget.open) void loadDetails(item, Boolean(rawDetail?._evidence_error));
                         }}
                       >
-                        <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)]">Load full source evidence</summary>
-                        {loadingDetails[rawDetailKey]
-                          ? <p className="mt-2 text-xs text-[var(--text-secondary)]" role="status">Loading original message…</p>
-                          : fullSourceMessage
-                            ? <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words font-sans text-xs leading-5 text-zinc-300">{fullSourceMessage}</pre>
-                            : <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--text-secondary)]">
-                              <span>The complete source message could not be loaded.</span>
-                              <button type="button" onClick={() => void loadDetails(item, true)} className="font-semibold text-[var(--monsoon-teal)] underline underline-offset-2">Retry</button>
-                            </div>}
-                      </details>
+                          <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)]">Load full source evidence</summary>
+                          {loadingDetails[rawDetailKey]
+                            ? <p className="mt-2 text-xs text-[var(--text-secondary)]" role="status">Loading original message…</p>
+                            : fullSourceMessage
+                              ? <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words font-sans text-xs leading-5 text-zinc-300">{fullSourceMessage}</pre>
+                              : <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--text-secondary)]">
+                                <span>The complete source message could not be loaded.</span>
+                                <button type="button" onClick={() => void loadDetails(item, true)} className="font-semibold text-[var(--monsoon-teal)] underline underline-offset-2">Retry</button>
+                              </div>}
+                        </details>}
                       <p className="mt-3 border-t border-white/10 pt-3 text-[11px] leading-5 text-zinc-500">
                         {item.is_unparsed
                           ? "This message has not been extracted into a listing or buyer requirement."

@@ -1271,3 +1271,12 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Known limitations: The screenshot confirms the missing Auth phone claim but does not expose the account's private `user_metadata`; a live authenticated pairing click-through remains pending. Existing accounts will receive the placeholder on their next authenticated workspace request if they currently have no WhatsApp connection.
 - Next action: Commit and push the task files, then redeploy `api` and have the affected user refresh the WhatsApp Connections page.
 
+### Remove duplicate raw-message rendering in Market Inbox
+
+- Requested outcome: Keep WhatsApp raw messages available as source evidence without showing the same message twice in each Market Inbox card.
+- Files/services changed: frontend/src/app/inbox/page.tsx and this report. No API, database, MCP, or Instinct/raw-source behavior changed.
+- Behavior: The captured raw message remains the primary visible evidence and is rendered once. The full-source disclosure remains available only when the visible message is missing or marked truncated.
+- Verification performed: Impeccable detector returned []; git diff --check passed. Repository TypeScript checking remains blocked by unrelated pre-existing missing-module and typing errors outside this component; ESLint could not run because the root ESLint package is unavailable. Independent second-pass review: PASS for the requested local UI behavior; live browser smoke verification was unavailable.
+- Deployment/push status: Pending commit and push. Required Coolify service: propai-lab:main-app; not redeployed in this task.
+- Known limitations: The full repository typecheck and lint baseline need separate dependency/configuration cleanup. Raw evidence retrieval remains unchanged.
+- Next action: Commit and push the inbox UI change, then redeploy propai-lab:main-app when authorized.
