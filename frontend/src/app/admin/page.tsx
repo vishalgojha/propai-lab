@@ -4,8 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Shield, Terminal, Wrench, ArrowLeft, Plus, Smartphone, Sparkles, DollarSign, BrainCircuit, MapPin, Bot, Database, BookOpen } from "lucide-react";
+import { Shield, Wrench, ArrowLeft, Plus, Smartphone, Activity } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 
@@ -18,7 +17,6 @@ interface SuperAdmin {
 }
 
 export default function AdminPage() {
-  const router = useRouter();
   const { user } = useAuth();
   const [admins, setAdmins] = useState<SuperAdmin[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,7 +76,7 @@ export default function AdminPage() {
         <div>
           <p className="propai-kicker text-[10px] font-semibold">Platform operations</p>
           <h1 className="mt-1 text-2xl font-semibold leading-tight tracking-[-0.03em] text-[var(--text-primary)] sm:text-3xl sm:tracking-[-0.035em]">Admin</h1>
-          <p className="text-sm text-[var(--text-secondary)]">Super admin management &amp; developer tools</p>
+          <p className="text-sm text-[var(--text-secondary)]">Super admin management and platform operations</p>
         </div>
       </div>
 
@@ -164,33 +162,13 @@ export default function AdminPage() {
         )}
       </section>
 
-      {/* Developer Tools */}
+      {/* Platform operations */}
       <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
         <h2 className="mb-4 flex items-center gap-2 text-lg font-bold text-[var(--text-primary)]">
           <Wrench className="h-5 w-5 text-[var(--taxi-amber)]" />
-          Developer Tools
+          Platform Operations
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Link
-            href="/admin/ops"
-            className="block rounded-xl border border-[var(--taxi-amber)]/30 bg-[var(--surface-raised)] p-4 transition-colors hover:border-[var(--taxi-amber)]"
-          >
-            <div className="flex items-center gap-3 mb-2">
-              <Bot className="w-5 h-5 text-emerald-400" />
-              <span className="font-medium text-[var(--text-primary)]">PropAI Operations Agent</span>
-            </div>
-            <p className="text-xs text-zinc-500">Super-admin coding, schema investigation, migration drafts, tests, and operational runbooks</p>
-          </Link>
-          <Link
-            href="/admin/super-admin/database"
-            className="block rounded-xl border border-[var(--monsoon-teal)]/40 bg-[var(--surface-raised)] p-4 transition-colors hover:border-[var(--monsoon-teal)]"
-          >
-            <div className="flex items-center gap-3 mb-2">
-              <Database className="w-5 h-5 text-cyan-500" />
-              <span className="font-medium text-[var(--text-primary)]">Supabase Observability</span>
-            </div>
-            <p className="text-xs text-zinc-500">Live table inventory, RLS exposure, queue health, source integrity, and index risk</p>
-          </Link>
           <Link
             href="/admin/whatsapp"
             className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
@@ -201,75 +179,29 @@ export default function AdminPage() {
             </div>
             <p className="text-xs text-zinc-500">Control every workspace phone, connection state, and self-chat assistant</p>
           </Link>
-
           <Link
             href="/admin/pipeline-health?tab=providers"
             className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
           >
             <div className="flex items-center gap-3 mb-2">
-              <Sparkles className="w-5 h-5 text-cyan-400" />
-              <span className="font-medium text-white">Provider Health</span>
+              <Activity className="w-5 h-5 text-cyan-400" />
+              <span className="font-medium text-white">Pipeline Health</span>
             </div>
-            <p className="text-xs text-zinc-500">LLM provider uptime, latency, recent failures, 24h timeline (probed every 60s)</p>
+            <p className="text-xs text-zinc-500">Provider, extraction, enrichment, dedupe, and embedding diagnostics</p>
           </Link>
-
           <Link
             href="/extractions"
             className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
           >
             <div className="flex items-center gap-3 mb-2">
-              <BrainCircuit className="w-5 h-5 text-emerald-400" />
+              <Activity className="w-5 h-5 text-emerald-400" />
               <span className="font-medium text-white">Extraction Activity</span>
             </div>
             <p className="text-xs text-zinc-500">Backlog coverage, latest results, source evidence, and review status</p>
           </Link>
-
-          <Link
-            href="/admin/ai-usage"
-            className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
-          >
-            <div className="flex items-center gap-3 mb-2">
-              <DollarSign className="w-5 h-5 text-emerald-400" />
-              <span className="font-medium text-white">AI Usage &amp; Cost</span>
-            </div>
-            <p className="text-xs text-zinc-500">Token spend by model &amp; agent, daily trend, wasted cost on truncated calls</p>
-          </Link>
-
-          <Link
-            href="/admin/pipeline-health?tab=embeddings"
-            className="block p-4 rounded-xl border border-white/10 hover:border-cyan-400/30 transition-colors"
-          >
-            <div className="flex items-center gap-3 mb-2">
-              <BrainCircuit className="w-5 h-5 text-cyan-400" />
-              <span className="font-medium text-white">Semantic Embeddings</span>
-            </div>
-            <p className="text-xs text-zinc-500">Live vector coverage, queue health, entity breakdown, and worker failures</p>
-          </Link>
-
-          <Link
-            href="/admin/pipeline-health?tab=enrichment"
-            className="block p-4 rounded-xl border border-white/10 hover:border-amber-400/30 transition-colors"
-          >
-            <div className="flex items-center gap-3 mb-2">
-              <MapPin className="w-5 h-5 text-amber-400" />
-              <span className="font-medium text-white">Building Enrichment</span>
-            </div>
-            <p className="text-xs text-zinc-500">Worker heartbeat, queue evidence, enrichment outcomes, and latest failures</p>
-          </Link>
-
-          <Link
-            href="/admin/blog"
-            className="block rounded-xl border border-[#287D82]/30 bg-[var(--surface-raised)] p-4 transition-colors hover:border-[#287D82]"
-          >
-            <div className="mb-2 flex items-center gap-3">
-              <BookOpen className="h-5 w-5 text-[#287D82]" />
-              <span className="font-medium text-[var(--text-primary)]">PropAI Journal</span>
-            </div>
-            <p className="text-xs text-zinc-500">Create, edit, and publish SEO-friendly property and locality guides</p>
-          </Link>
-
         </div>
       </section>
+
     </div>
   );
 }

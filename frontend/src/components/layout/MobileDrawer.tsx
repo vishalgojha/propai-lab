@@ -20,7 +20,6 @@ const baseNavSections = [
     items: [
       { href: "/whatsapp?tab=numbers", label: "WhatsApp" },
       { href: "/inbox", label: "Inbox" },
-      { href: "/whatsapp-chats", label: "Assistant" },
     ],
   },
   {
@@ -30,7 +29,6 @@ const baseNavSections = [
       { href: "/leads", label: "Follow-ups" },
       { href: "/crm", label: "Inventory" },
       { href: "/deals", label: "Deals" },
-      { href: "/auto-matched", label: "Matches" },
     ],
   },
   {
@@ -43,8 +41,7 @@ const baseNavSections = [
     title: "Settings",
     items: [
       { href: "/account?tab=profile", label: "Account" },
-      { href: "/reports?tab=usage", label: "Reports" },
-      { href: "/workspace/brokers", label: "Hidden Brokers" },
+      { href: "/workspace/mcp", label: "Integrations" },
     ],
   },
 ];

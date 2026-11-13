@@ -8,8 +8,6 @@ import "./zone-contract.css";
 import { getPhones, getAuthMe, getBusinessApiConfig, BusinessApiConfig, getProfile, getWhatsAppStatus, fetchJSON, isLiveWhatsAppConnection, getSoundPreferences as getSavedSoundPreferences, saveSoundPreferences, type Phone, type WhatsAppStatus } from "@/lib/api";
 import {
   MessageSquare,
-  MessagesSquare,
-  BarChart3,
   Briefcase,
   Wifi,
   WifiOff,
@@ -38,7 +36,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   ChevronDown,
-  EyeOff,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
@@ -73,7 +70,6 @@ const baseNavSections = [
     items: [
       { href: "/whatsapp?tab=numbers", label: "WhatsApp", icon: Wifi },
       { href: "/inbox", label: "Inbox", icon: MessageSquare },
-      { href: "/whatsapp-chats", label: "Assistant", icon: MessagesSquare },
     ],
   },
   {
@@ -83,7 +79,6 @@ const baseNavSections = [
       { href: "/leads", label: "Follow-ups", icon: Sparkles },
       { href: "/crm", label: "Inventory", icon: Briefcase },
       { href: "/deals", label: "Deals", icon: TrendingUp },
-      { href: "/auto-matched", label: "Matches", icon: Sparkles },
     ],
   },
   {
@@ -96,8 +91,7 @@ const baseNavSections = [
     title: "Settings",
     items: [
       { href: "/account?tab=profile", label: "Account", icon: UserCheck },
-      { href: "/reports?tab=usage", label: "Reports", icon: BarChart3 },
-      { href: "/workspace/brokers", label: "Broker Filters", icon: EyeOff },
+      { href: "/workspace/mcp", label: "Integrations", icon: Wrench },
     ],
   },
 ];

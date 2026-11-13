@@ -8,9 +8,9 @@ type ModuleItem = { href: string; label: string };
 type ModuleSection = { title: string; items: ModuleItem[] };
 
 const sections: ModuleSection[] = [
-  { title: "Operations", items: [{ href: "/inbox", label: "Inbox" }, { href: "/auto-matched", label: "Matches" }] },
+  { title: "Operations", items: [{ href: "/inbox", label: "Inbox" }] },
   { title: "Brokerage", items: [{ href: "/crm", label: "Inventory" }, { href: "/deals", label: "Deals" }, { href: "/clients", label: "Clients & Leads" }, { href: "/leads", label: "Follow-ups" }] },
-  { title: "Connections", items: [{ href: "/whatsapp?tab=numbers", label: "WhatsApp" }, { href: "/whatsapp-chats", label: "Assistant" }, { href: "/social-flow", label: "Ads Studio" }] },
+  { title: "Connections", items: [{ href: "/whatsapp?tab=numbers", label: "WhatsApp" }, { href: "/workspace/mcp", label: "Integrations" }, { href: "/social-flow", label: "Ads Studio" }] },
   { title: "Operations", items: [{ href: "/admin/pipeline-health?tab=providers", label: "Pipeline Health" }, { href: "/brokers", label: "Broker Profiles" }, { href: "/admin", label: "Super Admin" }] },
 ];
 

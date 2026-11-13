@@ -1289,3 +1289,12 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Deployment/push status: Pending commit and push. Required Coolify service: propai-lab:main-app.
 - Known limitations: Legacy /chat routes and internal historical links remain available as compatibility paths; the user-facing navigation no longer advertises them. The ElevenLabs agent configuration must include the two new client-tool names for live voice calls to invoke them.
 - Next action: Commit and push the dashboard changes, redeploy propai-lab:main-app, then verify one voice request that routes through the workspace agent.
+### Remove redundant broker and admin navigation tools
+
+- Requested outcome: Keep Ads Studio while removing redundant WhatsApp Assistant, Matches, Reports, Broker Filters, and standalone Instinct navigation; simplify the Admin landing page for an MCP/Instinct-first workflow.
+- Files/services changed: frontend/src/app/layout.tsx, frontend/src/components/layout/MobileDrawer.tsx, frontend/src/components/layout/WorkspaceModuleMenu.tsx, frontend/src/app/admin/page.tsx, and this report.
+- Behavior: Ads Studio remains visible. Integrations now points to the combined MCP/Instinct screen. The Admin landing page no longer promotes the internal Operations Agent or Supabase Observability; both routes remain available for specialist maintenance.
+- Verification performed: Impeccable detector returned [] for changed UI surfaces; targeted diff check passed. Independent second-pass review: PASS for the requested navigation simplification; live browser smoke verification remains pending.
+- Deployment/push status: Pending commit and push. Required Coolify service: propai-lab:main-app.
+- Known limitations: Specialist routes were hidden from primary navigation, not deleted, to preserve operational recovery paths.
+- Next action: Commit and push the navigation/admin cleanup, then redeploy propai-lab:main-app.
