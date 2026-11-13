@@ -1308,3 +1308,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Deployment/push status: Commit `e65e9fe5` was pushed to `origin/main`. No Coolify service was redeployed. If the design is later implemented, the affected service(s) will depend on the approved API/UI scope; this design alone requires no redeployment.
 - Known limitations: The design does not resolve the tenant-private versus legacy public/shared documentation conflict, source-retention policy, promotion rules, or labeled evaluation target; those remain explicit approval gates before implementation.
 - Next action: Resolve the open decisions, obtain authorized live Supabase schema/RLS verification, and then prepare a separate reviewed migration implementation.
+
+### Clarify hybrid tenant/shared source visibility
+
+- Requested outcome: Correct the property identity design and living architecture to reflect that DMs and unchecked groups are private, while checked groups configured for ingestion produce authorized shared-market data.
+- Files changed: `docs/PROPERTY_IDENTITY_DESIGN.md`, `architecture.md`, and this report. No application code, migration, live record, source permission, or deployment was changed.
+- Behavior/design: The documents now distinguish private raw evidence from approved shared-market projections. Shared visibility is limited to checked ingestion groups and does not expose raw messages, phone numbers, or restricted source context; “public” means authorized PropAI tenants, not anonymous web publication.
+- Verification performed: Inspected the changed sections, confirmed the checked-group/DM/unchecked-group boundary appears in both design and architecture documents, and ran `git diff --check`. Independent task-verifier verdict: **PASS** for the documentation/invariant update.
+- Deployment/push status: Pending commit and push. No Coolify service requires redeployment for this documentation-only change.
+- Known limitations: Existing historical documentation may still contain older public/shared wording outside the updated source-boundary sections and should be reconciled during the next architecture documentation pass.
+- Next action: Use this hybrid boundary as the authorization model for the future property identity migration and shared projection.

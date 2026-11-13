@@ -13,12 +13,19 @@ fallback to a user ID for ordinary reads or writes. Every tenant-owned query,
 worker claim, embedding, match, export, analytics event, MCP tool, and UI route
 must carry the authenticated tenant scope. Null tenant scope fails closed.
 
-There is no shared market and no public listing surface. The `www.propai.live`
-application redirects to the authenticated workspace, emits no inventory
-sitemap, and is non-indexable. Legacy `visibility = shared_market` rows are
-not visible to ordinary tenant queries and require an explicit reviewed
-migration before becoming tenant-owned data. Cross-tenant reads are reserved
-for explicitly authorized administration and audit paths.
+PropAI has a hybrid visibility model. DMs and unchecked groups are private
+tenant evidence. A group that the operator explicitly checks and configures for
+ingestion becomes an authorized `public_market_source`; typed inventory
+derived from that source may enter the multi-tenant shared market. Shared
+projections may cross tenant boundaries only through their approved fields and
+visibility rules; raw messages, phone numbers, private source context, and
+unchecked-group/DM evidence remain tenant-scoped. “Public” here means shared
+with authorized PropAI tenants, not anonymous public-web publication.
+
+The `www.propai.live` application remains non-indexable unless a separate
+architecture decision changes that. `visibility = shared_market` is an
+explicit consented boundary, not an inference from missing tenant data.
+Cross-tenant reads of private evidence remain prohibited.
 
 Client CRM routes are fail-closed workspace routes: the clients router resolves
 `get_tenant_context` before any client, requirement, note, alias, candidate, or
@@ -45,15 +52,15 @@ backfill or a public feed. Raw MCP search defaults to groups, with private DMs
 requiring explicit scope. Raw result pages expose cursors, and complete
 message text is fetched by ID so display truncation never destroys evidence.
 
-## Single-owner brokerage boundary
+## Brokerage workspace and shared-market boundary
 
-PropAI is the owner's brokerage operating system, not an open multi-tenant
-platform. `www.propai.live` is the public client discovery surface and
-`app.propai.live` is the authenticated owner workspace. Source brokers from
-WhatsApp are evidence and referral relationships, not separate PropAI tenants
-or customer workspaces. Internal `tenant_id` fields and RLS remain defense in
-depth around the owner's records and preserve migration safety; they do not
-authorize public tenant signup, tenant switching, or cross-customer access.
+PropAI is the brokerage workspace over a controlled multi-tenant market, not
+an open anonymous marketplace. `app.propai.live` is the authenticated
+workspace. Source brokers from WhatsApp are evidence and referral
+relationships, not automatically separate PropAI tenants. Internal
+`tenant_id` fields and RLS protect private records, while explicitly approved
+shared-market projections may be read by authorized tenants without exposing
+the originating tenant's private evidence.
 
 ## Brokerage-owned public contact boundary
 

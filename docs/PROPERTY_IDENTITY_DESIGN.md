@@ -6,10 +6,21 @@ existing source permissions.
 
 ## Scope and governing decisions
 
-The current product contract is tenant-private: every inventory record,
-source message, contact, match, worker claim, and derived read must be scoped
-to `tenant_id`. There is no shared market or public listing surface. Any
-property identity work must preserve that boundary.
+PropAI uses a hybrid visibility model. Raw evidence and operational records
+remain tenant-scoped, while explicitly consented checked WhatsApp groups may
+produce shared-market inventory:
+
+- DMs are private tenant data.
+- Unchecked groups are private tenant data, even when raw capture is enabled.
+- Checked groups configured for ingestion are authorized shared-market
+  sources.
+- Shared-market identity and offer projections may be visible across
+  authorized tenants, but raw messages, phone numbers, and restricted source
+  context remain permission-filtered.
+
+“Shared” means available to authorized PropAI tenants; it does not mean
+anonymous public-web publication. Property identity work must preserve the
+source visibility boundary at every derived layer.
 
 The existing typed listing tables remain the source-grounded extraction
 records. The new layer groups those records into a stable physical-property
@@ -171,6 +182,8 @@ Every table and route must enforce:
 - resolved organization membership and non-null tenant scope;
 - source/group/DM permission on every source fragment;
 - explicit DM consent where applicable;
+- shared-market reads only through explicitly approved projections from checked
+  ingestion groups;
 - contact visibility and server-side contact resolution;
 - deletion, consent revocation, and retention propagation;
 - fail-closed behavior when tenant or source scope is absent.
@@ -187,8 +200,8 @@ visibility rules.
 
 ## Migration and rollout
 
-1. Resolve the contradictory legacy public/shared-market documentation and
-   confirm that the target remains tenant-private.
+1. Confirm the exact shared-market projection fields, authorized tenant
+   audience, publication/revocation workflow, and anonymous-web exclusion.
 2. Verify the live schema, migration history, RLS policies, views, grants, and
    retention jobs with authorized Supabase access. Do not infer live state from
    generated artifacts.
