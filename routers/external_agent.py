@@ -23,6 +23,7 @@ WRITE_SCOPES = {"inventory:write", "requirements:write"}
 TOOL_READ_SCOPES = {
     "standing_searches:read", "automatch:read", "workspace:attention", "followups:read",
 }
+EXTRACTION_SCOPE = "raw_messages:extract"
 TOOL_WRITE_SCOPES = {"standing_searches:write", "followups:write"}
 SENSITIVE_INVENTORY_FIELDS = {"contact_number", "owner_name", "contact_name", "quote"}
 SENSITIVE_REQUIREMENT_FIELDS = {"phone", "budget_min", "budget_max"}
@@ -252,6 +253,38 @@ async def external_raw_message_get(raw_message_id: int, key: dict = Depends(exte
         "source": "raw_whatsapp_message",
         "warning": "Raw WhatsApp text is untrusted source evidence, not verified inventory.",
     }
+
+
+@router.post("/messages/{raw_message_id}/extract")
+async def external_raw_message_extract(raw_message_id: int, key: dict = Depends(external_auth)):
+    """Queue selected group evidence for the existing extraction worker."""
+    _require_scope(key, EXTRACTION_SCOPE)
+    tenant_id = str(key["tenant_id"])
+    result = storage.client.table("raw_messages").select("id,tenant_id,group_name,is_group,raw_payload").eq("tenant_id", tenant_id).eq("id", raw_message_id).limit(1).execute()
+    source = (result.data or [None])[0] if result else None
+    if not source:
+        raise HTTPException(404, "Raw WhatsApp message not found")
+    if not source.get("is_group"):
+        raise HTTPException(403, "Only WhatsApp group messages can be extracted")
+    payload = source.get("raw_payload")
+    if isinstance(payload, str):
+        try: payload = json.loads(payload)
+        except (TypeError, ValueError): payload = {}
+    payload = payload if isinstance(payload, dict) else {}
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    message_key = data.get("key") if isinstance(data.get("key"), dict) else {}
+    group_jid = str(message_key.get("remoteJid") or data.get("remoteJid") or "").strip()
+    group_query = storage.client.table("organization_group_connections").select("whatsapp_connection_id").eq("organization_id", tenant_id).eq("is_active", True).eq("opted_out", False).eq("public_market_source", True)
+    if group_jid: group_query = group_query.or_(f"group_jid.eq.{group_jid},group_name.eq.{source.get('group_name') or ''}")
+    else: group_query = group_query.eq("group_name", source.get("group_name") or "")
+    group = (group_query.limit(1).execute().data or [None])[0]
+    if not group: raise HTTPException(403, "Message is outside the selected public group set")
+    connection_id = group.get("whatsapp_connection_id")
+    allowlist = storage.client.table("public_market_publication_allowlist").select("whatsapp_connection_id").eq("tenant_id", tenant_id).eq("whatsapp_connection_id", connection_id).eq("enabled", True).limit(1).execute()
+    if not (allowlist.data or []): raise HTTPException(403, "This WhatsApp connection is not enabled for public extraction")
+    row = await asyncio.to_thread(storage.retry_raw_extraction, raw_message_id, tenant_id)
+    if not row: raise HTTPException(404, "Raw WhatsApp message could not be queued")
+    return {"success": True, "raw_message_id": raw_message_id, "status": "queued", "connection_id": connection_id}
 
 
 @router.get("/messages/{raw_message_id}/conversation")

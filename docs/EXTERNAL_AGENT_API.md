@@ -51,6 +51,7 @@ Read endpoints:
 | `GET /messages/search` | Search captured WhatsApp source messages | `q`, `scope`, `since`, `until`, `limit`, `offset` |
 | `GET /messages/{raw_message_id}` | Fetch one full source message | `raw_message_id` from search results |
 | `GET /messages/{raw_message_id}/conversation` | Fetch nearby messages from the same private DM chat | `raw_message_id`, `limit` |
+| `POST /messages/{raw_message_id}/extract` | Queue one selected WhatsApp group message for the existing extractor | `raw_messages:extract`; groups only |
 
 Optional private CRM writes (only for a key with the matching write scope):
 
@@ -62,8 +63,11 @@ Optional private CRM writes (only for a key with the matching write scope):
 These writes are tenant-scoped to the key, remain private CRM records, and do
 not become WhatsApp source evidence or public inventory. Send an
 `Idempotency-Key` with inventory requests when the caller may retry. Ads,
-publishing, outbound WhatsApp, deletion, and budget changes remain outside this
-API and require a separate approval flow.
+outbound WhatsApp, deletion, and budget changes remain outside this API. For
+the explicitly enabled WhatsApp connection, `raw_messages:extract` can re-queue
+selected group evidence for the existing deterministic extraction worker.
+Instinct cannot write typed rows, set visibility, or publish directly; the
+database publication gate performs the final check.
 
 Automatch is suggestion-only: it reads existing tenant-local matcher rows and
 does not create matches, alter CRM records, message a broker, publish inventory,

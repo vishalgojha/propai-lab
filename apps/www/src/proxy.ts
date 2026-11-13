@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-// Public listing discovery is retired. This is deliberately not configurable
-// at runtime: a missing or stale deployment variable must not reopen inventory.
-const PRIVATE_BROKERAGE_MODE = true;
+// Keep the safe default. Public discovery only opens when Coolify explicitly
+// sets the deployment variable after the database publication gate is enabled.
+const PRIVATE_BROKERAGE_MODE = process.env.PROPAI_PUBLIC_SITE_ENABLED !== "true";
 const BROKERAGE_APP_URL = process.env.PROPAI_BROKERAGE_APP_URL || "https://app.propai.live";
 
 // Back-compat: old bare-numeric URLs like /listings/12345 308 to

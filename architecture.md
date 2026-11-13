@@ -240,7 +240,13 @@ preserved. Sensitive CRM writes pause in a tenant-scoped approval queue until
 an authenticated workspace owner approves them; every external-agent write
 attempt is recorded with redacted payload metadata and an outcome. Key rotation
 revokes the prior secret immediately. DM reads remain gated separately by
-workspace consent.
+workspace consent. Instinct may request a retry of a captured group message
+through `raw_messages:extract`, but the API checks the selected group directory
+and a connection-level publication allowlist before releasing the raw row to
+the existing extraction worker. It cannot write typed listings or visibility
+directly. The anonymous projection re-checks the same connection gate, so a
+tenant with multiple WhatsApp connections cannot publish evidence from the
+wrong account.
 
 ### Plan entitlements
 
