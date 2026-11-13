@@ -1298,3 +1298,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Deployment/push status: Pending commit and push. Required Coolify service: propai-lab:main-app.
 - Known limitations: Specialist routes were hidden from primary navigation, not deleted, to preserve operational recovery paths.
 - Next action: Commit and push the navigation/admin cleanup, then redeploy propai-lab:main-app.
+
+### Produce property identity and broker-offer design
+
+- Requested outcome: Inspect the proposed property deduplication briefs and produce a repository-grounded migration/API design and rollout plan without changing live data or deploying functionality.
+- Files changed: `docs/PROPERTY_IDENTITY_DESIGN.md` and this report. No application code, migration, live record, source permission, connector, alert, or deployment was changed.
+- Behavior/design: The document defines tenant-scoped property candidates, source fragments, broker offers, field claims, reversible match relationships, availability events, API routes, RLS/retention requirements, migration phases, acceptance tests, and unresolved decisions. It explicitly preserves existing typed extraction rows, source fingerprints, exact repost gates, and broker/source permissions.
+- Verification performed: Required product/data-quality/architecture documentation, current identity/dedup migrations, storage/extraction paths, tests, local Supabase configuration, and tenant/RLS migrations were inspected. `git diff --check` passed. The installed Supabase CLI could not complete a read-only status/help check because it attempted to write telemetry under the read-only `/home/vishal`; no remote or schema operation was attempted. Independent task-verifier verdict: **PASS** for the requested design deliverable; live schema/RLS verification remains explicitly documented as a limitation.
+- Deployment/push status: Pending commit and push. No Coolify service was redeployed. If the design is later implemented, the affected service(s) will depend on the approved API/UI scope; this design alone requires no redeployment.
+- Known limitations: The design does not resolve the tenant-private versus legacy public/shared documentation conflict, source-retention policy, promotion rules, or labeled evaluation target; those remain explicit approval gates before implementation.
+- Next action: Resolve the open decisions, obtain authorized live Supabase schema/RLS verification, and then prepare a separate reviewed migration implementation.
