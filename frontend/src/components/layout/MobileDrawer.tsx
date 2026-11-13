@@ -21,7 +21,6 @@ const baseNavSections = [
       { href: "/whatsapp?tab=numbers", label: "WhatsApp" },
       { href: "/inbox", label: "Inbox" },
       { href: "/whatsapp-chats", label: "Assistant" },
-      { href: "/chat", label: "Search" },
     ],
   },
   {
@@ -223,7 +222,7 @@ export function MobileDrawer({
                 const active =
                   pathname === itemPath ||
                   (itemPath !== "/" && pathname.startsWith(itemPath));
-                const isPrimary = item.label === "Search" || item.label === "Deals";
+                const isPrimary = item.label === "Deals";
                 return (
                   <div key={item.href} className="mb-0.5">
                     <button

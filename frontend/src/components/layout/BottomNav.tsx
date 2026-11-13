@@ -3,7 +3,6 @@
 import { usePathname, useRouter } from "next/navigation";
 import {
   House,
-  Search,
   Inbox,
   Wifi,
   Menu,
@@ -11,7 +10,6 @@ import {
 
 const tabs = [
   { href: "/dashboard", label: "Home", icon: House },
-  { href: "/chat", label: "Search", icon: Search },
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/whatsapp?tab=numbers", label: "Connect", icon: Wifi },
 ];

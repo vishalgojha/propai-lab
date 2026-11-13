@@ -15,6 +15,7 @@ import {
   createCrmInventoryField,
   updateCrmInventory,
   logWorkspaceActivity,
+  chatAIChat,
   type OnboardingGroupState,
   type Phone,
   type WhatsAppStatus,
@@ -39,6 +40,8 @@ export const VOICE_ASSISTANT_TOOL_DEFINITIONS = [
   { name: "search_market_inventory", description: "Search the signed-in broker's tenant-scoped captured market inventory. Never expose phone numbers." },
   { name: "get_workspace_attention", description: "Read current tenant-scoped dashboard counts for records needing review and extraction coverage." },
   { name: "open_market_search", description: "Open Market Inbox with the broker's search query. Do not modify records." },
+  { name: "run_workspace_agent", description: "Ask the authenticated PropAI workspace agent to complete a read or prepare a confirmed action using its full server-side tool registry, including captured WhatsApp evidence and connected MCP/Instinct context." },
+  { name: "open_integrations_setup", description: "Open the workspace MCP and Instinct integrations screen. Do not create tokens or authorize an external agent." },
   { name: "create_crm_field", description: "Create a custom Private CRM field after the broker explicitly confirms. Never create a field without confirmed=true." },
   { name: "create_crm_row", description: "Create a Private CRM property row after the broker explicitly confirms. Never create a row without confirmed=true." },
   { name: "update_crm_cell", description: "Update one Private CRM cell after the broker explicitly confirms. Never update data without confirmed=true." },
@@ -67,6 +70,7 @@ Product navigation:
 - WhatsApp > Groups: review which groups are eligible for extraction. The broker must personally select and confirm groups.
 - Account: profile, team, billing, API/provider settings.
 - Reports: workspace reporting and operational summaries.
+- Integrations: Workspace → MCP is where the broker can connect MCP clients and prepare the Instinct integration. Never create a token or authorize an external agent by voice.
 
 WhatsApp connection controls:
 - Reconnect WhatsApp is the normal recovery path when a connection is offline or needs to reconnect.
@@ -82,6 +86,7 @@ Boundaries:
 - You can explain pages, labels, statuses, and visible controls; guide the broker step by step; navigate only through the registered tools; and read current WhatsApp setup status through the registered status tool.
 - You cannot edit market listings or requirements, select groups, confirm consent, scan QR codes, send messages, delete anything, or access passwords/API keys. Authorized CRM voice writes are limited to the three confirmed CRM tools above.
 - Search, attention, and navigation tools are read-only and tenant-scoped. Never expose phone numbers; use the existing contact flow.
+- For requests beyond the small navigation/status helpers, use run_workspace_agent so the server-side agent can select the current PropAI tools and connected MCP/Instinct context. Do not pretend a tool ran if the returned result does not confirm it.
 - If asked for an unsupported action, explain the safe manual next step instead of inventing a tool or promising that it happened.
 `;
 
@@ -234,6 +239,29 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
       router.push(target);
       return `Market Inbox is open for: ${query}`;
     }
+    if (name === "run_workspace_agent") {
+      const prompt = String(parameters.prompt || parameters.query || parameters.request || "").trim();
+      if (!prompt) return "Tell me what you want PropAI to check or do in your workspace.";
+      try {
+        const response = await withTimeout(chatAIChat([{ role: "user", content: prompt }]), VOICE_STATUS_TOOL_TIMEOUT_MS * 4) as { content?: string; trace?: { route?: string } };
+        const content = String(response.content || "").trim();
+        if (!content) return "The workspace agent returned no answer. Please try that request again.";
+        addLog("info", "The workspace agent completed the request using the available tenant-scoped tools.");
+        audit("voice_assistant.workspace_agent", "workspace", { prompt: prompt.slice(0, 240), route: response.trace?.route || "workspace_agent" });
+        return content;
+      } catch {
+        setVoiceState("error");
+        addLog("error", "The full workspace agent is temporarily unavailable.");
+        return "I could not reach the full workspace agent right now. Please try again or open the relevant workspace screen directly.";
+      }
+    }
+    if (name === "open_integrations_setup") {
+      const target = "/workspace/mcp";
+      addLog("action", "Opening MCP and Instinct integration setup. Authorization remains manual.");
+      audit("voice_assistant.navigate", target, { capability: "open_integrations_setup" });
+      router.push(target);
+      return "The MCP and Instinct integrations screen is open. You must create, copy, and authorize any external connection yourself.";
+    }
     if (name === "create_crm_field" || name === "create_crm_row" || name === "update_crm_cell") {
       const email = (user?.email || "").trim().toLowerCase();
       if (!CRM_VOICE_ALLOWED_EMAILS.has(email)) return "CRM voice editing is not enabled for this account.";
@@ -333,6 +361,8 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
     search_market_inventory: (parameters) => runTool("search_market_inventory", parameters),
     get_workspace_attention: () => runTool("get_workspace_attention"),
     open_market_search: (parameters) => runTool("open_market_search", parameters),
+    run_workspace_agent: (parameters) => runTool("run_workspace_agent", parameters),
+    open_integrations_setup: () => runTool("open_integrations_setup"),
     create_crm_field: (parameters) => runTool("create_crm_field", parameters),
     create_crm_row: (parameters) => runTool("create_crm_row", parameters),
     update_crm_cell: (parameters) => runTool("update_crm_cell", parameters),

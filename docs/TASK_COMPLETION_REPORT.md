@@ -1280,3 +1280,12 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Deployment/push status: Pending commit and push. Required Coolify service: propai-lab:main-app; not redeployed in this task.
 - Known limitations: The full repository typecheck and lint baseline need separate dependency/configuration cleanup. Raw evidence retrieval remains unchanged.
 - Next action: Commit and push the inbox UI change, then redeploy propai-lab:main-app when authorized.
+### Consolidate Chat into Copilot and expose the full workspace agent
+
+- Requested outcome: Remove the redundant Chat/Search surface and make the voice assistant use the broader PropAI workspace capabilities, including MCP and Instinct integration context.
+- Files/services changed: frontend/src/app/layout.tsx, frontend/src/components/layout/BottomNav.tsx, frontend/src/components/layout/MobileDrawer.tsx, frontend/src/components/layout/WorkspaceModuleMenu.tsx, frontend/src/components/VoiceAssistant.tsx, and this report.
+- Behavior: Chat/Search is no longer exposed in desktop, mobile, bottom, or Modules navigation. The Copilot now has a server-side workspace-agent handoff plus a guarded MCP/Instinct setup handoff; external authorization and token creation remain manual.
+- Verification performed: Impeccable detector returned []; targeted diff review passed. Full TypeScript remains blocked by the repository's existing missing-module and implicit-any baseline errors; no new standalone navigation error was introduced by the changed lines. Independent second-pass review: PASS for the requested local UI behavior; live browser smoke verification remains pending.
+- Deployment/push status: Pending commit and push. Required Coolify service: propai-lab:main-app.
+- Known limitations: Legacy /chat routes and internal historical links remain available as compatibility paths; the user-facing navigation no longer advertises them. The ElevenLabs agent configuration must include the two new client-tool names for live voice calls to invoke them.
+- Next action: Commit and push the dashboard changes, redeploy propai-lab:main-app, then verify one voice request that routes through the workspace agent.

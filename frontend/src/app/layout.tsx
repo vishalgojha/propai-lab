@@ -10,7 +10,6 @@ import {
   MessageSquare,
   MessagesSquare,
   BarChart3,
-  Search,
   Briefcase,
   Wifi,
   WifiOff,
@@ -75,7 +74,6 @@ const baseNavSections = [
       { href: "/whatsapp?tab=numbers", label: "WhatsApp", icon: Wifi },
       { href: "/inbox", label: "Inbox", icon: MessageSquare },
       { href: "/whatsapp-chats", label: "Assistant", icon: MessagesSquare },
-      { href: "/chat", label: "Search", icon: Search },
     ],
   },
   {
@@ -686,7 +684,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   // Conversation workspaces own the mobile viewport. The status rail remains
   // available on the dashboard and operational pages, but it is redundant
   // chrome above a chat composer and steals valuable keyboard-safe height.
-  const hideGlobalChromeOnMobile = pathname === "/chat" || pathname === "/social-flow" || pathname === "/inbox";
+  const hideGlobalChromeOnMobile = pathname === "/social-flow" || pathname === "/inbox";
   const buildLabel = getBuildLabel();
   const buildHint = getBuildHint();
 
@@ -781,7 +779,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 const itemPath = item.href.split("?")[0];
                 const active = pathname === itemPath || (itemPath !== "/" && pathname.startsWith(itemPath));
                 const Icon = item.icon;
-                const isPrimary = item.label === "Search" || item.label === "Deals";
+                const isPrimary = item.label === "Deals";
                 return (
                   <div key={item.href} className="mb-0.5">
                     {item.external ? (
@@ -1059,13 +1057,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
         {/* Page content */}
-        <div data-density={isDenseDataRoute ? "dense" : "comfortable"} className={`propai-page-stage min-w-0 flex-1 min-h-0 overflow-x-hidden text-text-primary relative max-lg:pb-14 ${pathname === "/chat" ? "overflow-y-hidden" : "overflow-y-auto"}`}>
+        <div data-density={isDenseDataRoute ? "dense" : "comfortable"} className="propai-page-stage min-w-0 flex-1 min-h-0 overflow-x-hidden overflow-y-auto text-text-primary relative max-lg:pb-14">
           {children}
         </div>
       </main>
 
       {/* ═══════ Bottom Navigation (mobile) ═══════ */}
-      {pathname !== "/chat" && <BottomNav onTabChange={setLastTab} onMenu={toggleDrawer} />}
+      <BottomNav onTabChange={setLastTab} onMenu={toggleDrawer} />
 
       {/* Install Prompt */}
       <InstallPrompt />
