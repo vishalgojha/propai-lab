@@ -178,6 +178,37 @@ test("market search exposes explicit posted and last-seen dates", () => {
   assert.equal(result.last_seen_on, "06 Nov 2026");
 });
 
+test("shared-market MCP rows never carry source phone data", () => {
+  const result = toMarketSearchRow({
+    source_message_id: "shared:residential_rent:12",
+    source_group_name: null,
+    listing_type: "listing_rent",
+    area: "Bandra West",
+    sub_area: "Bandra West",
+    location: "Bandra West",
+    price: 85000,
+    price_type: "month",
+    size_sqft: 1200,
+    furnishing: null,
+    bhk: 3,
+    property_type: "rent",
+    title: "Shared listing",
+    description: null,
+    raw_message: null,
+    cleaned_message: null,
+    primary_contact_name: "Source broker",
+    primary_contact_number: "9876543210",
+    primary_contact_wa: "9876543210",
+    message_timestamp: "2026-11-06T12:00:00.000Z",
+    created_at: "2026-11-01T12:00:00.000Z",
+    source_scope: "shared_market",
+  });
+  assert.equal(result.source_scope, "shared_market");
+  assert.equal(result.broker_phone, null);
+  assert.equal(result.whatsapp_number, null);
+  assert.deepEqual(result.brokers, [{ name: "Source broker", phone: null, firm: null }]);
+});
+
 test("listing ad pack returns reviewable multi-channel drafts without sending", () => {
   const result = buildListingAdPack({
     title: "Felicia Duplex",

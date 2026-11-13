@@ -19,13 +19,14 @@ ingestion becomes an authorized `public_market_source`; typed inventory
 derived from that source may enter the multi-tenant shared market. Shared
 projections may cross tenant boundaries only through their approved fields and
 visibility rules; raw messages, phone numbers, private source context, and
-unchecked-group/DM evidence remain tenant-scoped. “Public” here means shared
-with authorized PropAI tenants, not anonymous public-web publication.
+unchecked-group/DM evidence remain tenant-scoped. “Public” means the approved
+shared projection; it may be consumed by authorized PropAI tenants and the
+privacy-shaped public web surface, never as raw source evidence.
 
-The `www.propai.live` application remains non-indexable unless a separate
-architecture decision changes that. `visibility = shared_market` is an
-explicit consented boundary, not an inference from missing tenant data.
-Cross-tenant reads of private evidence remain prohibited.
+The `www.propai.live` application may index only the privacy-shaped
+`shared_market` projection. `visibility = shared_market` is an explicit
+consented boundary, not an inference from missing tenant data. Cross-tenant
+reads of private evidence remain prohibited.
 
 Shared-market inventory is optimized for speed-to-action, not contact
 withholding. An authorized tenant may use the approved source-contact action

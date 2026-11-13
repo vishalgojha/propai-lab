@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from browser_runtime import _RUNTIME, run_browser_command
 from routers.common import _resolve_active_organization_id, require_user, storage, get_tenant_context
-from routers.external_agent import _digest, KEY_PREFIX
+from routers.external_agent import DEFAULT_READ_SCOPES, _digest, KEY_PREFIX
 from storage import AgentAuditLog, AgentBrowserSession, AgentBrowserStep
 
 
@@ -47,6 +47,7 @@ def _issue_instinct_token(tenant_id: str, user_id: str) -> tuple[str, dict]:
         "label": "Instinct",
         "key_prefix": token[:13],
         "key_hash": _digest(token),
+        "scopes": sorted(DEFAULT_READ_SCOPES),
     }
     result = storage.client.table("external_agent_api_keys").insert(payload).execute()
     created = (result.data or [None])[0] if result else None

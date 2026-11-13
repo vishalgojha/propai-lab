@@ -58,4 +58,5 @@ export type PublicListing = {
   source_message_ids?: string[];
   confidence?: Record<string, "source" | "inferred" | "ambiguous" | "missing">;
   location_confidence?: "high" | "medium" | "ambiguous" | "low";
+  source_scope?: "shared_market" | "workspace_private";
 };

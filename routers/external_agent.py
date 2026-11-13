@@ -25,6 +25,10 @@ TOOL_READ_SCOPES = {
 }
 EXTRACTION_SCOPE = "raw_messages:extract"
 TOOL_WRITE_SCOPES = {"standing_searches:write", "followups:write"}
+DEFAULT_READ_SCOPES = {
+    "inventory:read", "requirements:read", "matches:read", "raw_messages:read",
+    *TOOL_READ_SCOPES,
+}
 SENSITIVE_INVENTORY_FIELDS = {"contact_number", "owner_name", "contact_name", "quote"}
 SENSITIVE_REQUIREMENT_FIELDS = {"phone", "budget_min", "budget_max"}
 
@@ -95,12 +99,9 @@ def _key_row(token: str) -> dict:
     row["external_agent_dms_enabled"] = bool(
         ((consent.data or [{}])[0] or {}).get("external_agent_dms_enabled")
     )
-    # Workspace consent is the owner-controlled gate for DM access. Keep
-    # older active Instinct keys usable when consent is enabled, even if the
-    # per-key scope predates the consent UI's scope synchronization.
-    row["scopes"] = sorted(set(row.get("scopes") or []) | TOOL_READ_SCOPES)
-    if row["external_agent_dms_enabled"]:
-        row["scopes"] = sorted(set(row["scopes"]) | {"raw_messages:dms"})
+    # Persisted scopes are authoritative. Workspace DM consent is a separate
+    # owner-controlled gate and is synchronized to keys by the consent route.
+    row["scopes"] = sorted(set(row.get("scopes") or []))
     set_tenant_id(str(row["tenant_id"]))
     return row
 
@@ -379,10 +380,7 @@ async def external_matches(q: str = "", limit: int = Query(20, ge=1, le=50), key
 @router.post("/keys")
 async def create_external_key(body: ApiKeyCreate, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
     token = KEY_PREFIX + secrets.token_urlsafe(32)
-    scopes = [
-        "inventory:read", "requirements:read", "matches:read", "raw_messages:read",
-        *sorted(TOOL_READ_SCOPES),
-    ]
+    scopes = sorted(DEFAULT_READ_SCOPES)
     if body.write_access:
         scopes.extend(sorted(WRITE_SCOPES | TOOL_WRITE_SCOPES))
     payload = {

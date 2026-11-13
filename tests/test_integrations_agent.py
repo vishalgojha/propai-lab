@@ -1,3 +1,4 @@
+from routers.external_agent import DEFAULT_READ_SCOPES, TOOL_READ_SCOPES
 from routers.integrations_agent import API_BASE_URL, MCP_ENDPOINT, IntegrationAgentTask, _check_url
 
 
@@ -18,3 +19,8 @@ def test_browser_preflight_reports_missing_runtime():
     from browser_runtime import AGENT_BROWSER_INSTALL_MESSAGE
 
     assert "agent-browser CLI is not installed" in AGENT_BROWSER_INSTALL_MESSAGE
+
+
+def test_instinct_and_external_keys_share_explicit_read_scopes():
+    assert TOOL_READ_SCOPES.issubset(DEFAULT_READ_SCOPES)
+    assert "raw_messages:dms" not in DEFAULT_READ_SCOPES

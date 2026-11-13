@@ -11,6 +11,8 @@ const PARSED_MARKET_COLUMNS =
   "id, raw_message_id, listing_index, message_type, intent, transaction_type, bhk, price, price_unit, area_sqft, furnishing, location_raw, area, micro_market, building_name, broker_name, broker_phone, profile_name, raw_payload, summary_title, created_at";
 const LISTING_MARKET_COLUMNS =
   "id, intent, transaction_type, property_type, bhk, price, price_unit, area_sqft, furnishing, location_label, landmark_name, micro_market, building_name, broker_name, broker_phone, listing_source, latest_raw_message_id, representative_raw_message_id, first_seen, last_seen, created_at, updated_at";
+const SHARED_MARKET_COLUMNS =
+  "card_type, id, building_name, micro_market, bhk, area_sqft, price, price_unit, furnishing, location_label, summary_title, asset_type, property_type, intent, transaction_type, first_seen, last_seen, created_at, updated_at, broker_name";
 const DIRECT_LISTING_SPECS = [
   { table: "residential_sale_listings", propertyType: "residential", transaction: "sale", price: "total_asking_price", area: "carpet_area_sqft", bhk: true, furnishing: "furnishing_status" },
   { table: "residential_rent_listings", propertyType: "residential", transaction: "rent", price: "monthly_rent", area: "carpet_area_sqft", bhk: true, furnishing: "furnishing_status" },
@@ -161,6 +163,47 @@ function mapListingRowToPublicListing(row: Record<string, unknown>): PublicListi
     primary_contact_wa: firstString(row.broker_phone),
     message_timestamp: firstString(row.last_seen, row.updated_at, row.created_at),
     created_at: firstString(row.created_at),
+    source_scope: "workspace_private",
+  };
+}
+
+function mapSharedMarketRowToPublicListing(row: Record<string, unknown>): PublicListing {
+  const transaction = firstString(row.transaction_type, row.intent, row.property_type);
+  const listingType = transaction && /rent|lease/i.test(transaction) ? "listing_rent" : "listing_sale";
+  const title = firstString(row.summary_title, row.building_name, row.location_label, row.micro_market);
+  const locality = firstString(row.micro_market, row.location_label);
+  const price = normalizeParsedPrice(row.price, row.price_unit);
+  const id = `${String(row.card_type || "shared")}:${String(row.id || "")}`;
+  return {
+    source_message_id: `shared:${id}`,
+    source_group_name: null,
+    listing_type: listingType,
+    area: locality,
+    sub_area: locality,
+    location: locality,
+    price,
+    price_type: firstString(row.price_unit),
+    size_sqft: toNumber(row.area_sqft),
+    furnishing: firstString(row.furnishing),
+    bhk: parseBhk(row.bhk),
+    property_type: firstString(row.property_type, row.asset_type, row.transaction_type),
+    title,
+    description: null,
+    raw_message: null,
+    cleaned_message: null,
+    primary_contact_name: firstString(row.broker_name),
+    primary_contact_number: null,
+    primary_contact_wa: null,
+    message_timestamp: firstString(row.last_seen, row.first_seen, row.updated_at, row.created_at),
+    created_at: firstString(row.created_at),
+    listing_id: `shared:${id}`,
+    transaction_type: transaction as "rent" | "sale" | "lease" | null,
+    building: firstString(row.building_name),
+    locality,
+    micro_market: locality,
+    first_seen: firstString(row.first_seen),
+    last_seen: firstString(row.last_seen),
+    source_scope: "shared_market",
   };
 }
 
@@ -684,9 +727,13 @@ export async function searchPublicListings(input: {
   min_last_seen?: string;
   sort?: "recency" | "rent" | "relevance";
   offset?: number;
+  scope?: "shared_market" | "workspace_private" | "both";
 }) {
   if (!input.tenantId) throw new Error("Tenant scope is required for market search");
   const limit = clampLimit(input.limit);
+  const scope = input.scope || "both";
+  const includeShared = scope !== "workspace_private";
+  const includeWorkspace = scope !== "shared_market";
   const filters = {
     locality: input.locality,
     city: input.city,
@@ -704,15 +751,18 @@ export async function searchPublicListings(input: {
     deal_type: input.deal_type,
     min_last_seen: input.min_last_seen,
   };
+  const sharedRows = includeShared && input.listingKind !== "requirement"
+    ? await fetchSharedMarketRows(limit * 3, input)
+    : [];
   // Canonical inventory lives in `listings`. Requirements remain in
   // parsed_output because they are demand-side observations, not inventory.
-  const rows = input.listingKind === "requirement"
+  const rows = includeWorkspace && input.listingKind === "requirement"
     ? await fetchParsedMarketRows(limit * 3, undefined, { ...filters, tenantId: input.tenantId })
-    : await fetchListingTableRows(limit * 3, undefined, { ...filters, tenantId: input.tenantId });
+    : includeWorkspace ? await fetchListingTableRows(limit * 3, undefined, { ...filters, tenantId: input.tenantId }) : [];
   const typed = normalizePublicListings(filterPublicListingRows(rows, input));
   if (input.listingKind === "requirement") return typed.slice(input.offset || 0, (input.offset || 0) + limit);
 
-  const sourceRows = await searchSourceBackedListings({
+  const sourceRows = includeWorkspace ? await searchSourceBackedListings({
     tenantId: input.tenantId,
     query: input.locality,
     locality: input.locality,
@@ -727,9 +777,29 @@ export async function searchPublicListings(input: {
     deal_type: input.deal_type,
     min_last_seen: input.min_last_seen,
     sort: input.sort,
-  });
-  const merged = [...typed, ...sourceRows];
+  }) : [];
+  const merged = [...sharedRows, ...typed, ...sourceRows];
   return normalizePublicListings(merged).slice(input.offset || 0, (input.offset || 0) + limit);
+}
+
+async function fetchSharedMarketRows(limit: number, input: { locality?: string; city?: string; property_type?: string; bhk?: number; max_budget_cr?: number; budget_min_cr?: number; budget_max_cr?: number; budget_max_inr?: number; budget_min_inr?: number; furnishing?: string; min_last_seen?: string }) {
+  let query = supabase
+    .from("listings_unified_public")
+    .select(SHARED_MARKET_COLUMNS)
+    .order("last_seen", { ascending: false, nullsFirst: false })
+    .limit(limit);
+  if (input.locality) query = query.or(`micro_market.ilike.%${input.locality}%,location_label.ilike.%${input.locality}%,building_name.ilike.%${input.locality}%`);
+  if (input.city) query = query.or(`micro_market.ilike.%${input.city}%,location_label.ilike.%${input.city}%`);
+  if (input.property_type && input.property_type !== "all") query = query.eq("transaction_type", input.property_type === "lease" ? "rent" : input.property_type);
+  if (input.bhk != null) query = query.eq("bhk", input.bhk);
+  if (input.furnishing) query = query.ilike("furnishing", `%${input.furnishing}%`);
+  if (input.min_last_seen) query = query.gte("last_seen", input.min_last_seen);
+  const maxBudget = input.budget_max_inr ?? (input.max_budget_cr != null ? input.max_budget_cr * 10_000_000 : input.budget_max_cr != null ? input.budget_max_cr * 10_000_000 : undefined);
+  if (maxBudget != null) query = query.lte("price", maxBudget);
+  if (input.budget_min_inr != null) query = query.gte("price", input.budget_min_inr);
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return (data || []).map((row: Record<string, unknown>) => mapSharedMarketRowToPublicListing(row));
 }
 
 function normalizedToPublicListing(row: NormalizedListing): PublicListing {
@@ -1039,11 +1109,12 @@ export function toMarketSearchRow(row: PublicListing): Record<string, unknown> {
     area_sqft: row.size_sqft,
     furnishing: row.furnishing,
     broker_name: row.primary_contact_name,
-    broker_phone: row.primary_contact_number,
-    whatsapp_number: row.primary_contact_number,
+    broker_phone: row.source_scope === "shared_market" ? null : row.primary_contact_number,
+    whatsapp_number: row.source_scope === "shared_market" ? null : row.primary_contact_number,
     source_group_name: row.source_group_name,
     source_timestamp: row.message_timestamp || row.created_at,
     evidence_status: "source_backed_unverified",
+    source_scope: row.source_scope || "workspace_private",
     source_excerpt: sourceText ? sourceText.slice(0, 320) : null,
     listing_id: row.listing_id || row.source_message_id,
     transaction_type: row.transaction_type || dealType,
@@ -1072,7 +1143,7 @@ export function toMarketSearchRow(row: PublicListing): Record<string, unknown> {
     last_seen_on: lastSeen ? formatDate(lastSeen) : null,
     repost_count: row.repost_count ?? 1,
     source_groups: row.source_groups || (row.source_group_name ? [row.source_group_name] : []),
-    brokers: row.brokers || (row.primary_contact_name || row.primary_contact_number ? [{ name: row.primary_contact_name, phone: row.primary_contact_number, firm: null }] : []),
+    brokers: row.brokers || (row.primary_contact_name ? [{ name: row.primary_contact_name, phone: row.source_scope === "shared_market" ? null : row.primary_contact_number, firm: null }] : []),
     source_message_ids: row.source_message_ids || [row.source_message_id],
     confidence: row.confidence || {},
     location_confidence: row.location_confidence || "low",
@@ -1903,9 +1974,7 @@ export async function matchBuyerToInventory(input: {
   ].join(" "));
 
   const [publicRows, workspaceRows] = await Promise.all([
-    sourceMode === "workspace"
-      ? Promise.resolve([])
-      : searchPublicListings({
+    searchPublicListings({
           tenantId: input.tenantId,
           locality: input.locality,
           city: input.city,
@@ -1914,8 +1983,9 @@ export async function matchBuyerToInventory(input: {
           max_budget_cr: input.max_budget_cr,
           listingKind: "listing",
           limit: 30,
+          scope: sourceMode === "public" ? "shared_market" : sourceMode === "workspace" ? "workspace_private" : "both",
         }),
-    sourceMode === "public"
+    sourceMode === "public" || sourceMode === "workspace"
       ? Promise.resolve([])
       : getWorkspaceListings({ brokerId: input.brokerId, limit: 30 }),
   ]);

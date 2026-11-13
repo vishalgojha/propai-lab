@@ -43,7 +43,6 @@ export function registerContactTools(server: McpServer, context: ToolContext) {
     inputSchema: {
       listing_id: z.string().optional().describe("Listing id returned by listing_get"),
       name: z.string().optional().describe("Broker name"),
-      phone: z.string().optional().describe("Broker phone number"),
     },
   }, async (input) => {
     const id = brokerId(context);
@@ -58,10 +57,6 @@ export function registerContactTools(server: McpServer, context: ToolContext) {
           phone,
         });
       }
-    }
-
-    if (input.phone) {
-      return textResponse(`Contact: ${input.phone}`, { name: input.name || null, phone: input.phone });
     }
 
     const brokers = await findBrokersData({ tenantId: requireTenantId(context), limit: 10 });

@@ -193,9 +193,9 @@ export default function McpWorkspacePage() {
             <Server className="h-5 w-5" aria-hidden="true" />
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-semibold text-white">Connect PropAI MCP</h2>
+            <h2 className="text-lg font-semibold text-white">PropAI integrations</h2>
             <p className="mt-1 text-sm leading-6 text-zinc-400">
-              Connect Claude or another MCP client to this authenticated workspace. MCP reads remain tenant-scoped; it cannot see another brokerage&apos;s inventory.
+              Connect Claude through MCP or Instinct through the tenant-scoped REST API. Shared-market listings are separate from private workspace evidence, and neither integration can see another tenant&apos;s private data.
             </p>
           </div>
         </div>

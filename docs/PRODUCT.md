@@ -4,14 +4,13 @@
 
 ## Active tenant model (2026-11-06)
 
-PropAI is now a multi-tenant authenticated workspace product. Every brokerage
-is an independent organization tenant resolved through `organization_members`.
-Inventory, requirements, raw WhatsApp evidence, contacts, matches, MCP reads,
-exports, analytics, and worker claims are tenant-scoped. No shared market or
-public listing surface exists. `www.propai.live` is non-indexable and redirects
-to the authenticated workspace; ordinary users cannot read another tenant's
-data. Any legacy shared/public behavior is retired and must not be re-enabled
-without a new explicit architecture decision.
+PropAI is a hybrid multi-tenant product. Every brokerage is an independent
+organization tenant resolved through `organization_members`. Raw WhatsApp
+evidence, contacts, private CRM, requirements, matches, exports, analytics, and
+worker claims are tenant-scoped. Checked ingestion groups may produce approved
+`shared_market` projections that are readable by other PropAI tenants and by
+the public discovery site; raw messages, phone numbers, and restricted
+provenance never cross that projection boundary.
 
 ### Hybrid shared-market source boundary
 

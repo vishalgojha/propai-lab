@@ -120,7 +120,6 @@ export const listingCardsHtml = `<!DOCTYPE html>
           app.callTool("contact_call", {
             listing_id: listing.source_message_id || listing.id,
             name: listing.broker_name,
-            phone: listing.broker_phone,
           });
         };
         card.appendChild(button);
