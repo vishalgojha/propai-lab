@@ -1260,6 +1260,16 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Known limitations: Grouping is bounded to the currently loaded DM batch; raw archive pagination remains cursor-based. No live browser click-through was available in this session.
 - Next action: Commit and push only the two staged task files, then redeploy `propai-lab:main-app` when authorized.
 
+### Simplify the Super Admin landing page
+
+- Requested outcome: Reduce Admin landing-page clutter by keeping essential operational entry points visible while grouping or de-emphasizing specialist tools.
+- Files changed: `frontend/src/app/admin/page.tsx` only. The page now exposes WhatsApp Sessions, Extraction Activity, and one consolidated Pipeline Health entry under Platform Operations; PropAI Operations Agent and Supabase Observability remain available under Developer Tools. Provider Health, Semantic Embeddings, Building Enrichment, AI Usage & Cost, and PropAI Journal no longer appear as duplicate/top-level Admin cards; their existing routes remain unchanged.
+- Verification performed: Impeccable context and distillation guidance were loaded; the Impeccable detector returned `[]`; targeted ESLint completed with 0 errors and 4 pre-existing warnings; `git diff --check` passed; retained route targets were inspected and confirmed present. Full `tsc --noEmit` remains blocked by unrelated pre-existing errors in other frontend files.
+- Deployment/push status: Pending commit and push. Required Coolify service: `propai-lab:main-app`; redeploy after push unless separately requested.
+- Known limitations: No authenticated browser smoke test was available in this session. Existing specialist pages remain accessible through their routes/navigation; this change only simplifies the Admin landing page.
+- Independent second-pass task-verifier verdict: **PASS** — the requested information-architecture cleanup is implemented in the user-visible Admin route, retained destinations exist, removed cards are absent, and no unrelated files were modified by this task.
+- Next action: Commit and push only `frontend/src/app/admin/page.tsx` and `docs/TASK_COMPLETION_REPORT.md`, then redeploy `propai-lab:main-app`.
+
 ### Repair WhatsApp onboarding for new users without a phone claim
 
 - Requested outcome: Stop repeated WhatsApp connection errors for newly created users.
@@ -1267,19 +1277,20 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Files changed: `routers/common.py`, `tests/test_signup_whatsapp_provisioning.py`, and this report.
 - Behavior: First-time provisioning now creates an idempotent `Unpaired:<broker_id>` placeholder when no phone is available. QR pairing can start from that placeholder; linking-code pairing can collect the number in the existing dialog. Signup flows that include a phone still create the canonical number and phone-directory entry.
 - Verification performed: `pytest -q tests/test_signup_whatsapp_provisioning.py` passed (2); Python compilation and `git diff --check` passed. Independent task-verifier verdict: **PASS** — the no-phone path now provisions a QR-capable connection, the phone path remains covered, and repeated bootstrap calls do not create duplicates.
-- Deployment/push status: Pending commit and push. Required Coolify service: `api`; redeploy after push unless separately requested.
+- Deployment/push status: Commit `4c2526fa` was pushed to `origin/main`. Required Coolify service: `api`; redeploy after push unless separately requested.
 - Known limitations: The screenshot confirms the missing Auth phone claim but does not expose the account's private `user_metadata`; a live authenticated pairing click-through remains pending. Existing accounts will receive the placeholder on their next authenticated workspace request if they currently have no WhatsApp connection.
 - Next action: Commit and push the task files, then redeploy `api` and have the affected user refresh the WhatsApp Connections page.
 
 ### Remove duplicate raw-message rendering in Market Inbox
 
 - Requested outcome: Keep WhatsApp raw messages available as source evidence without showing the same message twice in each Market Inbox card.
-- Files/services changed: frontend/src/app/inbox/page.tsx and this report. No API, database, MCP, or Instinct/raw-source behavior changed.
+- Files/services changed: `frontend/src/app/inbox/page.tsx` and this report. No API, database, MCP, or Instinct/raw-source behavior changed.
 - Behavior: The captured raw message remains the primary visible evidence and is rendered once. The full-source disclosure remains available only when the visible message is missing or marked truncated.
-- Verification performed: Impeccable detector returned []; git diff --check passed. Repository TypeScript checking remains blocked by unrelated pre-existing missing-module and typing errors outside this component; ESLint could not run because the root ESLint package is unavailable. Independent second-pass review: PASS for the requested local UI behavior; live browser smoke verification was unavailable.
-- Deployment/push status: Pending commit and push. Required Coolify service: propai-lab:main-app; not redeployed in this task.
+- Verification performed: Impeccable detector returned `[]`; `git diff --check` passed. Repository TypeScript checking remains blocked by unrelated pre-existing missing-module and typing errors outside this component; ESLint could not run because the root ESLint package is unavailable. Independent second-pass review: **PASS** for the requested local UI behavior; live browser smoke verification was unavailable.
+- Deployment/push status: Pending commit and push. Required Coolify service: `propai-lab:main-app`; not redeployed in this task.
 - Known limitations: The full repository typecheck and lint baseline need separate dependency/configuration cleanup. Raw evidence retrieval remains unchanged.
-- Next action: Commit and push the inbox UI change, then redeploy propai-lab:main-app when authorized.
+- Next action: Commit and push the inbox UI change, then redeploy `propai-lab:main-app` when authorized.
+
 ### Consolidate Chat into Copilot and expose the full workspace agent
 
 - Requested outcome: Remove the redundant Chat/Search surface and make the voice assistant use the broader PropAI workspace capabilities, including MCP and Instinct integration context.
@@ -1289,6 +1300,7 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Deployment/push status: Pending commit and push. Required Coolify service: propai-lab:main-app.
 - Known limitations: Legacy /chat routes and internal historical links remain available as compatibility paths; the user-facing navigation no longer advertises them. The ElevenLabs agent configuration must include the two new client-tool names for live voice calls to invoke them.
 - Next action: Commit and push the dashboard changes, redeploy propai-lab:main-app, then verify one voice request that routes through the workspace agent.
+
 ### Remove redundant broker and admin navigation tools
 
 - Requested outcome: Keep Ads Studio while removing redundant WhatsApp Assistant, Matches, Reports, Broker Filters, and standalone Instinct navigation; simplify the Admin landing page for an MCP/Instinct-first workflow.
@@ -1328,3 +1340,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Deployment/push status: Pending commit and push. No Coolify service requires redeployment for this documentation-only change.
 - Known limitations: The exact speed entitlements and source-contact audit schema remain product decisions; implementation is not included.
 - Next action: Define the source-contact action contract and speed entitlements before changing billing or contact-routing code.
+
+### Enable Instinct-driven public publishing for the selected WhatsApp account
+
+- Requested outcome: Let Instinct use captured WhatsApp group source evidence, re-run the existing extractor, and publish source-grounded listings to `www.propai.live`, limited to the connected account ending `56180` and the groups selected in the app.
+- Files/services changed: `supabase/migrations/20261113110000_instinct_connection_publication_gate.sql`, `routers/external_agent.py`, `routers/send.py`, `apps/www/src/proxy.ts`, `architecture.md`, `docs/EXTERNAL_AGENT_API.md`. Live Supabase publication allowlist and Instinct extraction scope were updated. Coolify services `api` and `propai-lab:main` were redeployed.
+- Behavior: Connection `41` for tenant `b841327d-081c-4632-932e-8fba73b2061a` is the only enabled publication connection. Instinct can call `POST /api/external/v1/messages/{raw_message_id}/extract` only for a tenant-owned, selected group message; the existing extraction worker remains the only component that writes typed rows. The public view re-checks selected-group status and the connection allowlist before exposing a shared-market listing. DMs, unchecked groups, other connections, and direct Instinct writes remain blocked.
+- Verification performed: Live Supabase query confirmed `allowlisted_target=1`, `selected_groups=61`, `instinct_keys_with_extract=18`, and `public_rows=0` immediately after the gate. The targeted external-agent tests passed (15); Python compilation and `git diff --check` passed. Coolify deployments finished successfully at commit `66e4a646` (`propai-lab:main` deployment `varmnnckm3shvg9g8v975gyw`; API deployment `zalls9td3qkvq0tq3txqjnfv`). Independent task-verifier verdict: **PARTIAL** — the database gate, API route, and deployments are verified, but DNS/network restrictions prevented an authenticated live HTTP smoke test and no new endpoint-specific automated test was added.
+- Deployment/push status: Commit `66e4a646` was pushed to `origin/main`. `api` and `propai-lab:main` were redeployed successfully. `PROPAI_PUBLIC_SITE_ENABLED=true` was added to both services.
+- Known limitations: The public projection currently contains zero eligible rows, so the website will show no inventory until the active extraction worker processes selected group messages. Live HTTP verification remains pending because this environment could not resolve `www.propai.live` or `api.propai.live`.
+- Next action: From Instinct, call the new extraction endpoint on one selected group raw-message ID, then verify the resulting typed row has `visibility=shared_market` and appears in `listings_unified_public`; add an endpoint-specific test and perform an authenticated HTTP smoke test when DNS/network access is available.
