@@ -565,22 +565,32 @@ def _ensure_signup_whatsapp_phone(user: dict, org_id: str) -> None:
     """
     metadata = user.get("user_metadata") or {}
     phone = _normalize_real_phone((user.get("phone") or "") or metadata.get("phone") or "")
-    if not phone:
-        return
-    canonical_phone = f"91{phone}"
     try:
         connections = storage.list_org_whatsapp_connections(org_id)
         directory = storage.list_org_whatsapp_phone_directory(org_id)
-        known = connections + directory
-        if any(_normalize_real_phone(row.get("phone_number")) == phone for row in known):
+        if phone:
+            known = connections + directory
+            if any(_normalize_real_phone(row.get("phone_number")) == phone for row in known):
+                return
+        elif any(
+            not str(row.get("phone_number") or "").strip()
+            or str(row.get("phone_number") or "").startswith("Unpaired:")
+            for row in connections
+        ):
             return
         if len(directory) >= 3 or len(connections) >= 3:
             return
         broker_id = f"phone-{uuid.uuid4().hex[:12]}"
+        # A user may have completed email signup without a phone claim in the
+        # Supabase JWT (for example after an older signup flow or an OAuth
+        # handoff). Still provision a QR-capable placeholder. Linking-code
+        # pairing can collect the number in the pairing dialog, while QR
+        # pairing does not need a number at all.
+        canonical_phone = f"91{phone}" if phone else f"Unpaired:{broker_id}"
         connection = storage.add_org_whatsapp_connection(
             org_id, canonical_phone, "", broker_id
         )
-        if connection:
+        if connection and phone:
             storage.add_org_whatsapp_phone_directory(
                 org_id, broker_id, canonical_phone, "", True
             )

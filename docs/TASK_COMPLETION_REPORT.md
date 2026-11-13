@@ -1260,3 +1260,14 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Known limitations: Grouping is bounded to the currently loaded DM batch; raw archive pagination remains cursor-based. No live browser click-through was available in this session.
 - Next action: Commit and push only the two staged task files, then redeploy `propai-lab:main-app` when authorized.
 
+### Repair WhatsApp onboarding for new users without a phone claim
+
+- Requested outcome: Stop repeated WhatsApp connection errors for newly created users.
+- Root cause: The first-workspace bootstrap returned without creating an `org_whatsapp_connections` row when the Supabase JWT did not contain `user_metadata.phone`. The affected account shown in the provided screenshot had no Auth phone claim, so it could not receive a pairing card.
+- Files changed: `routers/common.py`, `tests/test_signup_whatsapp_provisioning.py`, and this report.
+- Behavior: First-time provisioning now creates an idempotent `Unpaired:<broker_id>` placeholder when no phone is available. QR pairing can start from that placeholder; linking-code pairing can collect the number in the existing dialog. Signup flows that include a phone still create the canonical number and phone-directory entry.
+- Verification performed: `pytest -q tests/test_signup_whatsapp_provisioning.py` passed (2); Python compilation and `git diff --check` passed. Independent task-verifier verdict: **PASS** — the no-phone path now provisions a QR-capable connection, the phone path remains covered, and repeated bootstrap calls do not create duplicates.
+- Deployment/push status: Pending commit and push. Required Coolify service: `api`; redeploy after push unless separately requested.
+- Known limitations: The screenshot confirms the missing Auth phone claim but does not expose the account's private `user_metadata`; a live authenticated pairing click-through remains pending. Existing accounts will receive the placeholder on their next authenticated workspace request if they currently have no WhatsApp connection.
+- Next action: Commit and push the task files, then redeploy `api` and have the affected user refresh the WhatsApp Connections page.
+
