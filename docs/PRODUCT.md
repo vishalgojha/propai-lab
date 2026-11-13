@@ -13,6 +13,18 @@ to the authenticated workspace; ordinary users cannot read another tenant's
 data. Any legacy shared/public behavior is retired and must not be re-enabled
 without a new explicit architecture decision.
 
+### Hybrid shared-market source boundary
+
+Direct messages and unchecked groups remain private tenant evidence. Groups
+explicitly checked and configured for ingestion are authorized shared-market
+sources; their approved, normalized inventory may benefit other PropAI tenants.
+
+PropAI monetizes speed, not a paywall on source contact. Authorized brokers may
+use the server-side source-contact workflow for checked-group inventory. The
+product value is faster discovery, freshness, matching, prioritization, and
+time-to-action. Contact details must still be resolved through the approved
+action, audited, and kept out of arbitrary rendered HTML.
+
 ## Platform
 
 web

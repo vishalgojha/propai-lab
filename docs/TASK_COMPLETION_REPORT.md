@@ -1318,3 +1318,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Deployment/push status: Pending commit and push. No Coolify service requires redeployment for this documentation-only change.
 - Known limitations: Existing historical documentation may still contain older public/shared wording outside the updated source-boundary sections and should be reconciled during the next architecture documentation pass.
 - Next action: Use this hybrid boundary as the authorization model for the future property identity migration and shared projection.
+
+### Document speed-based shared-market value
+
+- Requested outcome: Record that PropAI monetizes speed-to-action rather than restricting source-contact access behind a paywall.
+- Files changed: `docs/PRODUCT.md`, `docs/PROPERTY_IDENTITY_DESIGN.md`, `architecture.md`, and this report. No billing, contact-routing, database, or deployment behavior changed.
+- Behavior/design: Checked-group inventory is shared through approved projections; authorized tenants may use the server-side source-contact workflow. Phone numbers remain out of arbitrary rendered HTML, and paid entitlements are reserved for speed, freshness, ranking, alerts, capacity, or workflow acceleration after explicit approval.
+- Verification performed: Inspected the new product, design, and architecture sections; confirmed the contact-paywall rule and checked-group boundary; ran `git diff --check`. Independent task-verifier verdict: **PASS** for the documentation update.
+- Deployment/push status: Pending commit and push. No Coolify service requires redeployment for this documentation-only change.
+- Known limitations: The exact speed entitlements and source-contact audit schema remain product decisions; implementation is not included.
+- Next action: Define the source-contact action contract and speed entitlements before changing billing or contact-routing code.

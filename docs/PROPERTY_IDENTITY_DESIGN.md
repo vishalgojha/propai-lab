@@ -22,6 +22,21 @@ produce shared-market inventory:
 anonymous public-web publication. Property identity work must preserve the
 source visibility boundary at every derived layer.
 
+## Product value and source contact
+
+The shared-market contact path is not a paid unlock. For inventory derived from
+checked ingestion groups, an authorized tenant may use the approved source-
+contact action. The action resolves contact details server-side, records the
+request, and applies the relevant source-sharing policy; phone numbers do not
+appear in arbitrary rendered HTML or unrestricted property projections.
+
+PropAI's commercial value is speed: faster ingestion, freshness, exact source
+fragments, matching, prioritization, shortlisting, and time-to-action. The
+implementation must not deliberately withhold a source contact merely to
+create a contact-access paywall. Any paid entitlements should govern speed,
+capacity, ranking, alerts, or workflow acceleration only after those
+entitlements are explicitly defined.
+
 The existing typed listing tables remain the source-grounded extraction
 records. The new layer groups those records into a stable physical-property
 candidate and attaches broker-specific offers without rewriting source facts.
@@ -255,6 +270,8 @@ rollback must not require deleting or rewriting typed source records.
 8. Decide whether existing `opportunity_key` values are hints only or valid
    initial attachments.
 9. Approve the labeled evaluation sample and false-merge target.
+10. Define the shared source-contact action, audit fields, and any speed-related
+    entitlements without making contact access a paywall.
 
 ## Discovery evidence
 

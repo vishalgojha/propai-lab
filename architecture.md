@@ -27,6 +27,15 @@ architecture decision changes that. `visibility = shared_market` is an
 explicit consented boundary, not an inference from missing tenant data.
 Cross-tenant reads of private evidence remain prohibited.
 
+Shared-market inventory is optimized for speed-to-action, not contact
+withholding. An authorized tenant may use the approved source-contact action
+for a checked-group opportunity without a separate contact-access paywall.
+The action remains server-side, audited, and subject to source-sharing policy;
+phone numbers never enter arbitrary rendered HTML or unrestricted shared
+projections. Paid product entitlements, if any, apply to freshness, ranking,
+alerts, capacity, or workflow acceleration only after explicit product
+approval.
+
 Client CRM routes are fail-closed workspace routes: the clients router resolves
 `get_tenant_context` before any client, requirement, note, alias, candidate, or
 message handler runs. Public lead capture is a separate owner-routing path and
