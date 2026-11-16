@@ -15,7 +15,7 @@ export const metadata = {
       "Account-free, read-only access to PropAI's public Mumbai listings from your own AI assistant via Instinct or MCP.",
     type: "website",
   },
-  robots: { index: true, follow: true },
+  robots: { index: false, follow: false },
 };
 
 const capabilities = [
