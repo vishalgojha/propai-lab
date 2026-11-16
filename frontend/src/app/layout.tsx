@@ -387,7 +387,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       const hasStoredSession = typeof window !== "undefined" &&
         !!localStorage.getItem(`sb-${project}-auth-token`);
       const t = setTimeout(() => {
-        router.replace(`/auth/login?next=${encodeURIComponent(pathname || "/dashboard")}`);
+        router.replace(`/auth/login?next=${encodeURIComponent((pathname || "/dashboard") + (typeof window !== "undefined" ? window.location.search : ""))}`);
       }, hasStoredSession ? 2000 : 0);
       return () => clearTimeout(t);
     }
