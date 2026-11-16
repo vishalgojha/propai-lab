@@ -41,7 +41,8 @@ export default function McpWorkspacePage() {
   const [externalKeys, setExternalKeys] = useState<ExternalAgentKey[]>([]);
   const [keyScopeBusy, setKeyScopeBusy] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<ExternalWriteApproval[]>([]);
-  const [dmConsent, setDmConsent] = useState(false);
+  const [dmConsent, setDmConsent] = useState<boolean | null>(null);
+  const [dmConsentError, setDmConsentError] = useState(false);
   const [dmConsentBusy, setDmConsentBusy] = useState(false);
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [agentBusy, setAgentBusy] = useState<string | null>(null);
@@ -56,7 +57,10 @@ export default function McpWorkspacePage() {
       .catch(() => setKeyMessage("Could not load pending CRM approvals."));
     void fetchJSON<{ enabled: boolean }>("/external/v1/dm-consent")
       .then((result) => setDmConsent(Boolean(result.enabled)))
-      .catch(() => setKeyMessage("Could not load private DM consent status."));
+      .catch(() => {
+        setDmConsentError(true);
+        setKeyMessage("Could not load private DM consent status. Refresh to try again.");
+      });
     void fetchJSON<AgentStatus>("/integrations/agent/status")
       .then(setAgentStatus)
       .catch(() => setAgentMessage("The setup agent status is temporarily unavailable."));
@@ -266,9 +270,11 @@ export default function McpWorkspacePage() {
               <div className="text-sm font-semibold text-white">Allow private DM access</div>
               <p className="mt-1 max-w-xl text-xs leading-5 text-zinc-400">Off by default. When enabled, external agents can read private WhatsApp DMs in this workspace in addition to selected group evidence. This never makes DMs public or visible to another tenant.</p>
             </div>
-            <button type="button" role="switch" aria-checked={dmConsent} onClick={() => void updateDmConsent(!dmConsent)} disabled={dmConsentBusy} className={`relative h-6 w-11 shrink-0 rounded-full transition ${dmConsent ? "bg-emerald-400" : "bg-zinc-700"}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${dmConsent ? "left-6" : "left-1"}`} /></button>
+            {dmConsent === null ? <span role="status" className="text-xs text-zinc-400">{dmConsentError ? "Unavailable" : "Loading…"}</span> : <>
+            <button type="button" role="switch" aria-label="Allow private DM access" aria-checked={dmConsent ?? false} aria-busy={dmConsent === null && !dmConsentError} onClick={() => void updateDmConsent(!dmConsent)} disabled={dmConsentBusy || dmConsent === null} className={`relative h-6 w-11 shrink-0 rounded-full transition ${dmConsent ? "bg-emerald-400" : "bg-zinc-700"}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${dmConsent ? "left-6" : "left-1"}`} /></button>
+            </>}
           </div>
-          <div className="mt-2 text-[11px] font-medium uppercase tracking-[0.12em] text-zinc-500">{dmConsent ? "Enabled for active external tokens" : "Disabled — groups only"}</div>
+          <div className="mt-2 text-[11px] font-medium uppercase tracking-[0.12em] text-zinc-500">{dmConsent === null ? (dmConsentError ? "DM access status unavailable. Refresh to try again." : "Loading DM access status…") : dmConsent ? "Enabled for active external tokens" : "Disabled — groups only"}</div>
         </div>
         {externalToken && <div className="mt-4 rounded-xl border border-amber-300/20 bg-black/20 p-4"><div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">One-time token</div><code className="mt-2 block break-all text-xs text-amber-100">{externalToken}</code><button type="button" onClick={() => void navigator.clipboard.writeText(externalToken)} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200"><Copy className="h-3.5 w-3.5" /> Copy token</button></div>}
         {keyMessage && <p className="mt-3 text-xs leading-5 text-zinc-400">{keyMessage}</p>}
