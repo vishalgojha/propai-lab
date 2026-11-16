@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Bot, Check, Copy, ExternalLink, KeyRound, Play, Server } from "lucide-react";
+import Link from "next/link";
 import { fetchJSON } from "@/lib/api";
 
 const MCP_ENDPOINT = "https://mcp.propai.live/mcp";
@@ -229,18 +230,16 @@ export default function McpWorkspacePage() {
       <div className="mt-5 rounded-2xl border border-amber-300/20 bg-amber-300/[0.05] p-6">
         <div className="flex items-start gap-4">
           <div className="rounded-xl border border-amber-300/25 bg-amber-300/10 p-3 text-amber-200"><KeyRound className="h-5 w-5" aria-hidden="true" /></div>
-          <div><h2 className="text-lg font-semibold text-white">Connect an external agent</h2><p className="mt-1 text-sm leading-6 text-zinc-400">To connect Instinct, ask your assistant to connect to PropAI. Open the connection link it sends, sign in, check the code and tap Approve. No API key to copy. Access is read-only by default; private CRM writes require separate approval.</p></div>
+          <div><h2 className="text-lg font-semibold text-white">Connect an external agent</h2><p className="mt-1 text-sm leading-6 text-zinc-400">Create a tenant-scoped REST token for Instinct or another assistant. Keep it read-only, or explicitly allow private CRM writes. Never paste it into WhatsApp chat.</p></div>
         </div>
-        <p className="mt-4 text-sm leading-6 text-zinc-400">Private DMs need both workspace consent and DM permission on the key. A new connection doesn&apos;t automatically include DM access.</p>
-        <p className="mt-4 text-sm leading-6 text-zinc-400">Manual setup remains available: create a token and save it securely, never in chat. Existing connections keep working.</p>
-        <h3 className="mt-5 text-sm font-semibold text-white">Manual setup</h3>
-        <div className="mt-3 grid gap-3 text-sm text-zinc-300 sm:grid-cols-3"><div><div className="font-semibold text-white">Base URL</div><code className="mt-1 block text-xs text-amber-200">https://api.propai.live</code></div><div><div className="font-semibold text-white">Inventory</div><code className="mt-1 block text-xs text-zinc-400">/api/external/v1/listings/search</code></div><div><div className="font-semibold text-white">Matches</div><code className="mt-1 block text-xs text-zinc-400">/api/external/v1/matches</code></div></div>
-        <p className="mt-4 text-xs leading-5 text-zinc-400">Manual setup: save the one-time token in Instinct Vault as a password/secret named <code className="text-amber-200">PROPAI_API_KEY</code>. Use endpoint <code className="text-amber-200">https://api.propai.live/api/external/v1</code> and send it as <code className="text-amber-200">X-API-Key</code> or <code className="text-amber-200">Authorization: Bearer</code>.</p>
+        <p className="mt-4 text-xs leading-5 text-zinc-500">Connecting Instinct? The <Link href="/workspace/instinct" className="font-semibold text-amber-200 underline underline-offset-2">Instinct tab</Link> has the approval-link setup, no API key to copy.</p>
+        <div className="mt-5 grid gap-3 text-sm text-zinc-300 sm:grid-cols-3"><div><div className="font-semibold text-white">Base URL</div><code className="mt-1 block text-xs text-amber-200">https://api.propai.live</code></div><div><div className="font-semibold text-white">Inventory</div><code className="mt-1 block text-xs text-zinc-400">/api/external/v1/listings/search</code></div><div><div className="font-semibold text-white">Matches</div><code className="mt-1 block text-xs text-zinc-400">/api/external/v1/matches</code></div></div>
+        <p className="mt-4 text-xs leading-5 text-zinc-400">Instinct setup: save the one-time token in Instinct Vault as a password/secret named <code className="text-amber-200">PROPAI_API_KEY</code>. Use endpoint <code className="text-amber-200">https://api.propai.live/api/external/v1</code> and send it as <code className="text-amber-200">X-API-Key</code> or <code className="text-amber-200">Authorization: Bearer</code>.</p>
         <label className="mt-5 flex max-w-xl items-start gap-3 rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-zinc-300">
           <input type="checkbox" checked={writeAccess} onChange={(event) => setWriteAccess(event.target.checked)} className="mt-0.5 h-4 w-4 accent-amber-300" />
           <span><span className="font-semibold text-white">Allow private CRM writes</span><span className="mt-1 block leading-5 text-zinc-500">Instinct may create workspace-private listings and buyer requirements. It cannot publish, delete, send WhatsApp messages, activate ads, or change ad budgets.</span></span>
         </label>
-        <button type="button" onClick={() => void createExternalToken()} disabled={keyBusy} className="mt-5 inline-flex items-center gap-2 rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{keyBusy ? "Creating…" : "Create token manually"}</button>
+        <button type="button" onClick={() => void createExternalToken()} disabled={keyBusy} className="mt-5 inline-flex items-center gap-2 rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{keyBusy ? "Creating…" : "Create Instinct token"}</button>
         <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4">
           <h3 className="text-sm font-semibold text-white">Existing external API keys</h3>
           <p className="mt-1 text-xs leading-5 text-zinc-500">Enable private CRM writes on the current key without rotating its secret. This does not change private DM permission.</p>

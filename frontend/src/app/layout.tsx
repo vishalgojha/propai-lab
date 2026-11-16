@@ -92,6 +92,7 @@ const baseNavSections = [
     items: [
       { href: "/account?tab=profile", label: "Account", icon: UserCheck },
       { href: "/workspace/mcp", label: "Integrations", icon: Wrench },
+      { href: "/workspace/instinct", label: "Instinct", icon: BrainCircuit },
     ],
   },
 ];
