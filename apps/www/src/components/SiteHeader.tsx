@@ -60,14 +60,14 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
         </nav>
 
         <div className="site-header-actions hidden lg:flex">
-          <Link
-            href="/contact"
+          <a
+            href="https://app.propai.live/auth/login"
             className="site-login-link"
           >
             Broker login
-          </Link>
+          </a>
           <Link
-            href="/contact"
+            href="/#connect"
             className="site-primary-cta"
           >
             Get started
@@ -111,15 +111,15 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
               </Link>
             ))}
             <div className="site-mobile-actions">
-              <Link
-                href="/contact"
+              <a
+                href="https://app.propai.live/auth/login"
                 onClick={() => setOpen(false)}
                 className="site-login-link"
               >
                 Broker login
-              </Link>
+              </a>
               <Link
-                href="/contact"
+                href="/#connect"
                 onClick={() => setOpen(false)}
               className="site-primary-cta"
               >

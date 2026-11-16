@@ -20,6 +20,7 @@ declare global {
   namespace Express {
     interface Request {
       user?: AuthenticatedUser;
+      publicOnly?: boolean;
     }
   }
 }
@@ -133,8 +134,12 @@ async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
 
   if (!token) {
-    setMcpUnauthorizedHeaders(req, res);
-    return res.status(401).json({ error: "Unauthorized" });
+    // Account-free public access: no token means the public market toolset
+    // only. A presented token is still strictly verified below - invalid or
+    // expired credentials keep failing with 401 and never downgrade into a
+    // silent public session, so callers always know when auth broke.
+    req.publicOnly = true;
+    return next();
   }
 
   try {
@@ -174,7 +179,7 @@ app.all("/mcp", authMiddleware, async (req: Request, res: Response) => {
   }
 
   if (!session) {
-    const server = createMcpServer({ user: req.user });
+    const server = createMcpServer({ user: req.user, publicOnly: req.publicOnly === true });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => crypto.randomUUID(),
       onsessioninitialized: async (newSessionId) => {

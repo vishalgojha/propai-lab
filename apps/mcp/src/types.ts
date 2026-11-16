@@ -7,6 +7,12 @@ export type AuthenticatedUser = User & {
 
 export type ToolContext = {
   user?: AuthenticatedUser;
+  /**
+   * Account-free public connection: no bearer token was presented. The server
+   * must expose only the public market tools (publicTools.ts) and never any
+   * tenant-scoped data or broker tooling.
+   */
+  publicOnly?: boolean;
 };
 
 export type PublicListing = {

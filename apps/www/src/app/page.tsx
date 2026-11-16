@@ -1,61 +1,135 @@
-export const revalidate = 300;
-export const dynamic = "force-dynamic";
+import Link from "next/link";
+import { ArrowRight, Bot, KeyRound, MessageSquare, Plug, Search, ShieldCheck } from "lucide-react";
+import SiteHeader from "@/components/SiteHeader";
+import SiteFooter from "@/components/SiteFooter";
+import { NoPhotosFaqJsonLd } from "@/components/NoPhotosFaq";
 
-import PublicMarketplaceHome from "@/components/PublicMarketplaceHome";
-import { getPublicDataOverview, getPublicListingPhotos, type PublicDataOverview } from "@/lib/public-data";
-import { getAllBuildings, getAllLocalities, type BuildingSummary, type LocalitySummary } from "@/lib/localities";
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs = 30000): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Homepage data query timed out")), timeoutMs);
-    promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
-  });
-}
-
-const emptyOverview: PublicDataOverview = {
-  counts: { localities: 0, buildings: 0, listings: 0, activeListings: 0, brokers: 0, raw_messages: 0, messagesAnalysed: 0 },
-  countsAvailable: false, activity: [], topLocalities: [], topBuildings: [], recentListings: [],
+export const metadata = {
+  title: "PropAI — Live Mumbai broker inventory in your AI assistant",
+  description:
+    "Connect Instinct or any MCP client to PropAI's public Mumbai property listings. No account needed: your assistant searches live broker-network inventory read-only, and you continue with the broker on WhatsApp.",
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: "PropAI — Live Mumbai broker inventory in your AI assistant",
+    description:
+      "Account-free, read-only access to PropAI's public Mumbai listings from your own AI assistant via Instinct or MCP.",
+    type: "website",
+  },
+  robots: { index: true, follow: true },
 };
 
-export default async function WWWPage() {
-  let overview = emptyOverview;
-  let buildings: BuildingSummary[] = [];
-  let localities: LocalitySummary[] = [];
-  let heroImageUrl: string | null = null;
-  // Keep the listing feed independent from the locality directory. Locality
-  // aggregation fans out into multiple database reads and can be slow during
-  // a busy ingest cycle; it must not turn a healthy live inventory query into
-  // the homepage empty state.
-  const [overviewResult, localitiesResult, buildingsResult] = await Promise.allSettled([
-      withTimeout(getPublicDataOverview({ skipBuildingScan: true, skipCounts: false, skipLocalities: true, skipActivity: true })),
-      withTimeout(getAllLocalities(), 12000),
-      withTimeout(getAllBuildings(), 8000),
-  ]);
-  if (overviewResult.status === "fulfilled") {
-    overview = overviewResult.value;
-    const firstListingId = overview.recentListings.find((listing) => (listing.photo_count ?? 0) > 0)?.id
-      ?? overview.recentListings[0]?.id;
-    if (firstListingId) {
-      try {
-        const photos = await withTimeout(getPublicListingPhotos(firstListingId), 5000);
-        heroImageUrl = photos[0]?.url ?? null;
-      } catch (error) {
-        console.error("Homepage hero photo query failed:", error);
-      }
-    }
-  } else {
-    console.error("Homepage overview query failed:", overviewResult.reason);
-  }
-  if (localitiesResult.status === "fulfilled") {
-    localities = localitiesResult.value;
-    overview = { ...overview, topLocalities: localities };
-  } else {
-    console.error("Homepage locality lookup failed:", localitiesResult.reason);
-  }
-  if (buildingsResult.status === "fulfilled") {
-    buildings = buildingsResult.value;
-  } else {
-    console.error("Homepage building lookup failed:", buildingsResult.reason);
-  }
-  return <PublicMarketplaceHome overview={overview} heroImageUrl={heroImageUrl} buildings={buildings} />;
+const capabilities = [
+  {
+    Icon: Search,
+    title: "Search the live public market",
+    body: "Ask in plain English or filter by locality, BHK, budget, furnishing and rent or sale. Answers come from current broker conversations, not stale portal uploads.",
+  },
+  {
+    Icon: ShieldCheck,
+    title: "See freshness, not guesses",
+    body: "Every listing carries first-seen and last-seen timestamps and leaves the public market after 30 quiet days. Your assistant can say how fresh a place actually is.",
+  },
+  {
+    Icon: MessageSquare,
+    title: "Continue with the broker on WhatsApp",
+    body: "Your assistant hands you the listing link. The WhatsApp button on that page connects you to the broker - phone numbers are never exposed to agents or the API.",
+  },
+];
+
+export default function WWWPage() {
+  return (
+    <div className="www-shell min-h-screen text-white">
+      <SiteHeader />
+      <NoPhotosFaqJsonLd />
+      <main id="main-content">
+        <section className="mp-container px-4 lg:px-6 pt-14 lg:pt-24 pb-10 max-w-5xl mx-auto">
+          <p className="mp-eyebrow"><span /> Live listings from Mumbai&apos;s broker networks</p>
+          <h1 className="text-[34px] lg:text-[54px] leading-[1.05] font-bold max-w-3xl">
+            Search Mumbai&apos;s live broker inventory through your own <em className="text-green-400 not-italic">AI assistant</em>.
+          </h1>
+          <p className="mt-5 max-w-2xl text-[15px] lg:text-[17px] text-zinc-400 leading-relaxed">
+            PropAI reads the public WhatsApp networks where Mumbai brokers actually work and keeps the inventory fresh.
+            Connect your assistant once and ask it for places the way you&apos;d ask a broker friend - no account,
+            no signup, no portal maze.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <a href="#connect" className="site-primary-cta">
+              Connect your assistant <ArrowRight className="inline h-4 w-4" aria-hidden="true" />
+            </a>
+            <Link href="/search" className="site-login-link">
+              Browse listings on the site instead
+            </Link>
+          </div>
+        </section>
+
+        <section id="connect" className="mp-container px-4 lg:px-6 py-10 max-w-5xl mx-auto scroll-mt-24">
+          <h2 className="text-2xl lg:text-3xl font-semibold">Two ways to connect</h2>
+          <p className="mt-2 text-sm lg:text-[15px] text-zinc-400 max-w-2xl">
+            Both are account-free and read-only. Your assistant only ever sees the public shared market - never a broker&apos;s private workspace.
+          </p>
+          <div className="mt-6 grid gap-5 md:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-6">
+              <div className="flex items-center gap-3">
+                <span className="rounded-xl border border-green-400/25 bg-green-400/10 p-3 text-green-300"><Bot className="h-5 w-5" aria-hidden="true" /></span>
+                <h3 className="text-lg font-semibold">Instinct</h3>
+              </div>
+              <ol className="mt-4 space-y-3 text-sm text-zinc-400 leading-relaxed list-none">
+                <li><strong className="text-white">1.</strong> Tell your Instinct: <em className="text-zinc-200 not-italic">&ldquo;Connect me to PropAI.&rdquo;</em></li>
+                <li><strong className="text-white">2.</strong> It reads PropAI&apos;s public API guide and can search immediately - no key to copy, nothing to paste.</li>
+              </ol>
+              <p className="mt-4 text-xs text-zinc-500">
+                API guide for agents: <code className="text-green-300/90 break-all">https://api.propai.live/api/public/v1/docs</code>
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-6">
+              <div className="flex items-center gap-3">
+                <span className="rounded-xl border border-green-400/25 bg-green-400/10 p-3 text-green-300"><Plug className="h-5 w-5" aria-hidden="true" /></span>
+                <h3 className="text-lg font-semibold">Any MCP client</h3>
+              </div>
+              <ol className="mt-4 space-y-3 text-sm text-zinc-400 leading-relaxed list-none">
+                <li><strong className="text-white">1.</strong> In Claude, ChatGPT or another MCP-compatible assistant, add a connector with this URL:</li>
+              </ol>
+              <p className="mt-3 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm">
+                <code className="text-green-300/90 break-all">https://mcp.propai.live/mcp</code>
+              </p>
+              <p className="mt-3 text-sm text-zinc-400 leading-relaxed">
+                <strong className="text-white">2.</strong> No sign-in step. Your assistant gets public <code>search</code> and <code>fetch</code> tools over the live market.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="mp-container px-4 lg:px-6 py-10 max-w-5xl mx-auto">
+          <h2 className="text-2xl lg:text-3xl font-semibold">What your assistant can do</h2>
+          <div className="mt-6 grid gap-5 md:grid-cols-3">
+            {capabilities.map(({ Icon, title, body }) => (
+              <div key={title} className="rounded-2xl border border-white/10 bg-zinc-950/60 p-5">
+                <Icon className="h-5 w-5 text-green-300" aria-hidden="true" />
+                <h3 className="mt-3 text-base font-semibold">{title}</h3>
+                <p className="mt-2 text-sm text-zinc-400 leading-relaxed">{body}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="mp-container px-4 lg:px-6 py-10 max-w-5xl mx-auto">
+          <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-start gap-3">
+              <KeyRound className="h-5 w-5 text-green-300 mt-0.5" aria-hidden="true" />
+              <div>
+                <h2 className="text-lg font-semibold">Are you a broker?</h2>
+                <p className="mt-1 text-sm text-zinc-400 leading-relaxed">
+                  The broker workspace - your own groups, clients, CRM and private inventory - lives at app.propai.live.
+                </p>
+              </div>
+            </div>
+            <a href="https://app.propai.live/auth/login" className="site-login-link whitespace-nowrap">
+              Broker login <ArrowRight className="inline h-4 w-4" aria-hidden="true" />
+            </a>
+          </div>
+        </section>
+      </main>
+      <SiteFooter />
+    </div>
+  );
 }

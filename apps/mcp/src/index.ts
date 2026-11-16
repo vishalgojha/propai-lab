@@ -32,6 +32,7 @@ import { formatCurrencyCr, formatPerSqft, formatSqft, listingLine } from "./form
 import { registerMcpPrompts } from "./prompts.ts";
 import { registerMcpResources } from "./resources.ts";
 import { executeMarketSearch } from "./marketSearch.ts";
+import { createPublicMcpServer } from "./publicTools.ts";
 import { registerMarketTools } from "./tools/market.ts";
 import { registerListingTools } from "./tools/listing.ts";
 import { registerRequirementTools } from "./tools/requirement.ts";
@@ -145,6 +146,11 @@ function noResults(label: string) {
 }
 
 export function createMcpServer(context: ToolContext = {}) {
+  // Account-free public connections get an isolated server exposing only
+  // public shared-market search/fetch - never broker or tenant tooling.
+  if (context.publicOnly) {
+    return createPublicMcpServer();
+  }
   const server = new McpServer(
     {
       name: "PropAI MCP",
