@@ -1,10 +1,13 @@
 """Small tenant-scoped REST surface for external agents such as Instinct."""
 import asyncio
+import base64
 import hashlib
+import hmac
 import json
 import logging
+import os
 import secrets
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -377,16 +380,20 @@ async def external_matches(q: str = "", limit: int = Query(20, ge=1, le=50), key
     return {"matches": [_public_listing(row) for row in rows], "count": len(rows), "query": q}
 
 
-@router.post("/keys")
-async def create_external_key(body: ApiKeyCreate, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+def _create_external_key(tenant_id: str, user_id: str, label: str, write_access: bool) -> tuple[dict, str]:
+    """Mint one tenant-scoped external API key; returns (row, one-time token).
+
+    Shared by the owner-driven Account → MCP route and the broker-approved
+    connect-session flow so both produce identical key material and scopes.
+    """
     token = KEY_PREFIX + secrets.token_urlsafe(32)
     scopes = sorted(DEFAULT_READ_SCOPES)
-    if body.write_access:
+    if write_access:
         scopes.extend(sorted(WRITE_SCOPES | TOOL_WRITE_SCOPES))
     payload = {
         "tenant_id": tenant_id,
-        "created_by": user["id"],
-        "label": body.label.strip()[:80] or "Instinct",
+        "created_by": user_id,
+        "label": label.strip()[:80] or "Instinct",
         "key_prefix": token[:13],
         "key_hash": _digest(token),
         "scopes": scopes,
@@ -408,15 +415,21 @@ async def create_external_key(body: ApiKeyCreate, user: dict = Depends(require_u
     except Exception as exc:
         logger.exception(
             "External API key creation failed; tenant=%s user_present=%s error_type=%s",
-            bool(tenant_id), bool(user.get("id")), type(exc).__name__,
+            bool(tenant_id), bool(user_id), type(exc).__name__,
         )
         raise HTTPException(500, "Could not create external API key") from exc
     if not created:
         logger.error(
             "External API key insert returned no row; tenant=%s user_present=%s",
-            bool(tenant_id), bool(user.get("id")),
+            bool(tenant_id), bool(user_id),
         )
         raise HTTPException(500, "Could not create external API key")
+    return created, token
+
+
+@router.post("/keys")
+async def create_external_key(body: ApiKeyCreate, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    created, token = _create_external_key(tenant_id, user["id"], body.label, body.write_access)
     return {"key": created, "token": token, "warning": "Save this token now. It will not be shown again."}
 
 
@@ -872,6 +885,221 @@ async def rotate_external_key(
         raise HTTPException(409, "Could not revoke the old key; rotate again after refreshing")
     _write_audit_finish(audit_id, "succeeded", entity_id=str(replacement.get("id") or ""), result={"old_key_revoked": True})
     return {"ok": True, "key": replacement, "token": token, "warning": "The old token is revoked. Save this replacement now; it will not be shown again."}
+
+
+# --- Broker-approved connect sessions --------------------------------------
+# Device-style flow so a broker can grant an external agent access without
+# copying an API key by hand. The agent creates a session and shows the broker
+# a short link; the broker signs in and approves on the app's connect page;
+# the agent polls with its device code and receives the minted token exactly
+# once. Session rows expire quickly and never bypass the owner controls above.
+
+CONNECT_SESSION_TTL_SECONDS = 900
+CONNECT_POLL_INTERVAL_SECONDS = 5
+CONNECT_USER_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+FRONTEND_APP_URL = os.getenv("FRONTEND_URL", "https://app.propai.live").rstrip("/")
+
+
+def _connect_seal_key() -> bytes:
+    """Server-side key sealing uncollected connect tokens at rest.
+
+    Set CONNECT_SESSION_SECRET in the API environment; falls back to the
+    already-deployed Supabase service key so a database snapshot alone does
+    not expose an uncollected token.
+    """
+    secret = os.getenv("CONNECT_SESSION_SECRET") or os.getenv("SUPABASE_SERVICE_KEY")
+    if not secret:
+        raise HTTPException(503, "Connect token sealing is not configured")
+    return hashlib.sha256(f"connect-session-seal:{secret}".encode("utf-8")).digest()
+
+
+def _seal_token(token: str) -> str:
+    key = _connect_seal_key()
+    data = token.encode("utf-8")
+    stream = b""
+    counter = 0
+    while len(stream) < len(data):
+        stream += hmac.new(key, str(counter).encode("utf-8"), hashlib.sha256).digest()
+        counter += 1
+    return base64.urlsafe_b64encode(bytes(a ^ b for a, b in zip(data, stream))).decode("ascii")
+
+
+def _unseal_token(sealed: str) -> str:
+    key = _connect_seal_key()
+    data = base64.urlsafe_b64decode(sealed.encode("ascii"))
+    stream = b""
+    counter = 0
+    while len(stream) < len(data):
+        stream += hmac.new(key, str(counter).encode("utf-8"), hashlib.sha256).digest()
+        counter += 1
+    return bytes(a ^ b for a, b in zip(data, stream)).decode("utf-8")
+
+
+def _prune_connect_sessions() -> None:
+    """Best-effort removal of expired sessions so uncollected secrets do not
+    linger. Expired rows are also rejected at read time; this just bounds the
+    residue."""
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        storage.client.table("external_agent_connect_sessions").delete().lt("expires_at", cutoff).execute()
+    except Exception:
+        logger.warning("Connect session prune failed", exc_info=True)
+
+
+class ConnectSessionCreate(BaseModel):
+    label: str = "Instinct"
+    write_access: bool = False
+
+
+def _generate_user_code() -> str:
+    body = "".join(secrets.choice(CONNECT_USER_CODE_CHARS) for _ in range(8))
+    return f"{body[:4]}-{body[4:]}"
+
+
+def _connect_session_by_user_code(user_code: str) -> dict:
+    code = (user_code or "").strip().upper()
+    result = storage.client.table("external_agent_connect_sessions").select(
+        "id,status,label,write_access,expires_at"
+    ).eq("user_code", code).limit(1).execute()
+    row = (result.data or [None])[0] if result else None
+    if not row:
+        raise HTTPException(404, "Connect session not found")
+    try:
+        expired = datetime.fromisoformat(str(row.get("expires_at")).replace("Z", "+00:00")) <= datetime.now(timezone.utc)
+    except ValueError:
+        expired = True
+    if expired:
+        raise HTTPException(410, "Connect session expired; start a new connection from the agent")
+    return row
+
+
+@router.post("/connect/sessions", status_code=201)
+async def create_connect_session(body: ConnectSessionCreate):
+    """Agent-facing: start a broker-approved connection.
+
+    Unauthenticated on purpose: the agent has no key yet. The device code is
+    stored only as a hash, and the short user code is shown to the broker on
+    the connect URL; approving always requires a signed-in owner session, so a
+    guessed code cannot grant access to the guesser.
+    """
+    _prune_connect_sessions()
+    device_code = secrets.token_urlsafe(32)
+    user_code = _generate_user_code()
+    try:
+        storage.client.table("external_agent_connect_sessions").insert({
+            "device_code_hash": _digest(device_code),
+            "user_code": user_code,
+            "label": body.label.strip()[:80] or "Instinct",
+            "write_access": bool(body.write_access),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=CONNECT_SESSION_TTL_SECONDS)).isoformat(),
+        }).execute()
+    except Exception as exc:
+        logger.exception("Connect session creation failed; error_type=%s", type(exc).__name__)
+        raise HTTPException(503, "Could not allocate a connect session") from exc
+    return {
+        "device_code": device_code,
+        "user_code": user_code,
+        "connect_url": f"{FRONTEND_APP_URL}/connect?code={user_code}",
+        "expires_in": CONNECT_SESSION_TTL_SECONDS,
+        "interval": CONNECT_POLL_INTERVAL_SECONDS,
+    }
+
+
+@router.get("/connect/sessions/{device_code}")
+async def poll_connect_session(device_code: str):
+    """Agent-facing poll. Returns the minted token exactly once."""
+    result = storage.client.table("external_agent_connect_sessions").select(
+        "id,status,token,expires_at"
+    ).eq("device_code_hash", _digest(device_code.strip())).limit(1).execute()
+    row = (result.data or [None])[0] if result else None
+    if not row:
+        raise HTTPException(404, "Connect session not found")
+    try:
+        expired = datetime.fromisoformat(str(row.get("expires_at")).replace("Z", "+00:00")) <= datetime.now(timezone.utc)
+    except ValueError:
+        expired = True
+    if row.get("status") == "approved" and expired:
+        # The minted key was never collected; the session is dead. The owner
+        # can revoke the orphaned key in Account → MCP; a new session mints a
+        # fresh one.
+        storage.client.table("external_agent_connect_sessions").update({
+            "status": "expired", "token": None,
+        }).eq("id", row["id"]).eq("status", "approved").execute()
+        raise HTTPException(410, "Connect session expired before the token was collected; start a new connection")
+    if expired and row.get("status") == "pending":
+        raise HTTPException(410, "Connect session expired; start a new connection")
+    if row.get("status") == "pending":
+        return JSONResponse(status_code=202, content={"status": "pending", "interval": CONNECT_POLL_INTERVAL_SECONDS})
+    if row.get("status") == "denied":
+        raise HTTPException(403, "The broker declined this connection")
+    if row.get("status") == "approved":
+        sealed = row.get("token")
+        if not sealed:
+            raise HTTPException(409, "Connect session token already collected")
+        consumed = storage.client.table("external_agent_connect_sessions").update({
+            "status": "consumed", "token": None,
+        }).eq("id", row["id"]).eq("status", "approved").execute()
+        if not consumed.data:
+            raise HTTPException(409, "Connect session token already collected")
+        return {"status": "approved", "token": _unseal_token(sealed), "warning": "Save this token now. It will not be shown again."}
+    raise HTTPException(410, "Connect session expired; start a new connection")
+
+
+@router.get("/connect/sessions/by-code/{user_code}")
+async def preview_connect_session(user_code: str, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    """Broker-facing: what the signed-in connect page renders before deciding."""
+    row = _connect_session_by_user_code(user_code)
+    if row.get("status") != "pending":
+        raise HTTPException(409, "Connect session already decided")
+    scopes = sorted(DEFAULT_READ_SCOPES)
+    if row.get("write_access"):
+        scopes.extend(sorted(WRITE_SCOPES | TOOL_WRITE_SCOPES))
+    return {"label": row.get("label") or "Instinct", "write_access": bool(row.get("write_access")), "scopes": scopes}
+
+
+@router.post("/connect/sessions/by-code/{user_code}/approve")
+async def approve_connect_session(user_code: str, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    """Broker-facing: mint a key for the waiting agent.
+
+    Uses the same org permission gate as key rotation, since approving grants
+    a credential against the workspace. The minted token is stored on the
+    session row and returned to the agent exactly once via the device poll.
+    """
+    await _require_org_permission(user, tenant_id, "manage_whatsapp")
+    row = _connect_session_by_user_code(user_code)
+    if row.get("status") != "pending":
+        raise HTTPException(409, "Connect session already decided")
+    claimed = storage.client.table("external_agent_connect_sessions").update({
+        "status": "approving",
+    }).eq("id", row["id"]).eq("status", "pending").execute()
+    if not claimed.data:
+        raise HTTPException(409, "Connect session already decided")
+    created, token = _create_external_key(tenant_id, user["id"], row.get("label") or "Instinct", bool(row.get("write_access")))
+    updated = storage.client.table("external_agent_connect_sessions").update({
+        "status": "approved",
+        "tenant_id": tenant_id,
+        "approved_by": user["id"],
+        "api_key_id": created.get("id"),
+        "token": _seal_token(token),
+        "decided_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", row["id"]).execute()
+    if not updated.data:
+        raise HTTPException(503, "Could not record the approval; the agent can start a new session")
+    return {"ok": True, "approved": True, "key": created}
+
+
+@router.post("/connect/sessions/by-code/{user_code}/deny")
+async def deny_connect_session(user_code: str, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    row = _connect_session_by_user_code(user_code)
+    if row.get("status") != "pending":
+        raise HTTPException(409, "Connect session already decided")
+    storage.client.table("external_agent_connect_sessions").update({
+        "status": "denied",
+        "tenant_id": tenant_id,
+        "approved_by": user["id"],
+        "decided_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", row["id"]).execute()
+    return {"ok": True, "approved": False}
 
 
 async def _tenant_parsed(*, limit: int, offset: int, kind: str, search: str = "") -> list[dict]:

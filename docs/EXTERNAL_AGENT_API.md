@@ -33,6 +33,44 @@ Never ask the owner to paste the key into WhatsApp, include it in a message,
 display it, or save it outside Vault. PropAI derives the workspace from the key;
 there is no tenant parameter and it must not be guessed or added.
 
+## Connecting without copying a key
+
+The owner can approve access while signed in, with no copy-paste. The agent
+starts a session, the owner opens the short link and approves, and the agent
+receives the minted key directly:
+
+```http
+POST /api/external/v1/connect/sessions
+{"label":"Instinct","write_access":false}
+```
+
+returns `device_code`, `user_code`, `connect_url`, `expires_in`, and the poll
+`interval`. Ask the owner to open `connect_url` and approve with the shown
+code; approval requires the owner's signed-in PropAI session and the same
+workspace-permission gate as key rotation. Then poll until the decision:
+
+```http
+GET /api/external/v1/connect/sessions/{device_code}
+```
+
+- `202 {"status":"pending"}`: keep waiting; poll no faster than `interval`.
+- `200 {"status":"approved","token":...}`: save the token in Vault as
+  `PROPAI_API_KEY` immediately. It is returned exactly once and then cleared.
+- `403`: the owner declined. Stop and report that no access was granted.
+- `410` / `404`: the session expired or is unknown; start a new session.
+
+Sessions expire after 15 minutes; an approved token that is not collected in
+time is destroyed with the session (the owner can revoke the orphaned key in
+Account → MCP). Uncollected tokens are stored sealed with a server-side key,
+never in plaintext, and are cleared on first delivery. New sessions are
+read-only by default: `write_access:true` must be requested explicitly by the
+agent and is shown to the owner on the approve page, and sensitive-field
+writes still need per-record owner approval. The minted key behaves exactly
+like one created in Account → MCP and is revocable there at any time. If
+anything about the approval looks wrong, the owner can revoke the key before
+the agent's first call. Store the collected token immediately in your agent's
+secret store; never put it in a chat, log, or URL.
+
 ## Endpoints
 
 Read endpoints:
