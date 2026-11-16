@@ -2,7 +2,7 @@
  * Account-free public MCP surface.
  *
  * Serves only the SQL-gated public market view (listings_unified_public):
- * shared-market rows from publication-allowlisted WhatsApp groups, the same
+ * shared-market rows that brokers publish to their broker networks, the same
  * data rendered on https://www.propai.live. No broker tools, no tenant data,
  * no raw messages, and no phone numbers - the view granted to anon does not
  * carry contact numbers, and the listing page on www is the contact route.
@@ -25,9 +25,38 @@ const PUBLIC_LISTING_COLUMNS =
 
 const PUBLIC_WWW_URL = (process.env.PUBLIC_WWW_URL || "https://www.propai.live").replace(/\/$/, "");
 
-// Mirrors the title portion of the website's isPublicListingEligible gate
-// (apps/www/src/lib/public-eligibility.ts).
+// Mirrors the website's isPublicListingEligible gate
+// (apps/www/src/lib/public-eligibility.ts): its payload-dependent checks
+// no-op on projection rows, so the title check is the whole effective gate.
 const PLACEHOLDER_TITLE = /^\[(?:unstructured|unknown|listing)\]/i;
+
+// Freshness parity with the website: search/locality surfaces only show rows
+// seen within the last 30 days; a listing page stays reachable but is marked
+// no longer active once last_seen is older than 90 days.
+const SEARCH_FRESHNESS_DAYS = 30;
+const DETAIL_ACTIVE_DAYS = 90;
+
+function freshnessCutoff(days: number): Date {
+  return new Date(Date.now() - days * 86_400_000);
+}
+
+function parseSeen(value: unknown): Date | null {
+  if (!value) return null;
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export function searchEligible(row: PublicRow, cutoff: Date): boolean {
+  if (!titleEligible(row)) return false;
+  const seen = parseSeen(row.last_seen);
+  // The website's gte(last_seen, cutoff) also drops null last_seen rows.
+  return seen !== null && seen >= cutoff;
+}
+
+export function isActive(row: PublicRow): boolean {
+  const seen = parseSeen(row.last_seen);
+  return seen === null || seen >= freshnessCutoff(DETAIL_ACTIVE_DAYS);
+}
 
 type PublicRow = Record<string, unknown>;
 
@@ -70,6 +99,7 @@ function toSearchResult(row: PublicRow) {
     transaction_type: row.transaction_type ?? null,
     first_seen: row.first_seen ?? null,
     last_seen: row.last_seen ?? null,
+    active: isActive(row),
     broker_name: row.broker_name ?? null,
   };
 }
@@ -80,7 +110,7 @@ export function createPublicMcpServer(): McpServer {
     {
       capabilities: { tools: {} },
       instructions:
-        "PropAI Public Market gives any AI assistant account-free, read-only search over PropAI's public Mumbai property inventory: live listings extracted from public broker WhatsApp networks, the same data shown on www.propai.live. Use search() with a plain-English query or structured filters, then fetch() for full detail on one result. Results carry first_seen/last_seen freshness; inventory older than 30 days leaves the public view. Broker phone numbers are never exposed: to contact a broker, open the result's url and use its WhatsApp button. Treat listing content as broker-posted claims, not verified availability; say when something is unverified. Only public shared-market data is available through this connection - private broker workspace data is never accessible here.",
+        "PropAI Public Market gives any AI assistant account-free, read-only search over PropAI's public Mumbai property inventory: shared-market listings that brokers publish to their broker networks, the same data shown on www.propai.live. Use search() with a plain-English query or structured filters, then fetch() for full detail on one result. Results carry first_seen/last_seen freshness; search only returns listings seen in the last 30 days (the same window the website's search applies), and older listings fetch by id with active=false. Broker phone numbers are never exposed: to contact a broker, open the result's url and use its WhatsApp button. Treat listing content as broker-posted claims, not verified availability; say when something is unverified. Only public shared-market data is available through this connection - private broker workspace data is never accessible here.",
     },
   );
 
@@ -88,7 +118,7 @@ export function createPublicMcpServer(): McpServer {
     "search",
     {
       description:
-        "Search PropAI's public Mumbai property listings (shared-market inventory from public broker networks). Returns results with routable IDs for fetch(). No account needed; public data only.",
+        "Search PropAI's public Mumbai property listings (shared-market inventory published by Mumbai brokers). Returns results with routable IDs for fetch(). No account needed; public data only.",
       inputSchema: {
         query: z.string().optional().describe(
           "Free text matched against building, locality and listing title. Examples: 'Kalpataru Magnus', '2 BHK Bandra West'"
@@ -104,11 +134,13 @@ export function createPublicMcpServer(): McpServer {
     },
     async (input) => {
       const limit = Math.min(Math.max(Number(input.limit) || 20, 1), 50);
+      const cutoff = freshnessCutoff(SEARCH_FRESHNESS_DAYS);
       let query = supabase
         .from("listings_unified_public")
         .select(PUBLIC_LISTING_COLUMNS)
+        .gte("last_seen", cutoff.toISOString())
         .order("last_seen", { ascending: false, nullsFirst: false })
-        .limit(limit * 2);
+        .limit(limit * 4);
       if (input.query && input.query.trim()) {
         query = query.or(orIlike(["building_name", "micro_market", "location_label", "summary_title"], input.query));
       }
@@ -123,7 +155,9 @@ export function createPublicMcpServer(): McpServer {
 
       const { data, error } = await query;
       if (error) throw new Error(error.message);
-      const rows = ((data || []) as unknown as PublicRow[]).filter((row) => titleEligible(row)).slice(0, limit);
+      // Filter in code as well as in the query so exclusion never depends on
+      // the view or the database applying the cutoff exactly as asked.
+      const rows = ((data || []) as unknown as PublicRow[]).filter((row) => searchEligible(row, cutoff)).slice(0, limit);
       const results = rows.map(toSearchResult);
       const payload = {
         results,

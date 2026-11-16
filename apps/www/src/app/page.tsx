@@ -7,7 +7,7 @@ import { NoPhotosFaqJsonLd } from "@/components/NoPhotosFaq";
 export const metadata = {
   title: "PropAI — Live Mumbai broker inventory in your AI assistant",
   description:
-    "Connect Instinct or any MCP client to PropAI's public Mumbai property listings. No account needed: your assistant searches live broker-network inventory read-only, and you continue with the broker on WhatsApp.",
+    "Connect Instinct or any MCP client to PropAI's public Mumbai property listings. No account needed: your assistant searches the shared-market inventory brokers publish, read-only, and you continue with the broker on WhatsApp.",
   alternates: { canonical: "/" },
   openGraph: {
     title: "PropAI — Live Mumbai broker inventory in your AI assistant",
@@ -22,12 +22,12 @@ const capabilities = [
   {
     Icon: Search,
     title: "Search the live public market",
-    body: "Ask in plain English or filter by locality, BHK, budget, furnishing and rent or sale. Answers come from current broker conversations, not stale portal uploads.",
+    body: "Ask in plain English or filter by locality, BHK, budget, furnishing and rent or sale. Answers come from listings brokers publish to the shared market, not stale portal uploads.",
   },
   {
     Icon: ShieldCheck,
     title: "See freshness, not guesses",
-    body: "Every listing carries first-seen and last-seen timestamps and leaves the public market after 30 quiet days. Your assistant can say how fresh a place actually is.",
+    body: "Every listing carries first-seen and last-seen timestamps and leaves public search after 30 quiet days. Your assistant can say how fresh a place actually is.",
   },
   {
     Icon: MessageSquare,
@@ -48,9 +48,9 @@ export default function WWWPage() {
             Search Mumbai&apos;s live broker inventory through your own <em className="text-green-400 not-italic">AI assistant</em>.
           </h1>
           <p className="mt-5 max-w-2xl text-[15px] lg:text-[17px] text-zinc-400 leading-relaxed">
-            PropAI reads the public WhatsApp networks where Mumbai brokers actually work and keeps the inventory fresh.
-            Connect your assistant once and ask it for places the way you&apos;d ask a broker friend - no account,
-            no signup, no portal maze.
+            PropAI keeps a live inventory of the listings Mumbai brokers publish to their shared
+            market. Connect your assistant once and ask it for places the way you&apos;d ask a
+            broker friend - no account, no signup, no portal maze.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <a href="#connect" className="site-primary-cta">
@@ -77,8 +77,9 @@ export default function WWWPage() {
                 <li><strong className="text-white">1.</strong> Tell your Instinct: <em className="text-zinc-200 not-italic">&ldquo;Connect me to PropAI.&rdquo;</em></li>
                 <li><strong className="text-white">2.</strong> It reads PropAI&apos;s public API guide and can search immediately - no key to copy, nothing to paste.</li>
               </ol>
-              <p className="mt-4 text-xs text-zinc-500">
-                API guide for agents: <code className="text-green-300/90 break-all">https://api.propai.live/api/public/v1/docs</code>
+              <p className="mt-4 text-xs text-zinc-500">API guide for agents:</p>
+              <p className="mt-1.5 rounded-lg border border-white/10 bg-black/40 px-3 py-2">
+                <code className="block font-mono text-xs sm:text-sm text-green-300 break-all select-all">https://api.propai.live/api/public/v1/docs</code>
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-6">
@@ -89,8 +90,8 @@ export default function WWWPage() {
               <ol className="mt-4 space-y-3 text-sm text-zinc-400 leading-relaxed list-none">
                 <li><strong className="text-white">1.</strong> In Claude, ChatGPT or another MCP-compatible assistant, add a connector with this URL:</li>
               </ol>
-              <p className="mt-3 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm">
-                <code className="text-green-300/90 break-all">https://mcp.propai.live/mcp</code>
+              <p className="mt-3 rounded-lg border border-white/10 bg-black/40 px-3 py-2">
+                <code className="block font-mono text-xs sm:text-sm text-green-300 break-all select-all">https://mcp.propai.live/mcp</code>
               </p>
               <p className="mt-3 text-sm text-zinc-400 leading-relaxed">
                 <strong className="text-white">2.</strong> No sign-in step. Your assistant gets public <code>search</code> and <code>fetch</code> tools over the live market.

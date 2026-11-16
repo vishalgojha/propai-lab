@@ -7,6 +7,8 @@ returns contact fields.
 import sys
 import types
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -17,7 +19,7 @@ class FakeQuery:
         self.client = client
         self.table = table
         self.calls = []
-        self._rows = client.rows
+        self._rows = list(client.rows)
 
     def select(self, columns):
         self.calls.append(("select", columns))
@@ -25,6 +27,7 @@ class FakeQuery:
 
     def eq(self, column, value):
         self.calls.append(("eq", column, value))
+        self._rows = [row for row in self._rows if row.get(column) == value]
         return self
 
     def gte(self, column, value):
@@ -84,6 +87,10 @@ def make_client(rows):
     return TestClient(app), fake
 
 
+def _iso(days_ago: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
+
+
 SAMPLE_ROW = {
     "card_type": "residential_rent",
     "id": 42,
@@ -103,8 +110,8 @@ SAMPLE_ROW = {
     "intent": "rent",
     "transaction_type": "rent",
     "deal_tags": ["negotiable"],
-    "first_seen": "2026-11-01T00:00:00Z",
-    "last_seen": "2026-11-15T00:00:00Z",
+    "first_seen": _iso(15),
+    "last_seen": _iso(1),
     "observation_count": 3,
     "broker_name": "A Shah",
 }
@@ -151,6 +158,42 @@ def test_filters_are_applied_to_query():
     or_clauses = [c for c in query.calls if c[0] == "or"]
     assert len(or_clauses) == 2  # q + locality
     assert "building_name.ilike.%Rose%" in or_clauses[0][1]
+
+
+def test_search_enforces_30_day_freshness_window():
+    rows = [
+        SAMPLE_ROW,  # fresh
+        {**SAMPLE_ROW, "id": 43, "last_seen": _iso(45)},  # stale
+        {**SAMPLE_ROW, "id": 44, "last_seen": None},  # no observation time
+    ]
+    client, fake = make_client(rows)
+    data = client.get("/api/public/v1/listings/search").json()
+    # Fake storage ignores gte(), so this proves the exclusion is enforced in
+    # the route code, not delegated to the database or the view.
+    assert [r["id"] for r in data["results"]] == [42]
+    gte_calls = [c for c in fake.executed[-1].calls if c[0] == "gte" and c[1] == "last_seen"]
+    assert gte_calls, "search must push the freshness cutoff into the query too"
+    cutoff = datetime.fromisoformat(gte_calls[0][2].replace("Z", "+00:00"))
+    age_days = (datetime.now(timezone.utc) - cutoff).days
+    assert age_days == 30
+
+
+def test_detail_marks_old_listing_inactive_but_reachable():
+    rows = [
+        SAMPLE_ROW,
+        {**SAMPLE_ROW, "id": 43, "card_type": "commercial_sale", "last_seen": _iso(120)},
+    ]
+    client, _ = make_client(rows)
+    fresh = client.get("/api/public/v1/listings/42").json()["results"][0]
+    assert fresh["active"] is True
+    stale = client.get("/api/public/v1/listings/43?card_type=commercial_sale").json()["results"][0]
+    assert stale["active"] is False
+
+
+def test_detail_404_for_placeholder_title():
+    client, _ = make_client([{**SAMPLE_ROW, "summary_title": "[unknown]"}])
+    resp = client.get("/api/public/v1/listings/42")
+    assert resp.status_code == 404
 
 
 def test_detail_404_when_absent():

@@ -14,6 +14,7 @@ the app-level rate-limit middleware in app.py.
 import logging
 import os
 import re
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import PlainTextResponse
@@ -37,20 +38,46 @@ PUBLIC_LISTING_COLUMNS = (
     "first_seen,last_seen,observation_count,broker_name"
 )
 
-# Mirrors the title portion of the website's isPublicListingEligible gate
+# Mirrors the website's isPublicListingEligible gate
 # (apps/www/src/lib/public-eligibility.ts). The payload-dependent checks
 # (public_eligible flag, commercial-conflict heuristic) need the raw payload,
 # which the public projection deliberately does not expose; on the website
-# those checks already no-op for projection rows.
+# those checks already no-op for projection rows, so the title check is the
+# whole effective gate.
 _PLACEHOLDER_TITLE = re.compile(r"^\[(?:unstructured|unknown|listing)\]", re.IGNORECASE)
+
+# Freshness parity with the website: search/locality surfaces only show rows
+# whose last_seen is within 30 days (apps/www/src/lib/natural-search.ts,
+# localities.ts), while a listing detail page stays reachable but is marked
+# "no longer active" once last_seen is older than 90 days
+# (apps/www/src/app/listings/[slug]/[id]/page.tsx).
+SEARCH_FRESHNESS_DAYS = 30
+DETAIL_ACTIVE_DAYS = 90
+
+
+def _freshness_cutoff(days: int) -> datetime:
+    return datetime.now(timezone.utc) - timedelta(days=days)
+
+
+def _parse_seen(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        text = str(value).strip().replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 PUBLIC_AGENT_DOCS = """PropAI public listings API (account-free, read-only)
 
 Base URL: https://api.propai.live/api/public/v1
 
 This API serves the same public, shared-market listings shown on
-https://www.propai.live - inventory extracted from public Mumbai broker
-WhatsApp networks. No account or API key is required. It never returns
+https://www.propai.live - inventory that Mumbai brokers publish to their
+shared broker networks. No account or API key is required. It never returns
 workspace-private data and never returns broker phone numbers.
 
 Endpoints:
@@ -74,15 +101,17 @@ GET /listings/{listing_id}
 
 Each result includes:
   summary_title, building_name, micro_market, bhk, area_sqft, price (+unit),
-  furnishing, transaction_type, first_seen, last_seen, broker_name, and
-  public_url - the listing's page on www.propai.live.
+  furnishing, transaction_type, first_seen, last_seen, active, broker_name,
+  and public_url - the listing's page on www.propai.live. "active" is false
+  once a listing has not been seen for over 90 days.
 
 Contacting a broker: open the listing's public_url and use its WhatsApp
 button. The site hands the enquiry to the broker without exposing their
 number; phone numbers are intentionally not part of this API.
 
-Freshness: listings are ordered by last_seen (most recently observed first).
-Inventory older than 30 days leaves the public market view.
+Freshness: search only returns listings seen in the last 30 days, ordered by
+last_seen (most recently observed first) - the same window the website's
+search applies. Older listings stay fetchable by id but carry active=false.
 
 Rate limits: requests are rate-limited per caller (search endpoints currently
 60 requests/minute; 429 responses carry Retry-After). Cache results where you
@@ -96,6 +125,19 @@ Example:
 def _title_eligible(row: dict) -> bool:
     title = str(row.get("summary_title") or "").strip()
     return bool(title) and not _PLACEHOLDER_TITLE.match(title)
+
+
+def _search_eligible(row: dict, cutoff: datetime) -> bool:
+    if not _title_eligible(row):
+        return False
+    seen = _parse_seen(row.get("last_seen"))
+    # The website's gte(last_seen, cutoff) also drops null last_seen rows.
+    return seen is not None and seen >= cutoff
+
+
+def _is_active(row: dict) -> bool:
+    seen = _parse_seen(row.get("last_seen"))
+    return seen is None or seen >= _freshness_cutoff(DETAIL_ACTIVE_DAYS)
 
 
 def _to_public_listing(row: dict) -> dict:
@@ -120,6 +162,7 @@ def _to_public_listing(row: dict) -> dict:
         "deal_tags": row.get("deal_tags") or [],
         "first_seen": row.get("first_seen"),
         "last_seen": row.get("last_seen"),
+        "active": _is_active(row),
         "observation_count": row.get("observation_count"),
         "broker_name": row.get("broker_name"),
         "public_url": f"{PUBLIC_WWW_URL}/listings/{listing_id}/{listing_id}",
@@ -151,8 +194,13 @@ async def public_listing_search(
     offset: int = Query(0, ge=0),
 ):
     limit, offset = bounded_page(limit, offset, maximum=50)
+    cutoff = _freshness_cutoff(SEARCH_FRESHNESS_DAYS)
     try:
-        query = storage.client.table("listings_unified_public").select(PUBLIC_LISTING_COLUMNS)
+        query = (
+            storage.client.table("listings_unified_public")
+            .select(PUBLIC_LISTING_COLUMNS)
+            .gte("last_seen", cutoff.isoformat())
+        )
         if q.strip():
             query = query.or_(_ilike_or(["building_name", "micro_market", "location_label", "summary_title"], q))
         if locality.strip():
@@ -167,11 +215,13 @@ async def public_listing_search(
             query = query.lte("price", budget_max)
         if furnishing.strip():
             query = query.ilike("furnishing", f"%{furnishing.strip()}%")
-        result = query.order("last_seen", desc=True).limit(limit * 2).offset(offset).execute()
+        result = query.order("last_seen", desc=True).limit(limit * 4).offset(offset).execute()
     except Exception as exc:
         logger.exception("Public listing search failed; error_type=%s", type(exc).__name__)
         raise HTTPException(503, "Public listing search is temporarily unavailable") from exc
-    rows = [row for row in (result.data or []) if _title_eligible(row)][:limit]
+    # Filter in code as well as in the query so exclusion never depends on
+    # the view or the database applying the cutoff exactly as asked.
+    rows = [row for row in (result.data or []) if _search_eligible(row, cutoff)][:limit]
     return {
         "results": [_to_public_listing(row) for row in rows],
         "count": len(rows),
