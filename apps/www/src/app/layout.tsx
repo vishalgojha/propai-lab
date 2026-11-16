@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     description: 'Search verified residential and commercial property listings from WhatsApp broker networks.',
     images: ['/opengraph-image'],
   },
-  robots: 'index, follow',
+  robots: 'noindex, nofollow',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
