@@ -6,6 +6,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -346,6 +347,53 @@ async def external_raw_message_conversation(
     }
 
 
+def _parse_bhk(value: str) -> int | None:
+    match = re.search(r"\d+", value or "")
+    return int(match.group()) if match else None
+
+
+def _typed_filter(
+    rows: list[dict],
+    *,
+    locality: str = "",
+    bhk: str = "",
+    transaction_type: str = "",
+) -> list[dict]:
+    """Structured params match typed fields only; free-text q stays broad.
+
+    bhk compares the parsed BHK count (a post mentioning both 1 and 2 BHK
+    in its source text must not surface as a 2 BHK unless the parsed flat
+    is one). locality matches the parsed micro_market / location_raw /
+    building_name fields, transaction_type the parsed transaction type.
+    """
+    want_bhk = _parse_bhk(bhk)
+    want_txn = transaction_type.casefold().strip()
+    locality_tokens = locality.casefold().split()
+
+    def keep(row: dict) -> bool:
+        if want_bhk is not None:
+            try:
+                if int(row.get("bhk")) != want_bhk:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        if want_txn:
+            if (row.get("transaction_type") or "").casefold().strip() != want_txn:
+                return False
+        if locality_tokens:
+            hay = " ".join(
+                str(row.get(field) or "")
+                for field in ("micro_market", "location_raw", "building_name")
+            ).casefold()
+            compact = re.sub(r"\s+", "", hay)
+            for token in locality_tokens:
+                if token not in hay and token not in compact:
+                    return False
+        return True
+
+    return [row for row in rows if keep(row)]
+
+
 @router.get("/listings/search")
 async def external_listing_search(
     q: str = "",
@@ -359,7 +407,8 @@ async def external_listing_search(
 ):
     if "inventory:read" not in (key.get("scopes") or []):
         raise HTTPException(403, "Token does not have inventory:read scope")
-    rows = await _tenant_parsed(limit=limit, offset=offset, kind="listing", search=" ".join(x for x in (q, locality, bhk, transaction_type) if x))
+    rows = await _tenant_parsed(limit=limit, offset=offset, kind="listing", search=q)
+    rows = _typed_filter(rows, locality=locality, bhk=bhk, transaction_type=transaction_type)
     if budget_max is not None:
         rows = [r for r in rows if _numeric_price(r) is not None and _numeric_price(r) <= budget_max]
     return {"results": [_public_listing(row) for row in rows], "count": len(rows), "offset": offset}
