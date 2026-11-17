@@ -19,6 +19,17 @@ export default function InstinctWorkspacePage() {
         <p className="mt-4 text-xs leading-5 text-zinc-400">Manual setup: save the one-time token in Instinct Vault as a password/secret named <code className="text-amber-200">PROPAI_API_KEY</code>. Use endpoint <code className="text-amber-200">https://api.propai.live/api/external/v1</code> and send it as <code className="text-amber-200">X-API-Key</code> or <code className="text-amber-200">Authorization: Bearer</code>.</p>
         <Link href="/workspace/mcp" className="mt-5 inline-flex items-center gap-2 rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10">Create a token manually on the Integrations page</Link>
       </div>
+
+      <div className="mt-6 rounded-2xl border border-amber-300/20 bg-amber-300/[0.05] p-6">
+        <h2 className="text-lg font-semibold text-white">Watch the connection walkthrough</h2>
+        <p className="mt-1 text-sm leading-6 text-zinc-400">68 seconds: save your PropAI login in Instinct Vault, ask Instinct to connect, then approve access. Private account details are hidden.</p>
+        <div className="mx-auto mt-4 max-w-xs overflow-hidden rounded-xl border border-amber-300/20">
+          <video controls preload="metadata" playsInline className="block w-full" aria-label="PropAI Instinct connection walkthrough">
+            <source src="/videos/propai-connect-v2.mp4" type="video/mp4" />
+            Your browser does not support the Instinct connection walkthrough video.
+          </video>
+        </div>
+      </div>
     </section>
   );
 }
