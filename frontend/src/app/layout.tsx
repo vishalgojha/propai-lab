@@ -41,7 +41,6 @@ import { useEventStream } from "@/lib/useEventStream";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { WorkspaceTabs } from "@/components/layout/WorkspaceTabs";
-import { InstallPrompt } from "@/components/layout/InstallPrompt";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
 import { VoiceAssistant } from "@/components/VoiceAssistant";
 import { isMuted, toggleMute, playConnectionChange, playGroupConnected, playNewLead, playNewWhatsApp, getVolume, setVolume, isSoundEnabled, setSoundEnabled, getSoundPreferences, loadSoundPreferences, setSoundPreference, previewSound, SOUND_LIBRARY, type SoundEvent, type SoundId, type SoundPreferences } from "@/lib/sounds";
@@ -1047,9 +1046,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* ═══════ Bottom Navigation (mobile) ═══════ */}
       <BottomNav onTabChange={setLastTab} onMenu={toggleDrawer} />
-
-      {/* Install Prompt */}
-      <InstallPrompt />
 
       {/* Persistent, allowlisted WhatsApp setup pilot. */}
       <VoiceAssistant enabled={Boolean(user)} />

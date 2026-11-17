@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { LogOut, X, RefreshCw } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
 import { getBuildHint } from "@/lib/buildInfo";
+import { InstallPrompt } from "./InstallPrompt";
 
 type NavItem = {
   href: string;
@@ -246,6 +247,7 @@ export function MobileDrawer({
               })}
             </div>
           ))}
+          <InstallPrompt />
         </nav>
 
         {/* Profile */}

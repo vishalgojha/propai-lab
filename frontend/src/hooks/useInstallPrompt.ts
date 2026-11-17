@@ -14,9 +14,8 @@ export function useInstallPrompt() {
   const [mobile, setMobile] = useState(false);
 
   useEffect(() => {
-    // The install banner is intended for phones/tablets. Desktop browsers may
-    // also emit beforeinstallprompt, but the dashboard should not interrupt
-    // desktop workflows with a home-screen prompt.
+    // Keep the native prompt deferred for the optional mobile menu action.
+    // Receiving this event must never open an install banner or dialog.
     const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
     setMobile(isMobile);
     if (!isMobile) return;
