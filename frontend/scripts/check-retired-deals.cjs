@@ -10,6 +10,8 @@ try {
   assert.deepEqual(tabs.map(t=>t.href),['/inbox','/crm']);
   assert.ok(!fs.readFileSync('src/components/layout/WorkspaceModuleMenu.tsx','utf8').includes('"/deals"'));
   assert.ok(!fs.readFileSync('src/components/VoiceAssistant.tsx','utf8').includes('My Deals'));
+  const config=load('next.config.ts').default;
+  config.redirects().then(rules=>{assert.ok(rules.some(rule=>rule.source==='/clients/:path*'));assert.ok(rules.every(rule=>rule.destination==='/dashboard' && rule.permanent));});
   const inbox=fs.readFileSync('src/app/inbox/page.tsx','utf8');
   assert.ok(!inbox.includes('Save to client'));assert.ok(!inbox.includes('openClientPicker'));assert.ok(inbox.includes('startContactQueue'));
   console.log('PASS: both old routes redirect to Home; retired cached tabs removed; unrelated tabs retained; no module/voice guidance to retired UI.');

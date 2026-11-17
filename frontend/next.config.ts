@@ -25,6 +25,12 @@ const nextConfig: NextConfig = {
     "d3-interpolate",
     "d3-scale",
   ],
+  async redirects() {
+    // Retired broker modules redirect before the authenticated shell loads.
+    return ["/deals", "/mydeals", "/clients", "/clients/:path*", "/leads"].map((source) => ({
+      source, destination: "/dashboard", permanent: true,
+    }));
+  },
   async rewrites() {
     // Proxy API calls only after Next has checked its own route handlers.
     // Otherwise the broad /api rewrite sends /api/admin/analytics to FastAPI
