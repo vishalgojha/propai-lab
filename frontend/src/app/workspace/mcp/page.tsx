@@ -286,23 +286,69 @@ export default function McpWorkspacePage() {
         <div className="flex items-start gap-4">
           <div className="rounded-xl border border-cyan-300/25 bg-cyan-300/10 p-3 text-cyan-200"><Bot className="h-5 w-5" aria-hidden="true" /></div>
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-semibold text-white">PropAI setup agent</h2>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">Run the repetitive PropAI-side checks for Instinct, Claude, and Gemini from one place. The agent records each browser check and stops at third-party login, CAPTCHA, consent, or sending boundaries.</p>
+            <h2 className="text-lg font-semibold text-white">Connect your assistant</h2>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">Connect PropAI to the assistant you already use. Each card shows where to add PropAI in that assistant, plus a PropAI-side verification.</p>
           </div>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           {[
-            ["instinct", "Prepare Instinct", "Create a one-time token and verify the REST endpoint."],
-            ["claude", "Prepare Claude MCP", "Verify the MCP endpoint and OAuth handoff."],
-            ["gemini", "Prepare Gemini MCP", "Verify the MCP endpoint for a Gemini connector."],
-            ["verify", "Run all checks", "Check the PropAI endpoints and browser runtime."],
-          ].map(([task, label, detail]) => (
+            {
+              task: "instinct",
+              label: "Connect Instinct",
+              steps: "Open the Instinct tab on this page and approve the connection link there. No API key to copy.",
+              site: null,
+              siteLabel: null,
+              shots: null,
+            },
+            {
+              task: "claude",
+              label: "Connect Claude",
+              steps: "In Claude: Settings > Connectors > + > Add custom connector, then paste the PropAI MCP URL from above.",
+              site: "https://claude.ai/",
+              siteLabel: "Open Claude",
+              shots: [
+                ["/setup/claude-1-settings.jpg", "1. Settings > Connectors"],
+                ["/setup/claude-2-add-menu.jpg", "2. + > Add custom connector"],
+                ["/setup/claude-3-form.jpg", "3. Name + MCP server URL"],
+              ],
+            },
+            {
+              task: "gemini",
+              label: "Connect Gemini",
+              steps: "In the Gemini web app: Settings > Connected Apps > Custom apps > Add a custom app, then paste the PropAI MCP URL from above.",
+              site: "https://gemini.google.com/",
+              siteLabel: "Open Gemini",
+              shots: null,
+            },
+            {
+              task: "verify",
+              label: "Re-run PropAI checks",
+              steps: "Verify the PropAI endpoints and browser runtime after connecting.",
+              site: null,
+              siteLabel: null,
+              shots: null,
+            },
+          ].map(({ task, label, steps, site, siteLabel, shots }) => (
             <div key={task} className="rounded-xl border border-white/10 bg-black/20 p-4">
               <div className="font-semibold text-white">{label}</div>
-              <p className="mt-1 text-xs leading-5 text-zinc-500">{detail}</p>
-              <button type="button" onClick={() => void runAgentTask(task as "instinct" | "claude" | "gemini" | "verify", task === "instinct")} disabled={agentBusy === task} aria-busy={agentBusy === task} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-cyan-300/30 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-300/10 disabled:opacity-60">
-                <Play className="h-3.5 w-3.5" aria-hidden="true" />{agentBusy === task ? "Running…" : label}
-              </button>
+              <p className="mt-1 text-xs leading-5 text-zinc-500">{steps}</p>
+              {shots && (
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  {shots.map(([src, caption]) => (
+                    <figure key={src} className="overflow-hidden rounded-lg border border-white/10">
+                      <img src={src} alt={caption} className="h-28 w-full object-cover object-top" />
+                      <figcaption className="px-1.5 py-1 text-[10px] leading-3 text-zinc-500">{caption}</figcaption>
+                    </figure>
+                  ))}
+                </div>
+              )}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {site && <a href={site} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-cyan-300/30 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-300/10">{siteLabel}</a>}
+                {site && <button type="button" onClick={() => void copyEndpoint()} className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/[0.06]"><Copy className="h-3.5 w-3.5" /> {copied ? "Copied" : "Copy MCP URL"}</button>}
+                <button type="button" onClick={() => void runAgentTask(task as "instinct" | "claude" | "gemini" | "verify", task === "instinct")} disabled={agentBusy === task} aria-busy={agentBusy === task} className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-400 hover:bg-white/[0.06] disabled:opacity-60">
+                  <Play className="h-3.5 w-3.5" aria-hidden="true" />{agentBusy === task ? "Running…" : "Verify PropAI side"}
+                </button>
+              </div>
             </div>
           ))}
         </div>

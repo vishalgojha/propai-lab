@@ -263,7 +263,7 @@ export default function DashboardPage() {
         <div className="dashboard-section-heading"><div><h2 id="actions-heading">Move the work forward</h2><p>Jump straight into the parts of your workspace that need attention.</p></div></div>
         <div className="dashboard-action-grid">
           {[
-            { label: "Ask the assistant", count: "→", icon: Search, href: "/chat", detail: "Find listings, requirements and matches in chat" },
+            { label: "Connect your assistant", count: "→", icon: Search, href: "/workspace/instinct", detail: "Use Instinct, Claude, or Gemini with your PropAI data" },
             { label: "Review Items", count: suggestionPending || "→", icon: ListChecks, href: "/chat?tab=review", detail: "Records needing confirmation" },
             { label: "Review market data", count: "→", icon: MessageCircle, href: "/inbox", detail: "Triage and correct captured market posts" },
             { label: "Connect groups", count: "→", icon: Radio, href: "/whatsapp?tab=groups", detail: "Choose groups to connect for parsing" },

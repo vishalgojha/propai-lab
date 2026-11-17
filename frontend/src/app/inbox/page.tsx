@@ -3110,11 +3110,12 @@ function UnifiedMarketInbox() {
           </div>}
         </section>
 
-        <section className="mt-3 rounded-xl border border-[var(--zone-light-border)] bg-[var(--surface)] p-2.5" aria-label="Search and filters">
+        {triageFilter === "raw" && (
+          <section className="mt-3 rounded-xl border border-[var(--zone-light-border)] bg-[var(--surface)] p-2.5" aria-label="Search and filters">
           <div className="flex flex-wrap items-center justify-between gap-2 px-0.5">
             <span className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--text-secondary)]">
               <SlidersHorizontal className="h-3 w-3" aria-hidden="true" />
-              {triageFilter === "raw" ? "Search messages" : "Search & filter records"}
+Search messages
             </span>
             {activeFilterChips.length > 0 && (
               <button type="button" onClick={resetAllFilters} className="text-[10px] font-semibold text-[var(--text-secondary)] underline underline-offset-2 hover:text-[var(--text-primary)]">Clear all</button>
@@ -3122,52 +3123,11 @@ function UnifiedMarketInbox() {
           </div>
         <div className="mt-2 grid gap-2 lg:items-center">
           <div className="relative min-w-[260px] flex-1">
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={triageFilter === "raw" ? "Search captured WhatsApp messages" : "Try ‘3 BHK rent between Bandra and Andheri under 3 Lakh’"} className="h-9 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 pr-24 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none focus:border-[var(--signal-lime)]/50" />
-            {searching && triageFilter === "extracted" ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-wider text-[var(--accent-text-on-light)]">Searching…</span> : query.trim().length >= 2 ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">{triageFilter === "raw" ? `${visibleItems.length} in loaded batch` : `${searchTotal} found`}</span> : null}
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search captured WhatsApp messages" className="h-9 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 pr-24 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none focus:border-[var(--signal-lime)]/50" />
+            {query.trim().length >= 2 ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">{`${visibleItems.length} in loaded batch`}</span> : null}
           </div>
-          {triageFilter === "extracted" && (
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-[var(--zone-light-border)] bg-[var(--zone-light-background)] px-2.5 py-2">
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Asset</span>
-                <Tabs value={assetFilter} onValueChange={(value: string) => setAssetFilter(value as AssetFilter)}>
-                  <TabsList aria-label="Asset type">
-                    <TabsTrigger value="all">All</TabsTrigger>
-                    <TabsTrigger value="residential">Residential</TabsTrigger>
-                    <TabsTrigger value="commercial">Commercial</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Type</span>
-                <Tabs value={mode} onValueChange={(value: string) => setMode(value as "all" | "listings" | "requirements")}>
-                  <TabsList aria-label="Record type">
-                    <TabsTrigger value="all">All</TabsTrigger>
-                    <TabsTrigger value="listings">Listings</TabsTrigger>
-                    <TabsTrigger value="requirements">Requirements</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Deal</span>
-                <Tabs value={transactionFilter} onValueChange={(value: string) => setTransactionFilter(value as TransactionFilter)}>
-                  <TabsList aria-label="Transaction type">
-                    <TabsTrigger value="all">All</TabsTrigger>
-                    <TabsTrigger value="rent">Rent</TabsTrigger>
-                    <TabsTrigger value="sale">Sale</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
-            </div>
-          )}
-          {triageFilter === "extracted" && query.trim().length >= 2 && mode !== "requirements" && <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-[10px] font-semibold text-zinc-400 hover:border-cyan-300/30 hover:text-zinc-200">
-            <input
-              type="checkbox"
-              checked={includeRequirements}
-              onChange={(event) => setIncludeRequirements(event.target.checked)}
-              className="h-3.5 w-3.5 accent-cyan-300"
-            />
-            Include buyer requirements
-          </label>}
+
+
         </div>
         {activeFilterChips.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5" aria-label="Active filters">
@@ -3180,6 +3140,7 @@ function UnifiedMarketInbox() {
           </div>
         )}
         </section>
+          )}
         {triageFilter === "extracted" && query.trim().length >= 2 && <div className="mt-3 flex flex-wrap items-center gap-2">
           <input value={savedSearchName} onChange={(event) => setSavedSearchName(event.target.value)} placeholder="Name this search" className="h-8 w-44 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-2.5 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none focus:border-cyan-300/40" />
           <Button type="button" variant="outline" size="sm" onClick={() => void saveCurrentSearch()} disabled={savedSearchBusy} className="h-8 border-[var(--monsoon-teal)] px-3 text-[10px] uppercase tracking-wider text-[var(--mist)] hover:bg-[var(--monsoon-teal)]/15">{savedSearchBusy ? "Saving…" : "Save this search"}</Button>

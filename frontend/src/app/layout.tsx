@@ -69,12 +69,6 @@ type NotificationNotice = {
 // "Review market data".
 const baseNavSections = [
   {
-    title: "Assistant",
-    items: [
-      { href: "/chat", label: "Chat", icon: MessageSquareText },
-    ],
-  },
-  {
     title: "WhatsApp",
     items: [
       { href: "/whatsapp?tab=numbers", label: "WhatsApp", icon: Wifi },
