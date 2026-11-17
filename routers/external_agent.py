@@ -511,7 +511,7 @@ async def external_inventory_photo(inventory_id: int, photo_id: int, key: dict =
 
 @router.post("/inventory/{inventory_id}/photos")
 async def external_attach_photo(inventory_id: int, request: Request, key: dict = Depends(external_auth)):
-    from private_crm_photos import PHOTO_SCOPE, MAX_BYTES, inventory_target, save_photo
+    from private_crm_photos import PHOTO_SCOPE, MAX_BYTES, inventory_target, save_photo, photo_audit_start, photo_audit_finish
     _require_scope(key, PHOTO_SCOPE)
     inventory_target(storage.client, str(key["tenant_id"]), inventory_id)
     if request.headers.get("content-type", "").split(";")[0] not in {"image/jpeg", "image/png", "image/webp"}:
@@ -521,30 +521,30 @@ async def external_attach_photo(inventory_id: int, request: Request, key: dict =
         content.extend(chunk)
         if len(content) > MAX_BYTES:
             raise HTTPException(413, "Photo must be at most 10 MB")
-    audit = _write_audit_start(key, "attach_photo", "crm_inventory", {"inventory_id": inventory_id, "bytes": len(content)}, [])
+    audit = photo_audit_start(storage.client, str(key["tenant_id"]), key["id"], "attach_photo", {"inventory_id": inventory_id, "bytes": len(content)})
     try:
         result = await asyncio.to_thread(save_photo, storage.client, str(key["tenant_id"]), inventory_id, key["created_by"], bytes(content))
-        _write_audit_finish(audit, "succeeded", entity_id=str(inventory_id), result=result)
+        photo_audit_finish(storage.client, str(key["tenant_id"]), audit, "succeeded", result)
         return {**result, "inventory_id": inventory_id}
     except Exception:
-        _write_audit_finish(audit, "failed", error_code="private_photo_failed")
+        photo_audit_finish(storage.client, str(key["tenant_id"]), audit, "failed")
         raise
 
 
 @router.put("/keys/{key_id}/photo-access")
 async def update_external_photo_access(key_id: str, body: ApiKeyWriteAccessUpdate, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
-    from private_crm_photos import PHOTO_SCOPE
+    from private_crm_photos import PHOTO_SCOPE, photo_audit_start, photo_audit_finish
     await _require_org_permission(user, tenant_id, "manage_whatsapp")
     rows = storage.client.table("external_agent_api_keys").select("id,scopes").eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").limit(1).execute().data or []
     if not rows:
         raise HTTPException(404, "Active external API key not found")
     scopes = sorted((set(rows[0].get("scopes") or []) - {PHOTO_SCOPE}) | ({PHOTO_SCOPE} if body.enabled else set()))
-    audit = _write_audit_start({"tenant_id": tenant_id, "id": key_id}, "permission_change", "external_agent_api_key", {"photo_access": body.enabled}, [])
+    audit = photo_audit_start(storage.client, tenant_id, key_id, "photo_permission_change", {"photo_access": body.enabled})
     result = storage.client.table("external_agent_api_keys").update({"scopes": scopes}).eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").execute()
     if not result.data:
-        _write_audit_finish(audit, "failed", error_code="key_update_empty")
+        photo_audit_finish(storage.client, tenant_id, audit, "failed")
         raise HTTPException(409, "Key changed; refresh and retry")
-    _write_audit_finish(audit, "succeeded", entity_id=key_id, result={"photo_access": body.enabled})
+    photo_audit_finish(storage.client, tenant_id, audit, "succeeded", {"photo_access": body.enabled})
     return {"id": key_id, "scopes": scopes}
 
 

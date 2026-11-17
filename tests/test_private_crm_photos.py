@@ -90,3 +90,33 @@ def test_search_uses_production_query_builder(monkeypatch):
     assert result['records'] == []
     assert seen[0]._offset == 20 and seen[0]._limit == 10
     assert ('tenant_id', 'eq', 'a') in seen[0]._filters
+
+
+def test_photo_audit_isolated_and_fail_closed():
+    from private_crm_photos import photo_audit_start, photo_audit_finish, PHOTO_AUDIT_TABLE
+    calls = []
+    class AuditQuery:
+        def insert(self, payload): calls.append(('insert', payload)); return self
+        def update(self, payload): calls.append(('update', payload)); return self
+        def eq(self, key, value): calls.append(('filter', key, value)); return self
+        def execute(self): return SimpleNamespace(data=[{'id':'audit-id'}])
+    client = SimpleNamespace(table=lambda name: calls.append(('table', name)) or AuditQuery())
+    assert photo_audit_start(client,'tenant-a','key-a','attach_photo',{'bytes':20}) == 'audit-id'
+    photo_audit_finish(client,'tenant-a','audit-id','succeeded',{'private':True})
+    assert all(c[1] == PHOTO_AUDIT_TABLE for c in calls if c[0] == 'table')
+    assert ('filter','tenant_id','tenant-a') in calls
+    def unavailable(name): raise RuntimeError('unavailable')
+    with pytest.raises(HTTPException) as error:
+        photo_audit_start(SimpleNamespace(table=unavailable),'a','k','attach_photo',{})
+    assert error.value.status_code == 503
+
+
+def test_general_audit_remains_unchanged_and_photo_handlers_isolated():
+    import inspect
+    from routers import external_agent
+    assert 'external_agent_write_audit_log' in inspect.getsource(external_agent._write_audit_start)
+    for handler in (external_agent.external_attach_photo,external_agent.update_external_photo_access):
+        source = inspect.getsource(handler)
+        assert '_write_audit_start(' not in source
+        assert 'photo_audit_start(' in source
+        assert source.index('photo_audit_start(') < source.index('asyncio.to_thread(save_photo,' if handler is external_agent.external_attach_photo else '.update({')

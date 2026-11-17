@@ -112,3 +112,28 @@ def read_photo(client, tenant, inventory_id, photo_id):
     except Exception as exc:
         raise HTTPException(503, "Private photo is temporarily unavailable") from exc
     return Response(content=response.content, media_type="image/jpeg", headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Content-Disposition": "inline; filename=property-photo.jpg"})
+
+
+PHOTO_AUDIT_TABLE = 'external_agent_photo_audit_log'
+
+
+def photo_audit_start(client, tenant, key_id, operation, payload):
+    try:
+        result = client.table(PHOTO_AUDIT_TABLE).insert({
+            'tenant_id': tenant, 'api_key_id': key_id,
+            'operation': operation, 'status': 'started', 'payload': payload,
+        }).execute()
+        audit_id = ((result.data or [{}])[0]).get('id')
+        if not audit_id:
+            raise ValueError('missing audit id')
+        return str(audit_id)
+    except Exception as exc:
+        raise HTTPException(503, 'Private photo audit is unavailable; no photo mutation was performed') from exc
+
+
+def photo_audit_finish(client, tenant, audit_id, status, result=None):
+    from datetime import datetime, timezone
+    client.table(PHOTO_AUDIT_TABLE).update({
+        'status': status, 'result': result or {},
+        'completed_at': datetime.now(timezone.utc).isoformat(),
+    }).eq('tenant_id', tenant).eq('id', audit_id).execute()
