@@ -7860,11 +7860,16 @@ class SupabaseStorage(SupabaseStorage):
                 if isinstance(payload, dict):
                     haystack += " " + json.dumps(payload, ensure_ascii=False)
                 folded = haystack.casefold()
+                compact = re.sub(r"\s+", "", folded)
                 # Realistic briefs are multi-word ("Bandra 2bhk rent"). Match
                 # each token independently instead of the whole phrase; the
                 # haystack carries the broker's source text, so forms like
-                # 2bhk / 2 BHK / locality names all land here.
-                return all(token in folded for token in search_term.split())
+                # 2bhk / 2 BHK / locality names all land here. The compact
+                # variant lets "2bhk" match source text written as "2 BHK".
+                return all(
+                    token in folded or token in compact
+                    for token in search_term.split()
+                )
 
             rows = [row for row in rows if matches_search(row)]
         rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
