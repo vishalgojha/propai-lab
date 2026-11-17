@@ -2,7 +2,7 @@ import Link from "next/link";
 
 const FOOTER_LINKS = {
   connect: [
-    { label: "Connect WhatsApp", href: "https://app.propai.live/connect" },
+    { label: "Connect your assistant", href: "/#connect" },
     { label: "How it works", href: "/about#how-it-works" },
     { label: "Blog", href: "/blog" },
   ],
