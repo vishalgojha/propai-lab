@@ -1,0 +1,13 @@
+const fs=require('node:fs'),M=require('node:module'),ts=require('typescript'),assert=require('node:assert/strict');
+let m=new M(__filename);m._compile(ts.transpileModule(fs.readFileSync('src/lib/connectionHealth.ts','utf8'),{compilerOptions:{module:1,target:9}}).outputText,__filename);
+const {connectionHealth:h,connectionMetric:f}=m.exports;
+const base={phonesLoading:false,liveStatusChecked:true,phonesError:null,liveStatusError:false,connectedCount:0};
+assert.equal(h({...base,phonesLoading:true}).status,'checking');
+assert.equal(h({...base,liveStatusChecked:false}).status,'checking');
+assert.equal(h({...base,phonesError:'timeout'}).status,'warning');
+assert.equal(h({...base,liveStatusError:true,connectedCount:1}).status,'warning');
+assert.equal(h(base).status,'error');
+assert.equal(h({...base,connectedCount:1}).status,'healthy');
+assert.equal(f(0,true,false),'0');assert.equal(f(0,false,true),'Loading…');assert.equal(f(0,false,false),'—');assert.ok(f(59519,false,false).endsWith('(last known)'));
+const page=fs.readFileSync('src/app/connections/page.tsx','utf8');assert.ok(!page.includes('capture unaffected'));assert.ok(!page.includes('text-sm font-bold text-white truncate'));
+console.log('PASS: pending vs zero/error/healthy/unknown; stale count stays labeled; no unverified capture claim or truncated count.');

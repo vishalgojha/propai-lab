@@ -11423,7 +11423,7 @@ class SupabaseStorage(SupabaseStorage):
             return {**cached[1], "stats_available": True}
 
         def count(table: str) -> int:
-            query = self.client.table(table).select("id", count="exact")
+            query = self.client.table(table).select("id", count="exact").limit(0)
             if tenant_id:
                 query = query.eq("tenant_id", tenant_id)
             response = query.execute()
@@ -11434,11 +11434,14 @@ class SupabaseStorage(SupabaseStorage):
             "total_requirements", "total_brokers", "total_buildings",
         )
         try:
+            # Each source is counted once. limit(0) avoids returning ID rows.
+            # Keep the exact-count semantics and explicit tenant filter.
+            typed_counts = {table: count(table) for table in _ALL_TYPED_TABLES}
             stats = {
                 "total_messages": count("raw_messages"),
-                "total_parsed": sum(count(table) for table in _ALL_TYPED_TABLES),
-                "total_listings": sum(count(table) for table in _TYPED_LISTING_TABLE_NAMES),
-                "total_requirements": sum(count(table) for table in _TYPED_REQUIREMENT_TABLE_NAMES),
+                "total_parsed": sum(typed_counts.values()),
+                "total_listings": sum(typed_counts[table] for table in _TYPED_LISTING_TABLE_NAMES),
+                "total_requirements": sum(typed_counts[table] for table in _TYPED_REQUIREMENT_TABLE_NAMES),
                 "total_brokers": count("brokers"),
                 "total_buildings": count("buildings"),
             }

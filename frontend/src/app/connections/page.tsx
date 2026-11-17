@@ -8,8 +8,9 @@ import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartp
 import { useAuth } from "@/lib/AuthProvider";
 import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, optOutOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry } from "@/lib/api";
 import QRCode from "qrcode";
+import { connectionHealth, connectionMetric } from "@/lib/connectionHealth";
 
-type HealthStatus = "healthy" | "warning" | "error";
+type HealthStatus = "healthy" | "warning" | "error" | "checking";
 
 type ConnectionSnapshot = {
   totalParsed?: number;
@@ -80,7 +81,7 @@ function writeConnectionSnapshot(userId: string, patch: ConnectionSnapshot) {
 }
 
 function StatusDot({ status }: { status: HealthStatus }) {
-  const colors = { healthy: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.85)] animate-pulse", warning: "bg-amber-300", error: "bg-red-400" };
+  const colors = { checking: "bg-zinc-500 animate-pulse", healthy: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.85)] animate-pulse", warning: "bg-amber-300", error: "bg-red-400" };
   return <span aria-label={status === "healthy" ? "Connected" : status} className={`w-2 h-2 rounded-full ${colors[status]} shrink-0`} />;
 }
 
@@ -93,7 +94,7 @@ function StatBox({ icon, label, value, status }: { icon: React.ReactNode; label:
       <div className="flex-1 min-w-0">
         <div className="text-xs text-zinc-500 uppercase tracking-wider">{label}</div>
         <div className="mt-0.5 flex items-center gap-2">
-          <span className="text-sm font-bold text-white truncate">{value}</span>
+          <span className="text-sm font-bold text-white break-words">{value}</span>
           {status && <StatusDot status={status} />}
         </div>
       </div>
@@ -102,13 +103,13 @@ function StatBox({ icon, label, value, status }: { icon: React.ReactNode; label:
 }
 
 function HealthRow({ label, status, detail }: { label: string; status: HealthStatus; detail: string }) {
-  const labels = { healthy: "Healthy", warning: "Warning", error: "Error" };
-  const colors = { healthy: "text-zinc-200", warning: "text-zinc-400", error: "text-red-400" };
+  const labels = { checking: "Checking", healthy: "Healthy", warning: "Warning", error: "Error" };
+  const colors = { checking: "text-zinc-500", healthy: "text-zinc-200", warning: "text-zinc-400", error: "text-red-400" };
   return (
-    <div className="flex items-center justify-between py-2 border-b border-white/[0.04] last:border-0">
+    <div className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-white/[0.04] last:border-0">
       <span className="text-xs text-zinc-400">{label}</span>
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-zinc-500">{detail}</span>
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+        <span className="min-w-0 text-right text-xs text-zinc-500 break-words">{detail}</span>
         <span className={`text-xs font-semibold ${colors[status]}`}>{labels[status]}</span>
         <StatusDot status={status} />
       </div>
@@ -713,7 +714,7 @@ function PhoneCard({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-white truncate">
+            <span className="text-sm font-bold text-white break-words">
               {isUnpaired ? "New Phone" : (phone.instance_name || formatPhone(phoneDisplay))}
             </span>
             <StatusDot status={health} />
@@ -1848,6 +1849,9 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
   const [liveStatus, setLiveStatus] = useState<WhatsAppStatus | null>(null);
   const [phonesLoading, setPhonesLoading] = useState(true);
   const [phonesError, setPhonesError] = useState<string | null>(null);
+  const [liveStatusChecked, setLiveStatusChecked] = useState(false);
+  const [liveStatusError, setLiveStatusError] = useState(false);
+  const [statsLoading, setStatsLoading] = useState(true);
 
   const [totalParsed, setTotalParsed] = useState(0);
   const [totalListings, setTotalListings] = useState(0);
@@ -1970,7 +1974,12 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
     try {
       const status = await fetchJSON<WhatsAppStatus>("/dashboard/whatsapp-status", undefined, 8000);
       setLiveStatus(status);
-    } catch { /* ignore */ }
+      setLiveStatusError(false);
+    } catch {
+      setLiveStatusError(true);
+    } finally {
+      setLiveStatusChecked(true);
+    }
   }, []);
 
   const fetchStats = useCallback(async () => {
@@ -2035,7 +2044,8 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
         if (extProgress?.lag != null) setExtractionLag(extProgress.lag);
       } catch { /* ignore */ }
       writeConnectionSnapshot(user?.id || "", snapshotPatch);
-    } catch { /* ignore */ }
+    } catch { /* preserve last-known values */ }
+    finally { setStatsLoading(false); }
   }, [user?.id]);
 
   useEffect(() => {
@@ -2103,11 +2113,8 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
   // path. The extraction progress endpoint is the live database-backed count.
   const phoneMessageTotal = phones.reduce((sum, p) => sum + (p.total_messages_received || 0), 0);
   const totalMessages = progressAvailable ? rawTotal : phoneMessageTotal || rawTotal;
-  const displayMetric = (value: number, live: boolean) => {
-    if (live) return value.toLocaleString();
-    if (value > 0) return `Last known ${value.toLocaleString()}`;
-    return "—";
-  };
+  const health = connectionHealth({ phonesLoading, liveStatusChecked, phonesError, liveStatusError, connectedCount });
+  const displayMetric = (value: number, live: boolean) => connectionMetric(value, live, statsLoading);
 
   return (
     <div className={`theme-connections mx-auto w-full px-4 pb-12 pt-8 lg:px-8 ${view === "groups" ? "max-w-[1800px]" : "max-w-6xl"}`}>
@@ -2124,7 +2131,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
             <p className="propai-kicker text-[10px] font-semibold">Connection control</p>
             <h2 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-white">WhatsApp Phones</h2>
             <p className="text-xs text-zinc-500">
-              {connectedCount}/{phones.length} connected · {displayMetric(totalMessages, progressAvailable || phoneMessageTotal > 0)} messages
+              {health.detail} · {displayMetric(totalMessages, progressAvailable || phoneMessageTotal > 0)} messages
             </p>
           </div>
         </div>
@@ -2224,7 +2231,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
           {view === "groups" && <div className="order-1 grid lg:grid-cols-2 gap-4 mb-8">
             <Section title="Summary">
               <div className="grid grid-cols-2 gap-0 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
-                <StatBox icon={<Smartphone className="w-4 h-4 text-zinc-400" />} label="Phones" value={`${connectedCount}/${phones.length}`} />
+                <StatBox icon={<Smartphone className="w-4 h-4 text-zinc-400" />} label="Phones" value={health.pending ? "Checking…" : health.unknown ? "Unavailable" : `${connectedCount}/${phones.length}`} />
                 <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Total Messages" value={displayMetric(totalMessages, progressAvailable || phoneMessageTotal > 0)} />
                 <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="Market opportunities" value={displayMetric(totalParsed, statsAvailable)} />
                 <StatBox icon={<List className="w-4 h-4 text-zinc-400" />} label="Listings + Requirements" value={displayMetric(totalListings + totalRequirements, statsAvailable)} />
@@ -2233,16 +2240,16 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
 
             <Section title="System Health">
               <div>
-                <HealthRow label="WhatsApp" status={connectedCount > 0 ? "healthy" : "error"} detail={`${connectedCount} connected`} />
+                <HealthRow label="WhatsApp" status={health.status} detail={health.detail} />
                 <HealthRow
                   label="Market counters"
-                  status={statsAvailable ? "healthy" : "warning"}
-                  detail={statsAvailable ? `${totalParsed.toLocaleString()} market opportunities` : "Aggregate counts unavailable · capture unaffected"}
+                  status={statsLoading ? "checking" : statsAvailable ? "healthy" : "warning"}
+                  detail={statsLoading ? "Loading aggregate counts…" : statsAvailable ? `${totalParsed.toLocaleString()} market opportunities` : "Aggregate counts unavailable"}
                 />
                 <HealthRow
                   label="Messages read"
-                  status={!progressAvailable || eligiblePending > 0 ? "warning" : "healthy"}
-                  detail={!progressAvailable ? "Progress temporarily unavailable" : eligiblePending > 0 ? `${eligiblePending.toLocaleString()} pending · ${recentlyProcessed1h} in last hour` : `${recentlyProcessed1h} in last hour`}
+                  status={statsLoading ? "checking" : !progressAvailable || eligiblePending > 0 ? "warning" : "healthy"}
+                  detail={statsLoading ? "Loading progress…" : !progressAvailable ? "Progress temporarily unavailable" : eligiblePending > 0 ? `${eligiblePending.toLocaleString()} pending · ${recentlyProcessed1h} in last hour` : `${recentlyProcessed1h} in last hour`}
                 />
               </div>
             </Section>
