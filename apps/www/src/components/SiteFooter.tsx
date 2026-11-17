@@ -1,21 +1,19 @@
 import Link from "next/link";
 
 const FOOTER_LINKS = {
-  browse: [
-    { label: "Search listings", href: "/search" },
-    { label: "Property map", href: "/map" },
-    { label: "All localities", href: "/localities" },
+  connect: [
+    { label: "Connect WhatsApp", href: "https://app.propai.live/connect" },
+    { label: "How it works", href: "/about#how-it-works" },
     { label: "Blog", href: "/blog" },
   ],
   support: [
-    { label: "How it works", href: "/about#how-it-works" },
     { label: "Why no photos", href: "/about#no-photos" },
-    { label: "Search tips", href: "/search" },
+    { label: "Privacy", href: "/privacy-policy" },
+    { label: "Terms", href: "/terms-of-service" },
   ],
   company: [
     { label: "About PropAI", href: "/about" },
     { label: "Contact", href: "/contact" },
-    { label: "Localities", href: "/localities" },
   ],
 };
 
@@ -34,10 +32,10 @@ export default function SiteFooter() {
               live listings — and a direct line to the broker.
             </p>
           </div>
-          <nav aria-label="Browse">
-            <h4>Browse</h4>
+          <nav aria-label="Connect">
+            <h4>Connect</h4>
             <ul>
-              {FOOTER_LINKS.browse.map((link) => (
+              {FOOTER_LINKS.connect.map((link) => (
                 <li key={link.href}>
                   <Link href={link.href}>
                     {link.label}
@@ -73,7 +71,7 @@ export default function SiteFooter() {
         </div>
         <div className="site-footer-bottom">
           <p>© {new Date().getFullYear()} PropAI. Listings sourced from active broker WhatsApp networks.</p>
-          <p>Fresh property inventory, directly from brokers.</p>
+          <p>Ask in chat, get the listing and the broker's number.</p>
         </div>
       </div>
     </footer>
