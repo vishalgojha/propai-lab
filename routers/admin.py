@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 import httpx
 import re
 
@@ -197,6 +197,38 @@ async def admin_stats(user: dict = Depends(require_user)):
         "total_organizations": len(orgs),
         "total_active": sum(1 for o in orgs if o.get("is_active")),
         "organizations": orgs,
+    }
+
+
+@router.get("/api/internal/recent-signups")
+async def internal_recent_signups(
+    limit: int = 20,
+    authorization: str | None = Header(default=None),
+):
+    """Token-gated feed of new workspace signups for the owner's alert watcher.
+
+    A new signup provisions an organization, so organizations ordered by
+    created_at are the authoritative signup stream. Authenticated with the
+    SIGNUP_NOTIFY_TOKEN bearer env var instead of a user session so a
+    standing monitor can poll it.
+    """
+    expected = os.environ.get("SIGNUP_NOTIFY_TOKEN", "")
+    if not expected:
+        raise HTTPException(503, "Signup notification feed is not configured")
+    if authorization != f"Bearer {expected}":
+        raise HTTPException(401, "Invalid token")
+    limit = max(1, min(limit, 100))
+    orgs = storage.list_organizations(limit=limit)
+    return {
+        "signups": [
+            {
+                "organization_id": o.get("id"),
+                "name": o.get("name"),
+                "created_at": o.get("created_at"),
+                "is_active": o.get("is_active"),
+            }
+            for o in orgs
+        ]
     }
 
 
