@@ -357,3 +357,15 @@ async def delete_inventory(inventory_id: int, tenant: str = Depends(require_tena
     from routers.google_drive import queue_tenant_exports
     queue_tenant_exports(tenant)
     return {"ok": True}
+
+
+@router.get("/api/crm/inventory/{inventory_id}/photos")
+async def private_inventory_photos(inventory_id: int, tenant: str = Depends(require_tenant), user: dict = Depends(require_user)):
+    from private_crm_photos import photo_rows
+    return {"private": True, "photos": photo_rows(storage.client, tenant, inventory_id)}
+
+
+@router.get("/api/crm/inventory/{inventory_id}/photos/{photo_id}")
+async def private_inventory_photo(inventory_id: int, photo_id: int, tenant: str = Depends(require_tenant), user: dict = Depends(require_user)):
+    from private_crm_photos import read_photo
+    return read_photo(storage.client, tenant, inventory_id, photo_id)

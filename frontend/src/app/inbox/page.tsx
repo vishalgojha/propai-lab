@@ -3168,7 +3168,7 @@ Search messages
               {editingMarketScope ? "Close" : "Edit market scope"}
             </button>
           </div>
-          <p className="mt-1 leading-relaxed text-[var(--text-secondary)]">These are recent records from the areas you selected. Search above to inspect another locality when needed; source-broker details remain available inside the record.</p>
+          <p className="mt-1 leading-relaxed text-[var(--text-secondary)]">These are recent records from the areas you selected. Use Instinct or your connected assistant to search another locality. Source-broker details remain available inside the record.</p>
           {editingMarketScope && <form onSubmit={(event) => { event.preventDefault(); void saveMarket(); }} className="mt-3 border-t border-cyan-200/10 pt-3">
             <label htmlFor="edit-market-scope" className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Your areas</label>
             <div className="mt-2 flex flex-wrap gap-2" aria-label="Selected market areas">

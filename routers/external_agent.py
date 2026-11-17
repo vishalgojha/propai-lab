@@ -12,7 +12,7 @@ from dataclasses import asdict, is_dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
@@ -481,6 +481,71 @@ def _create_external_key(tenant_id: str, user_id: str, label: str, write_access:
 async def create_external_key(body: ApiKeyCreate, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
     created, token = _create_external_key(tenant_id, user["id"], body.label, body.write_access)
     return {"key": created, "token": token, "warning": "Save this token now. It will not be shown again."}
+
+
+@router.get("/inventory")
+async def external_inventory_search(q: str = "", limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), key: dict = Depends(external_auth)):
+    _require_scope(key, "inventory:read")
+    query = storage.client.table("crm_inventory").select("*").eq("tenant_id", str(key["tenant_id"]))
+    if q.strip():
+        # Parameter-safe filter token; do not permit PostgREST filter syntax.
+        needle = re.sub(r"[^\w +.-]", " ", q.strip())[:120]
+        query = query.or_(f"building_name.ilike.%{needle}%,location.ilike.%{needle}%,contact_number.ilike.%{needle}%")
+    rows = query.order("id").range(offset, offset + limit - 1).execute().data or []
+    return {"private": True, "records": rows, "next_offset": offset + limit if len(rows) == limit else None}
+
+
+@router.get("/inventory/{inventory_id}/photos")
+async def external_inventory_photos(inventory_id: int, key: dict = Depends(external_auth)):
+    _require_scope(key, "inventory:read")
+    from private_crm_photos import photo_rows
+    return {"private": True, "photos": photo_rows(storage.client, str(key["tenant_id"]), inventory_id)}
+
+
+@router.get("/inventory/{inventory_id}/photos/{photo_id}")
+async def external_inventory_photo(inventory_id: int, photo_id: int, key: dict = Depends(external_auth)):
+    _require_scope(key, "inventory:read")
+    from private_crm_photos import read_photo
+    return read_photo(storage.client, str(key["tenant_id"]), inventory_id, photo_id)
+
+
+@router.post("/inventory/{inventory_id}/photos")
+async def external_attach_photo(inventory_id: int, request: Request, key: dict = Depends(external_auth)):
+    from private_crm_photos import PHOTO_SCOPE, MAX_BYTES, inventory_target, save_photo
+    _require_scope(key, PHOTO_SCOPE)
+    inventory_target(storage.client, str(key["tenant_id"]), inventory_id)
+    if request.headers.get("content-type", "").split(";")[0] not in {"image/jpeg", "image/png", "image/webp"}:
+        raise HTTPException(415, "Send one JPEG, PNG or WebP photo as the request body")
+    content = bytearray()
+    async for chunk in request.stream():
+        content.extend(chunk)
+        if len(content) > MAX_BYTES:
+            raise HTTPException(413, "Photo must be at most 10 MB")
+    audit = _write_audit_start(key, "attach_photo", "crm_inventory", {"inventory_id": inventory_id, "bytes": len(content)}, [])
+    try:
+        result = await asyncio.to_thread(save_photo, storage.client, str(key["tenant_id"]), inventory_id, key["created_by"], bytes(content))
+        _write_audit_finish(audit, "succeeded", entity_id=str(inventory_id), result=result)
+        return {**result, "inventory_id": inventory_id}
+    except Exception:
+        _write_audit_finish(audit, "failed", error_code="private_photo_failed")
+        raise
+
+
+@router.put("/keys/{key_id}/photo-access")
+async def update_external_photo_access(key_id: str, body: ApiKeyWriteAccessUpdate, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    from private_crm_photos import PHOTO_SCOPE
+    await _require_org_permission(user, tenant_id, "manage_whatsapp")
+    rows = storage.client.table("external_agent_api_keys").select("id,scopes").eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").limit(1).execute().data or []
+    if not rows:
+        raise HTTPException(404, "Active external API key not found")
+    scopes = sorted((set(rows[0].get("scopes") or []) - {PHOTO_SCOPE}) | ({PHOTO_SCOPE} if body.enabled else set()))
+    audit = _write_audit_start({"tenant_id": tenant_id, "id": key_id}, "permission_change", "external_agent_api_key", {"photo_access": body.enabled}, [])
+    result = storage.client.table("external_agent_api_keys").update({"scopes": scopes}).eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").execute()
+    if not result.data:
+        _write_audit_finish(audit, "failed", error_code="key_update_empty")
+        raise HTTPException(409, "Key changed; refresh and retry")
+    _write_audit_finish(audit, "succeeded", entity_id=key_id, result={"photo_access": body.enabled})
+    return {"id": key_id, "scopes": scopes}
 
 
 @router.post("/inventory")

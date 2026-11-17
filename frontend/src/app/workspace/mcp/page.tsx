@@ -39,6 +39,8 @@ export default function McpWorkspacePage() {
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyMessage, setKeyMessage] = useState("");
   const [writeAccess, setWriteAccess] = useState(false);
+  const [keysLoading, setKeysLoading] = useState(true);
+  const [keysError, setKeysError] = useState(false);
   const [externalKeys, setExternalKeys] = useState<ExternalAgentKey[]>([]);
   const [keyScopeBusy, setKeyScopeBusy] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<ExternalWriteApproval[]>([]);
@@ -52,7 +54,8 @@ export default function McpWorkspacePage() {
   useEffect(() => {
     void fetchJSON<{ keys: ExternalAgentKey[] }>("/external/v1/keys")
       .then((result) => setExternalKeys(result.keys || []))
-      .catch(() => setKeyMessage("Could not load existing external API key permissions."));
+      .catch(() => { setKeysError(true); setKeyMessage("Could not load existing external API key permissions."); })
+      .finally(() => setKeysLoading(false));
     void fetchJSON<{ approvals: ExternalWriteApproval[] }>("/external/v1/approvals")
       .then((result) => setApprovals(result.approvals || []))
       .catch(() => setKeyMessage("Could not load pending CRM approvals."));
@@ -140,6 +143,20 @@ export default function McpWorkspacePage() {
     } finally {
       setKeyScopeBusy(null);
     }
+  }
+
+  async function updateKeyPhotoAccess(key: ExternalAgentKey, enabled: boolean) {
+    setKeyScopeBusy(key.id);
+    setKeyMessage("");
+    try {
+      const result = await fetchJSON<{ scopes: string[] }>(`/external/v1/keys/${encodeURIComponent(key.id)}/photo-access`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }),
+      });
+      setExternalKeys(current => current.map(item => item.id === key.id ? { ...item, scopes: result.scopes } : item));
+      setKeyMessage(enabled ? "Private photo attachment enabled. No inventory creation, other writes or publishing permissions were added." : "Private photo attachment disabled.");
+    } catch (error) {
+      setKeyMessage(error instanceof Error ? error.message : "Could not change photo permission.");
+    } finally { setKeyScopeBusy(null); }
   }
 
   async function rotateKey(key: ExternalAgentKey) {
@@ -237,7 +254,7 @@ export default function McpWorkspacePage() {
         <p className="mt-4 text-xs leading-5 text-zinc-400">Manual setup only: save the one-time token in Instinct Vault as a password/secret named <code className="text-amber-200">PROPAI_API_KEY</code>. Use endpoint <code className="text-amber-200">https://api.propai.live/api/external/v1</code> and send it as <code className="text-amber-200">X-API-Key</code> or <code className="text-amber-200">Authorization: Bearer</code>.</p>
         <label className="mt-5 flex max-w-xl items-start gap-3 rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-zinc-300">
           <input type="checkbox" checked={writeAccess} onChange={(event) => setWriteAccess(event.target.checked)} className="mt-0.5 h-4 w-4 accent-amber-300" />
-          <span><span className="font-semibold text-white">Allow private CRM writes</span><span className="mt-1 block leading-5 text-zinc-500">Instinct may create workspace-private listings and buyer requirements. It cannot publish, delete, send WhatsApp messages, activate ads, or change ad budgets.</span></span>
+          <span><span className="font-semibold text-white">Allow private CRM writes on the new token</span><span className="mt-1 block leading-5 text-zinc-500">New token only: this option resets when you leave this page. To change a saved key, use its controls below. Instinct may create workspace-private listings and buyer requirements. It cannot publish, delete, send WhatsApp messages, activate ads, or change ad budgets.</span></span>
         </label>
         <button type="button" onClick={() => void createExternalToken()} disabled={keyBusy} className="mt-5 inline-flex items-center gap-2 rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{keyBusy ? "Creating…" : "Create Instinct token"}</button>
         <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4">
@@ -254,11 +271,14 @@ export default function McpWorkspacePage() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button type="button" onClick={() => void updateKeyWriteAccess(key, !hasWriteAccess)} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{keyScopeBusy === key.id ? "Updating…" : hasWriteAccess ? "Remove write access" : "Enable private CRM writes"}</button>
+                  <button type="button" onClick={() => void updateKeyPhotoAccess(key, !key.scopes.includes("photos:write"))} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-emerald-300/30 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-300/10 disabled:opacity-60">{key.scopes.includes("photos:write") ? "Disable private photos" : "Enable private photos only"}</button>
                   <button type="button" onClick={() => void rotateKey(key)} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5 disabled:opacity-60">Rotate token</button>
                 </div>
               </div>;
             })}
-            {!externalKeys.some((key) => !key.revoked_at) && <p className="rounded-lg border border-white/10 px-3 py-4 text-xs text-zinc-500">No active external API keys found. Create a key above.</p>}
+            {keysLoading && <p role="status" className="text-xs text-zinc-400">Loading existing key permissions...</p>}
+            {keysError && <p role="alert" className="text-xs text-amber-200">Key permissions could not be loaded. This does not mean you have no keys. Refresh to try again; do not create a replacement token.</p>}
+            {!keysLoading && !keysError && !externalKeys.some((key) => !key.revoked_at) && <p className="rounded-lg border border-white/10 px-3 py-4 text-xs text-zinc-500">No active external API keys found. Create a key above.</p>}
           </div>
         </div>
         {approvals.length > 0 && <div className="mt-5 rounded-xl border border-red-300/20 bg-red-300/[0.04] p-4">

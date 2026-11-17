@@ -208,3 +208,14 @@ page. The response's `scope` identifies which chat category was searched.
 
 Do not retry repeated failures in a loop. Report the endpoint and status code,
 without including the API key.
+
+
+## Private property photos
+
+- `GET /inventory?q=...&limit=50&offset=0` searches private CRM records (inventory:read). Follow next_offset until null before concluding no match.
+- Resolve the exact record with the user. No matching record does NOT authorize creation. Do not infer identity from interiors.
+- `POST /inventory/{inventory_id}/photos` requires the separate `photos:write` scope and one raw JPEG, PNG or WebP body with matching Content-Type. Maximum 10 MB and 30 megapixels per image. No multipart, remote URL fetching, video, publication or listing creation. Images are validated and re-encoded to JPEG without metadata. Identical images on the same flat deduplicate safely.
+- `GET /inventory/{inventory_id}/photos` and `GET /inventory/{inventory_id}/photos/{photo_id}` require inventory:read. Bytes are authenticated, tenant-scoped, no-store and never served with public/signed URLs. The app's Private CRM editor has View photos.
+- A workspace owner can enable/disable only photos on a selected API key via `PUT /keys/{key_id}/photo-access` with `{ "enabled": true }` using normal owner login, or the MCP page's Enable private photos only control. This adds no broad CRM writes. Existing write access controls do not implicitly grant photo access.
+- Upload fails closed unless the live private-crm bucket is non-public. No photos are published or copied into the shared listing-media path.
+- Save the user-provided callback details on the chosen CRM record, with confirmation for any record creation/change. Do not contact the broker.
