@@ -7868,7 +7868,7 @@ class SupabaseStorage(SupabaseStorage):
                 # variant lets "2bhk" match source text written as "2 BHK".
                 return all(
                     token in folded or token in compact
-                    for token in search_term.split()
+                    for token in search_term.casefold().split()
                 )
 
             rows = [row for row in rows if matches_search(row)]
