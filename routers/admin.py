@@ -222,14 +222,22 @@ async def internal_recent_signups(
     if authorization != f"Bearer {expected}":
         raise HTTPException(401, "Invalid token")
     limit = max(1, min(limit, 100))
-    orgs = storage.list_organizations(limit=100)
-    if since:
+    if not since:
+        orgs = storage.list_organizations(limit=limit)
+    else:
         try:
             since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
             if since_dt.tzinfo is None:
                 since_dt = since_dt.replace(tzinfo=timezone.utc)
         except ValueError:
             raise HTTPException(400, "since must be ISO-8601")
+        # Drain mode: ascending keyset walk. Fetch a wide window, keep rows
+        # at/after since, sort oldest-first with an id tiebreak, and return
+        # the oldest `limit` of them. The caller repeats with the same since
+        # plus id dedup until a short page arrives, so bursts larger than the
+        # page and same-timestamp ties are fully drained. Safe while total
+        # organizations stay under the 5000-row fetch window.
+        orgs = storage.list_organizations(limit=5000)
         kept = []
         for o in orgs:
             raw = o.get("created_at")
@@ -240,9 +248,9 @@ async def internal_recent_signups(
             except (TypeError, ValueError):
                 continue
             if created >= since_dt:
-                kept.append(o)
-        orgs = kept
-    orgs = orgs[:limit]
+                kept.append((created, str(o.get("id") or ""), o))
+        kept.sort(key=lambda t: (t[0], t[1]))
+        orgs = [o for _, _, o in kept[:limit]]
     return {
         "signups": [
             {
