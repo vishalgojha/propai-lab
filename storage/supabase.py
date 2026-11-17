@@ -12935,7 +12935,10 @@ class SupabaseStorage(SupabaseStorage):
             # occupying the newest rows, hiding newer matching records. Keep
             # the window bounded: this endpoint fans out across eight typed
             # tables and fetches raw metadata for every candidate afterward.
-            candidate_limit = max(limit, 250)
+            # Match the quality-count sample depth (500). A shallower
+            # candidate pool than the count sample produced empty pages with
+            # a positive total when matching rows sat beyond the pool.
+            candidate_limit = max(limit, 500)
         typed_rows, raw_map = self._fetch_recent_market_typed_rows(
             tenant_id=tid,
             limit=candidate_limit,
