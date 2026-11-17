@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 """Functional regression tests for the 15-day assistant trial.
 
 Covers the user-approved semantics and review findings:
@@ -151,7 +152,8 @@ def test_successful_listing_search_records_trial_start():
         external_agent, "_tenant_parsed", mock.AsyncMock(return_value=[])
     ):
         result = asyncio.run(external_agent.external_listing_search(limit=20, offset=0, key=_key(["inventory:read"])))
-    assert result == {"results": [], "count": 0, "offset": 0}  # empty success still counts
+    assert {k: result[k] for k in ("results", "count", "offset")} == {"results": [], "count": 0, "offset": 0}  # empty success still counts
+    assert result["search_scope"]["exhaustive"] is False
     assert len(db.get("updates", [])) == 1
 
 
@@ -169,8 +171,9 @@ def test_errored_search_does_not_record_trial_start():
     with mock.patch.object(external_agent, "storage", _FakeStorage(db)), mock.patch.object(
         external_agent, "_tenant_parsed", mock.AsyncMock(side_effect=RuntimeError("backend exploded"))
     ):
-        with pytest.raises(RuntimeError):
+        with pytest.raises(HTTPException) as error:
             asyncio.run(external_agent.external_listing_search(limit=20, offset=0, key=_key(["inventory:read"])))
+        assert error.value.status_code == 503
     assert "updates" not in db
 
 

@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import os
 import re
 import secrets
@@ -16,6 +17,9 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
+from domain_glossary import build_ai_domain_context
+from registry.search_locality import resolve_search_locality, AmbiguousLocality
+from registry.locality_resolver import _fetch_all
 from routers.common import _require_org_permission, require_tenant, require_user, storage
 from storage import set_tenant_id
 
@@ -140,6 +144,13 @@ async def external_agent_docs():
         logger.exception("External agent API guide is unavailable")
         raise HTTPException(503, "External agent API guide is temporarily unavailable") from exc
     return PlainTextResponse(content, headers={"Cache-Control": "public, max-age=300"})
+
+
+
+@router.get("/knowledge", response_class=PlainTextResponse)
+async def external_agent_knowledge():
+    """Product vocabulary only. No workspace records, credentials or prompt."""
+    return PlainTextResponse(build_ai_domain_context(), headers={"Cache-Control": "public, max-age=300"})
 
 
 def _require_scope(key: dict, scope: str):
@@ -490,12 +501,50 @@ async def external_listing_search(
 ):
     if "inventory:read" not in (key.get("scopes") or []):
         raise HTTPException(403, "Token does not have inventory:read scope")
-    rows = await _tenant_parsed(limit=limit, offset=offset, kind="listing", search=q)
-    rows = _typed_filter(rows, locality=locality, bhk=bhk, transaction_type=transaction_type)
-    if budget_max is not None:
-        rows = [r for r in rows if _numeric_price(r) is not None and _numeric_price(r) <= budget_max]
+    txn = transaction_type.casefold().strip()
+    if txn and txn not in {"rent", "sale"}:
+        raise HTTPException(422, "transaction_type must be rent or sale")
+    wanted_bhk = None
+    if bhk.strip():
+        try:
+            wanted_bhk = float(bhk)
+            if not math.isfinite(wanted_bhk) or wanted_bhk <= 0:
+                raise ValueError
+        except ValueError as exc:
+            raise HTTPException(422, "bhk must be a positive number") from exc
+    scope = None
+    if locality.strip():
+        try:
+            reference = await asyncio.to_thread(
+                _fetch_all, storage.client, "locality_reference",
+                "id,sub_locality,parent_locality,canonical_locality,alternate_names,confidence",
+            )
+            scope = resolve_search_locality(locality, reference)
+        except (AmbiguousLocality, ValueError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(503, "Locality reference is temporarily unavailable") from exc
+    try:
+        rows = await _tenant_parsed(
+            limit=limit, offset=offset, kind="listing", search=q,
+            assistant_search={"tenant_id": str(key["tenant_id"]), "locality_scope": scope, "bhk": wanted_bhk,
+                              "transaction_type": txn, "budget_max": budget_max},
+        )
+    except Exception as exc:
+        logger.warning("External listing search unavailable: %s", type(exc).__name__)
+        raise HTTPException(503, "Listing search is temporarily unavailable") from exc
+    rows = [_parsed_to_dict(row) for row in rows]
     await asyncio.to_thread(_record_assistant_trial_start, str(key["tenant_id"]))
-    return {"results": [_public_listing(row) for row in rows], "count": len(rows), "offset": offset}
+    return {
+        "results": [_public_listing(row) for row in rows], "count": len(rows), "offset": offset,
+        "search_scope": {
+            "locality": scope.as_dict() if scope else None,
+            "candidate_scope": "bounded_recent_typed_rows_per_table",
+            "max_candidates_per_table": 250,
+            "exhaustive": False,
+            "note": "Locality and BHK apply before the candidate bound; text and normalized budget filter before final pagination. Count is this page, not all matching inventory.",
+        },
+    }
 
 
 @router.get("/requirements")
@@ -1314,9 +1363,10 @@ def _parsed_to_dict(row: object) -> dict:
     return dict(row)
 
 
-async def _tenant_parsed(*, limit: int, offset: int, kind: str, search: str = "") -> list[dict]:
+async def _tenant_parsed(*, limit: int, offset: int, kind: str, search: str = "", assistant_search: dict | None = None) -> list[dict]:
+    options = {"assistant_search": assistant_search} if assistant_search is not None else {}
     rows = await asyncio.to_thread(
-        storage.get_parsed, limit=limit, offset=offset, kind=kind, search=search
+        storage.get_parsed, limit=limit, offset=offset, kind=kind, search=search, **options
     )
     return [_parsed_to_dict(row) for row in rows]
 
@@ -1336,6 +1386,7 @@ def _public_listing(row: dict) -> dict:
     return {key: row.get(key) for key in (
         "id", "raw_message_id", "building_name", "micro_market", "location_raw",
         "bhk", "area_sqft", "price", "price_unit", "monthly_rent", "transaction_type",
+        "locality_id", "locality_sub_locality", "locality_parent_locality",
         "furnishing", "broker_name", "broker_phone", "last_seen", "created_at",
     )}
 

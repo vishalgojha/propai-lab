@@ -91,15 +91,45 @@ Read endpoints:
 | `GET /messages/{raw_message_id}/conversation` | Fetch nearby messages from the same private DM chat | `raw_message_id`, `limit` |
 | `POST /messages/{raw_message_id}/extract` | Queue one selected WhatsApp group message for the existing extractor | `raw_messages:extract`; groups only |
 
-Listing search semantics: `q` is free text matched broadly across the
-parsed fields and the broker's source text (case-insensitive, one AND-ed
-token at a time, so `Bandra 2bhk` and `2 BHK Bandra` both work). The
-structured filters match typed fields only: `bhk` compares the parsed BHK
-count, `locality` matches the parsed micro_market / location_raw /
-building_name fields, `transaction_type` matches the parsed transaction
-type, and `budget_max` caps the parsed price. Pass structured facts as
-parameters and keep `q` for everything else; a post that merely mentions
-"2 BHK" in passing will match `q=2bhk` but not `bhk=2`.
+## Shared realtor knowledge and search scope
+
+`GET /knowledge` returns the existing PropAI Indian real-estate glossary,
+not an agent prompt or workspace data. It is account-free product vocabulary:
+INR/lakh/crore, RK versus BHK, demand versus listings, rent/sale/pre-leased,
+and furnishing/fit-out meanings. Preserve explicit source wording and unknowns.
+
+For authenticated `GET /listings/search`, pass structured facts separately:
+`locality`, numeric `bhk` (including half-BHK), `transaction_type=rent|sale`,
+and `budget_max` in absolute INR. Keep `q` for remaining free text: it
+matches case-insensitive AND-ed whitespace tokens across parsed fields and
+source text, including a whitespace-compacted variant (so `2bhk` can match
+`2 BHK`). A source-text mention is not a typed BHK fact. Do not put a broad
+area into both `q` and `locality` when child pockets may omit that parent wording.
+Locality
+uses existing persisted reference relationships: a broad parent includes its
+known descendants; a specific pocket does not include its parent or siblings.
+Aliases must resolve unambiguously. Unmapped names stay exact and are labelled
+`exact_unmapped`; ambiguous names return 422. Reference lookup failures return
+503, not a fabricated empty result. Buildings are not locality evidence.
+
+Locality and BHK predicates apply before the per-table candidate limit.
+Free-text search and the existing normalized budget projection apply before
+final pagination/deduplication. The candidate window remains bounded to at
+most 250 recent matching typed rows per table, so search is NOT exhaustive
+across all history. `search_scope` states that boundary and the locality labels
+included. `count` is the result count on this page, not total inventory.
+Report each result's actual locality, not only the requested parent label.
+
+Do not silently treat nearby areas as exact matches or loosen a requirement.
+Inventory and original WhatsApp evidence are distinct: when the owner requests
+source evidence, use the separately permissioned message endpoints and label it
+as unverified source text. Locality knowledge never widens tenant access,
+private-DM consent, publication audience, or the requested data source.
+
+MCP and public-market search are separate implementations. This REST contract
+does not establish that they support identical hierarchy filtering; verify
+the tool's actual scope before claiming parity. Public market data does not
+become private workspace data through a client connection.
 
 Optional private CRM writes (only for a key with the matching write scope):
 

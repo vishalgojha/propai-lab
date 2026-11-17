@@ -7740,13 +7740,18 @@ class SupabaseStorage(SupabaseStorage):
             return rows[0]
         return None
 
-    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False, asset_type: str = "", kind: str = "", search: str = "", network_wide: bool = False, focus_id: int = 0, focus_schema: str = "") -> list[dict]:
+    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False, asset_type: str = "", kind: str = "", search: str = "", network_wide: bool = False, focus_id: int = 0, focus_schema: str = "", assistant_search: dict | None = None) -> list[dict]:
         # Merge all eight typed schemas globally. Per-table pagination causes
         # unstable pages and allows the same source item to appear twice.
         limit = max(1, min(int(limit or 1), 100))
         offset = max(0, min(int(offset or 0), 10000))
-        fetch_limit = min(250, max(limit + offset, limit))
-        effective_tenant_id = None if network_wide else self._tenant_id
+        fetch_limit = 250 if assistant_search is not None else min(250, max(limit + offset, limit))
+        if assistant_search is not None:
+            effective_tenant_id = assistant_search.get("tenant_id")
+            if not effective_tenant_id or network_wide:
+                raise ValueError("Assistant inventory search requires explicit tenant scope")
+        else:
+            effective_tenant_id = None if network_wide else self._tenant_id
         rows = []
         rows_with_display_name = []
         rows_without_display_name = []
@@ -7754,10 +7759,25 @@ class SupabaseStorage(SupabaseStorage):
         focus_table = focus_schema if focus_schema in typed_tables and int(focus_id or 0) > 0 else ""
         tables_to_read = [focus_table] if focus_table else typed_tables
         for table in tables_to_read:
+            if assistant_search:
+                if kind == "listing" and not table.endswith("_listings"):
+                    continue
+                txn = assistant_search.get("transaction_type")
+                if txn and f"_{txn}_" not in table:
+                    continue
+                if assistant_search.get("bhk") is not None and table.startswith("commercial_"):
+                    continue
             try:
                 query = self.client.table(table).select(
                     _typed_read_columns(table, include_evidence=True, include_raw_payload=True)
-                ).order("created_at", desc=True).limit(1 if focus_table else fetch_limit)
+                )
+                if assistant_search:
+                    scope = assistant_search.get("locality_scope")
+                    if scope:
+                        query = query.or_(scope.postgrest_filter())
+                    if assistant_search.get("bhk") is not None:
+                        query = query.eq("bhk", assistant_search["bhk"])
+                query = query.order("created_at", desc=True).limit(1 if focus_table else fetch_limit)
                 if focus_table:
                     query = query.eq("id", int(focus_id))
                 if effective_tenant_id:
@@ -7767,9 +7787,13 @@ class SupabaseStorage(SupabaseStorage):
                     row["_typed_table"] = table
                     rows.append(row)
             except Exception:
+                if assistant_search is not None:
+                    raise
                 continue
         normalized_rows = []
         rows = self._attach_source_sender_identity(rows, tenant_id=effective_tenant_id)
+        if assistant_search is not None:
+            rows = self._attach_locality_hierarchy(rows)
         for row in rows:
             try:
                 normalized_rows.append(self._typed_row_to_legacy(row))
@@ -7808,6 +7832,10 @@ class SupabaseStorage(SupabaseStorage):
                         if raw.get("is_group") is True and str(raw.get("message") or "").strip():
                             valid_raw_ids.add(int(raw["id"]))
                 except Exception:
+                    if assistant_search is not None:
+                        # An assistant search must not call missing evidence a
+                        # successful verified result (or start its trial).
+                        raise
                     # Keep rows if evidence lookup is temporarily unavailable;
                     # a database timeout must not erase the audit page.
                     valid_raw_ids = set(raw_ids)
@@ -7890,6 +7918,16 @@ class SupabaseStorage(SupabaseStorage):
                 )
 
             rows = [row for row in rows if matches_search(row)]
+        if assistant_search and assistant_search.get("budget_max") is not None:
+            # Use the existing normalized price projection, including its
+            # source-grounded corrections, before final result pagination.
+            ceiling = assistant_search["budget_max"]
+            def within_budget(row: dict) -> bool:
+                try:
+                    return 0 < float(row.get("price")) <= ceiling
+                except (TypeError, ValueError):
+                    return False
+            rows = [row for row in rows if within_budget(row)]
         rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
 
         # Tables have independent unique indexes. Remove exact source-item
@@ -7973,7 +8011,10 @@ class SupabaseStorage(SupabaseStorage):
                     seen_identity[identity].append(created)
             deduped.append(row)
 
-        return [dict_to_dataclass(ParsedObservation, row) for row in deduped[offset:offset + limit]]
+        page = deduped[offset:offset + limit]
+        if assistant_search is not None:
+            return page
+        return [dict_to_dataclass(ParsedObservation, row) for row in page]
 
     def get_parsed_by_message(self, raw_message_id: int) -> list[ParsedObservation]:
         rows = []
