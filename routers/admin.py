@@ -203,14 +203,18 @@ async def admin_stats(user: dict = Depends(require_user)):
 @router.get("/api/internal/recent-signups")
 async def internal_recent_signups(
     limit: int = 20,
+    since: str | None = None,
     authorization: str | None = Header(default=None),
 ):
     """Token-gated feed of new workspace signups for the owner's alert watcher.
 
-    A new signup provisions an organization, so organizations ordered by
-    created_at are the authoritative signup stream. Authenticated with the
-    SIGNUP_NOTIFY_TOKEN bearer env var instead of a user session so a
-    standing monitor can poll it.
+    A new signup provisions an organization (one per owner, retry-safe), so
+    organizations ordered by created_at are the authoritative signup stream.
+    `since` is an inclusive ISO-8601 lower bound on created_at; callers
+    deduplicate on organization_id so boundary-timestamp ties cannot be
+    missed or double-alerted. Authenticated with the SIGNUP_NOTIFY_TOKEN
+    bearer env var instead of a user session so a standing monitor can poll
+    it.
     """
     expected = os.environ.get("SIGNUP_NOTIFY_TOKEN", "")
     if not expected:
@@ -218,7 +222,27 @@ async def internal_recent_signups(
     if authorization != f"Bearer {expected}":
         raise HTTPException(401, "Invalid token")
     limit = max(1, min(limit, 100))
-    orgs = storage.list_organizations(limit=limit)
+    orgs = storage.list_organizations(limit=100)
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+            if since_dt.tzinfo is None:
+                since_dt = since_dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            raise HTTPException(400, "since must be ISO-8601")
+        kept = []
+        for o in orgs:
+            raw = o.get("created_at")
+            try:
+                created = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=timezone.utc)
+            except (TypeError, ValueError):
+                continue
+            if created >= since_dt:
+                kept.append(o)
+        orgs = kept
+    orgs = orgs[:limit]
     return {
         "signups": [
             {
