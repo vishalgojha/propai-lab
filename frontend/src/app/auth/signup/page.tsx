@@ -14,7 +14,7 @@ function SignupContent() {
   const router = useRouter();
   const [next] = useState(() => {
     if (typeof window === "undefined") return "/";
-    return new URLSearchParams(window.location.search).get("next") || "/";
+    return new URLSearchParams(window.location.search).get("next") || "/setup";
   });
 
   const [email, setEmail] = useState("");

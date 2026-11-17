@@ -1817,7 +1817,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
               </div>
               <div className="min-w-0">
                 <h2 id="confirm-selection-title" className="text-sm font-semibold text-white">Confirm group selection</h2>
-                <p className="mt-1 text-xs leading-5 text-zinc-400">{selectedGroups.size} group{selectedGroups.size === 1 ? " will" : "s will"} be included in extraction. Other groups remain excluded from extraction; live raw capture continues across groups and direct chats.</p>
+                <p className="mt-1 text-xs leading-5 text-zinc-400">New group messages captured after pairing, and your direct chats, keep being saved privately either way. Confirming these {selectedGroups.size} group{selectedGroups.size === 1 ? "" : "s"} turns their listings into shared-market listings that other brokers can search. Unchecked groups and your direct chats always stay private to your workspace.</p>
               </div>
               <button type="button" onClick={() => setSelectionConfirmationOpen(false)} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close selection confirmation">
                 <X className="h-4 w-4" />

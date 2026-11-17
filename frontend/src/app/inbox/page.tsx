@@ -3910,7 +3910,7 @@ return {
       title: "Connect WhatsApp first",
       description:
         marketAccess?.message ||
-        "Connect WhatsApp and start your trial to unlock your personalized broker market feed.",
+        "Connect WhatsApp to unlock your personalized broker market feed.",
       href: "/whatsapp?tab=numbers",
       cta: "Connect WhatsApp",
     };

@@ -161,35 +161,71 @@ export async function resolveTenantIdForUser(user?: AuthenticatedUser | null) {
   }
 }
 
-/** Start the MCP-only seven-day trial exactly once for this organization. */
+/** Start the 15-day assistant trial exactly once for this organization, on its first substantive search. */
+export function computeExistingMcpTrialState(
+  row: {
+    mcp_trial_started_at: string | null;
+    mcp_trial_ends_at: string | null;
+    mcp_trial_started_via?: string | null;
+  } | null,
+  now: number = Date.now(),
+) {
+  // Null only means "no trial recorded at all" (no row or both dates
+  // absent) - the sole case where a new trial may be written. A partial
+  // record (one date without the other) is indeterminate: both stored
+  // fields are returned preserved and the row is never overwritten.
+  if (!row || (!row.mcp_trial_started_at && !row.mcp_trial_ends_at)) return null;
+  const endsAt = row.mcp_trial_ends_at;
+  const endsMs = endsAt ? new Date(endsAt).getTime() : NaN;
+  const startMs = row.mcp_trial_started_at ? new Date(row.mcp_trial_started_at).getTime() : NaN;
+  // A recorded start without a parseable recorded end is a legacy row from
+  // before the 15-day window: its end date is indeterminate, so never
+  // report it as an active 15-day trial. A partial record without a start
+  // is never active either.
+  const active = Number.isFinite(startMs) && Number.isFinite(endsMs) && endsMs > now;
+  // Provenance passthrough: only "first_assistant_search" rows are recorded
+  // first searches; anything else is unknown, never inferred from dates.
+  return { started_at: row.mcp_trial_started_at, ends_at: endsAt, active, started_via: row.mcp_trial_started_via ?? null };
+}
+
 export async function ensureMcpTrial(tenantId: string) {
   const { data, error } = await supabase
     .from("organizations")
-    .select("mcp_trial_started_at, mcp_trial_ends_at")
+    .select("mcp_trial_started_at, mcp_trial_ends_at, mcp_trial_started_via")
     .eq("id", tenantId)
     .limit(1)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  if (data?.mcp_trial_started_at) {
-    return {
-      started_at: data.mcp_trial_started_at,
-      ends_at: data.mcp_trial_ends_at,
-      active: !data.mcp_trial_ends_at || new Date(data.mcp_trial_ends_at).getTime() > Date.now(),
-    };
+  const existing = computeExistingMcpTrialState(data);
+  if (existing) {
+    return existing;
   }
 
   const startedAt = new Date();
-  const endsAt = new Date(startedAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const endsAt = new Date(startedAt.getTime() + 15 * 24 * 60 * 60 * 1000);
   const { error: updateError } = await supabase
     .from("organizations")
     .update({
       mcp_trial_started_at: startedAt.toISOString(),
       mcp_trial_ends_at: endsAt.toISOString(),
+      mcp_trial_started_via: "first_assistant_search",
     })
     .eq("id", tenantId)
-    .is("mcp_trial_started_at", null);
+    .is("mcp_trial_started_at", null)
+    .is("mcp_trial_ends_at", null);
   if (updateError) throw new Error(updateError.message);
   return { started_at: startedAt.toISOString(), ends_at: endsAt.toISOString(), active: true };
+}
+
+/**
+ * Fire-and-forget trial start after a successful assistant search. Call this
+ * only after the search has actually returned; errored attempts must not
+ * start the clock. Bookkeeping failures never affect the search response.
+ */
+export function recordAssistantSearchSuccess(tenantId: string) {
+  void ensureMcpTrial(tenantId).catch((error) => {
+    console.warn("Unable to initialize MCP trial metadata:", error instanceof Error ? error.message : error);
+  });
 }
 
 function hashMcpConnectorToken(token: string) {

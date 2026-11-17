@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import * as api from "@/lib/api";
 import { useEventStream } from "@/lib/useEventStream";
 import { LatestWhatsAppKnowledge } from "@/components/dashboard/LatestWhatsAppKnowledge";
+import SetupGuide from "@/components/SetupGuide";
 import { ArrowRight, MessageCircle, Building2, Target, Home, AlertTriangle, Search, ListChecks, Radio, BarChart3, Clock3 } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
@@ -134,6 +135,8 @@ export default function DashboardPage() {
           ))}
         </div>
       </header>
+
+      <SetupGuide variant="card" />
 
       {dataError && (
         <div role="alert" className="flex items-center justify-between gap-4 rounded-xl border border-orange-300/30 bg-orange-50/70 px-4 py-3 text-sm text-orange-950">

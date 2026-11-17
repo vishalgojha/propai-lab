@@ -13,7 +13,7 @@ import {
   setMcpUnauthorizedHeaders,
 } from "./oauth.js";
 import { closeSessionRecord, createSessionRecord, touchSessionRecord } from "./sessionStore.js";
-import { ensureMcpTrial, resolveBrokerIdForUser, resolveTenantIdForUser, verifyPropAIToken } from "./supabase.js";
+import { resolveBrokerIdForUser, resolveTenantIdForUser, verifyPropAIToken } from "./supabase.js";
 import type { AuthenticatedUser } from "./types.js";
 
 declare global {
@@ -150,11 +150,9 @@ async function authMiddleware(req: Request, res: Response, next: NextFunction) {
       setMcpUnauthorizedHeaders(req, res);
       return res.status(403).json({ error: "Tenant membership is required" });
     }
-    // MCP is free for the first seven days. Trial bookkeeping is lazy and
-    // must not block a valid tenant if the metadata write is unavailable.
-    await ensureMcpTrial(tenantId).catch((error) => {
-      console.warn("Unable to initialize MCP trial metadata:", error instanceof Error ? error.message : error);
-    });
+    // The 15-day trial starts on the first successful assistant search
+    // (recorded inside the search tool handlers), never on authentication
+    // or session setup, so connecting does not consume the trial.
     req.user = {
       ...user,
       broker_id: brokerId || user.broker_id || user.id,

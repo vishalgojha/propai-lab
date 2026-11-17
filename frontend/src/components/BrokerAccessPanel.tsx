@@ -43,6 +43,8 @@ export default function BrokerAccessPanel({ onClose, nextPath = "/inbox", initia
       if (password.length < 8) throw new Error("Use at least 8 characters for your password.");
       if (phoneDigits.length < 10 || phoneDigits.length > 15) throw new Error("Enter a valid WhatsApp/mobile number.");
 
+      // New workspaces land on the guided setup after email confirmation.
+      window.localStorage.setItem("propai_auth_next", "/setup");
       await signUp(
         email.trim(),
         password,

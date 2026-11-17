@@ -42,7 +42,7 @@ export function BillingPage() {
         </div>
 
         <p className="text-sm leading-6 text-zinc-400">
-          <Check className="mr-2 inline h-4 w-4 text-emerald-300" /> Assistant Connection includes 7 days free after your first connection. WhatsApp self-chat is paid with no trial; the configured owner number remains exempt from lockouts.
+          <Check className="mr-2 inline h-4 w-4 text-emerald-300" /> New workspaces include a 15-day free trial that starts with the first assistant search. WhatsApp self-chat is paid with no trial; the configured owner number remains exempt from lockouts.
         </p>
       </div>
     </div>

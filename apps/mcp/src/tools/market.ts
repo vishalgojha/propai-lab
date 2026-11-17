@@ -4,6 +4,7 @@ import { getMarketSummary, logToolCall, toMarketSearchRow } from "../data.ts";
 import { executeMarketSearch } from "../marketSearch.ts";
 import { formatCurrencyCr } from "../format.ts";
 import { reportMarketResultAnomalies, reportMcpParserError } from "../anomalies.ts";
+import { recordAssistantSearchSuccess } from "../supabase.ts";
 import type { ToolContext } from "../types.js";
 import { deprecatedAlias } from "../compat.ts";
 
@@ -37,6 +38,7 @@ function marketText(result: { query: string; explanation: string; results?: unkn
 async function auditedMarketSearch(input: { query: string; tenantId: string; locality?: string; city?: string; limit?: number; propertyType?: "sale" | "rent" | "lease" | "all"; budgetMinInr?: number; budgetMaxInr?: number; furnishing?: string; minCarParks?: number; petsAllowed?: boolean; communityRestrictions?: string; dealType?: "direct" | "side_by_side"; minLastSeen?: string; sort?: "recency" | "rent" | "relevance"; offset?: number }) {
   try {
     const result = await executeMarketSearch(input);
+    recordAssistantSearchSuccess(input.tenantId);
     const rows = (result.results || []).map((row) => {
       const value = row as Record<string, unknown>;
       return value.listing_type ? toMarketSearchRow(value as any) : value;
@@ -123,6 +125,7 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
     const id = brokerId(context);
     await logToolCall(id, "market_summary", input);
     const result = await getMarketSummary({ tenantId: tenantId(context), locality: input.location, city: input.city, property_type: input.property_type, bhk: input.bhk, days: input.days });
+    recordAssistantSearchSuccess(tenantId(context));
     const parts = [
       `${input.location || "Mumbai"}: ${result.listing_count} listings`,
       result.avg_price_cr != null ? `avg sale ${formatCurrencyCr(result.avg_price_cr)}` : null,
@@ -143,6 +146,7 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
     const id = brokerId(context);
     await logToolCall(id, "market_trends", input);
     const result = await getMarketSummary({ tenantId: tenantId(context), locality: input.location, city: input.city, days: input.days });
+    recordAssistantSearchSuccess(tenantId(context));
     const top = result.top_localities?.map((l: any) => `${l.locality} (${l.count})`).join(", ") || "";
     const parts = [
       `${input.location || "Mumbai"} over ${input.days}d: ${result.listing_count} listings`,

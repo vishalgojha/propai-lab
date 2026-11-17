@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getStoredThreadMessages, summarizeThread, logToolCall } from "../data.ts";
+import { recordAssistantSearchSuccess } from "../supabase.ts";
 import type { ToolContext } from "../types.js";
 import { deprecatedAlias } from "../compat.ts";
 
@@ -21,6 +22,12 @@ function requireBrokerId(context?: ToolContext) {
   return id;
 }
 
+function requireTenantId(context?: ToolContext) {
+  const id = context?.user?.tenant_id;
+  if (!id) throw new Error("Authenticated organization scope is required");
+  return id;
+}
+
 export function registerInboxTools(server: McpServer, context: ToolContext) {
   server.registerTool("conversation_search", {
     description: "Search stored WhatsApp conversations by JID or browse recent threads",
@@ -32,6 +39,7 @@ export function registerInboxTools(server: McpServer, context: ToolContext) {
     const id = requireBrokerId(context);
     await logToolCall(id, "conversation_search", input);
     const messages = await getStoredThreadMessages({ brokerId: id, limit: input.limit });
+    recordAssistantSearchSuccess(requireTenantId(context));
     if (!messages.length) return textResponse("No stored conversations found.", { conversations: [] });
     const jids = [...new Set(messages.map((m) => m.remote_jid).filter(Boolean))];
     return textResponse(`${jids.length} conversation(s) found. Use conversation_timeline with a specific JID to view messages.`, { conversations: jids, message_count: messages.length });

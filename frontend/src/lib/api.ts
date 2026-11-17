@@ -533,6 +533,12 @@ export interface MarketAccessStatus {
   trial_active: boolean;
   paid_active: boolean;
   market_unlocked: boolean;
+  trial_state?: "not_started" | "active" | "expired" | "legacy" | "unknown";
+  trial_started_via?: string | null;
+  // True only when the trial clock was provably started by a first successful
+  // assistant search; null when the row predates that provenance tracking.
+  trial_first_search?: boolean | null;
+  market_groups_confirmed?: boolean | null;
   trial_started_at?: string | null;
   trial_ends_at?: string | null;
   reason: "ready" | "connect_whatsapp" | "sync_pending" | string;

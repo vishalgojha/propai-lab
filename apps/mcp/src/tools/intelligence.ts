@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getMarketSummary, getBuildingIntel, logToolCall } from "../data.ts";
 import { formatCurrencyCr } from "../format.ts";
 import type { ToolContext } from "../types.js";
+import { recordAssistantSearchSuccess } from "../supabase.ts";
 
 function textResponse(text: string, structured?: unknown) {
   return {
@@ -39,6 +40,7 @@ export function registerIntelligenceTools(server: McpServer, context: ToolContex
     await logToolCall(id, "intel_ask", input);
     const location = extractIntelLocality(input.question);
     const summary = location ? await getMarketSummary({ tenantId, locality: location, days: 90 }) : null;
+    if (location) recordAssistantSearchSuccess(tenantId); // only a real data search starts the clock
     const parts = [`Analysis for: "${input.question}"`];
     if (summary?.listing_count) {
       parts.push(`${location}: ${summary.listing_count} listings`);
@@ -64,6 +66,7 @@ export function registerIntelligenceTools(server: McpServer, context: ToolContex
     const tenantId = requireTenantId(context);
     await logToolCall(id, "intel_explain", input);
     const summary = input.location ? await getMarketSummary({ tenantId, locality: input.location, days: 90 }) : null;
+    if (input.location) recordAssistantSearchSuccess(tenantId);
     const ctx = summary ? `${input.location}: ${summary.listing_count} listings, avg sale ${formatCurrencyCr(summary.avg_price_cr)} over 90d` : "";
     return textResponse(`Explaining: ${input.topic}\n${ctx}`, { topic: input.topic, market_data: summary });
   });
@@ -87,6 +90,7 @@ export function registerIntelligenceTools(server: McpServer, context: ToolContex
         ? getBuildingIntel({ tenantId, building_name: input.entity_b, days_back: 90 })
         : getMarketSummary({ tenantId, locality: input.entity_b, days: 90 }),
     ]);
+    recordAssistantSearchSuccess(tenantId);
     const fmt = (x: any) => input.type === "building"
       ? `${x.building_name || "N/A"}: ${x.matched_localities?.join(", ") || "N/A"}`
       : `${x.listing_count} listings, avg sale ${formatCurrencyCr(x.avg_price_cr)}`;

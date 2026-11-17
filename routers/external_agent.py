@@ -156,6 +156,48 @@ def _require_dm_consent(key: dict):
     _require_scope(key, "raw_messages:dms")
 
 
+ASSISTANT_TRIAL_DAYS = 15
+# Written only when the clock is started by the first-successful-search path.
+# Rows without this marker predate it; their start is NOT a recorded search.
+TRIAL_START_FIRST_SEARCH = "first_assistant_search"
+
+# Tenants whose trial start is already persisted. Avoids a bookkeeping round
+# trip on every search: at most one read plus one guarded write per tenant
+# per process. Callers must run this via asyncio.to_thread.
+_trial_started_cache: set[str] = set()
+
+
+def _record_assistant_trial_start(tenant_id: str) -> None:
+    """Start the 15-day assistant trial exactly once, on the first successful
+    assistant search. Health checks, docs, key management and consent reads
+    never start the clock, and neither do errored searches (callers record
+    only after a search returns). This bookkeeping is lazy: a failed write
+    must never block the search itself. Blocking DB client - always call via
+    asyncio.to_thread."""
+    if tenant_id in _trial_started_cache:
+        return
+    try:
+        existing = storage.client.table("organizations").select(
+            "mcp_trial_started_at, mcp_trial_ends_at"
+        ).eq("id", tenant_id).limit(1).execute()
+        row = (existing.data or [None])[0] if existing else None
+        if row and (row.get("mcp_trial_started_at") or row.get("mcp_trial_ends_at")):
+            # Trial already recorded, or a partial record (one date without
+            # the other): both stored fields are preserved, never overwritten.
+            _trial_started_cache.add(tenant_id)
+            return
+        now = datetime.now(timezone.utc)
+        storage.client.table("organizations").update({
+            "mcp_trial_started_at": now.isoformat(),
+            "mcp_trial_ends_at": (now + timedelta(days=ASSISTANT_TRIAL_DAYS)).isoformat(),
+            "mcp_trial_started_via": TRIAL_START_FIRST_SEARCH,
+        }).eq("id", tenant_id).is_("mcp_trial_started_at", "null").is_("mcp_trial_ends_at", "null").execute()
+        # Only a brand-new cohort (both dates absent) ever reaches the write.
+        _trial_started_cache.add(tenant_id)
+    except Exception:
+        logger.warning("Unable to record assistant trial start for tenant %s", tenant_id, exc_info=True)
+
+
 def _redact_payload(payload: dict) -> dict:
     sensitive = {"phone", "contact_number", "owner_name", "contact_name", "quote", "budget_min", "budget_max"}
     return {
@@ -197,6 +239,46 @@ def _sensitive_fields(payload: dict, fields: set[str]) -> list[str]:
     return sorted(field for field in fields if payload.get(field) not in (None, "", [], {}))
 
 
+@router.get("/trial-status")
+async def external_trial_status(key: dict = Depends(external_auth)):
+    """Read-only trial display state for the key's own tenant.
+
+    Lets the broker's own assistant answer "how many free days are left" so it
+    can offer reminders. Never starts or changes the trial clock."""
+    from routers.workspace import _parse_trial_timestamp, assistant_trial_state
+
+    tenant_id = str(key["tenant_id"])
+    state = await asyncio.to_thread(assistant_trial_state, tenant_id)
+    days_left = None
+    ends = _parse_trial_timestamp(state.get("trial_ends_at"))
+    if state.get("trial_state") == "active" and ends is not None:
+        seconds_left = (ends - datetime.now(timezone.utc)).total_seconds()
+        days_left = max(0, -(-int(seconds_left) // 86400))  # ceil days
+    # Report the tenant's ACTUAL recorded window, never a blanket 15:
+    # pre-existing rows can carry a 7-day auth-era window, and rows without
+    # two parseable dates have no knowable total.
+    started = _parse_trial_timestamp(state.get("trial_started_at"))
+    days_total = None
+    if started is not None and ends is not None:
+        days_total = max(0, round((ends - started).total_seconds() / 86400))
+    return {
+        "tenant_scoped": True,
+        "trial_state": state.get("trial_state"),
+        "trial_started_at": state.get("trial_started_at"),
+        "trial_ends_at": state.get("trial_ends_at"),
+        "trial_started_via": state.get("trial_started_via"),
+        "trial_first_search": state.get("trial_first_search"),
+        "trial_days_left": days_left,
+        "trial_days_total": days_total,
+        "note": "Display state only; no billing or access enforcement is attached.",
+        # The user-approved reminder option is user-initiated: if the user asks
+        # to be reminded before the trial ends, the assistant schedules that
+        # reminder itself in its own chat with the user. PropAI runs no
+        # scheduler and sends no reminders.
+        "reminder_hint": "If the user asks to be reminded before the trial ends, schedule that reminder yourself (for example a day or two before trial_ends_at); PropAI does not schedule or send reminders.",
+    }
+
+
 @router.get("/messages/search")
 async def external_raw_message_search(
     q: str = "",
@@ -231,6 +313,7 @@ async def external_raw_message_search(
     rows = (query.order("timestamp", desc=True).limit(limit + 1).offset(offset).execute().data or [])
     has_more = len(rows) > limit
     items = rows[:limit]
+    await asyncio.to_thread(_record_assistant_trial_start, str(key["tenant_id"]))
     return {
         "results": items,
         "count": len(items),
@@ -411,6 +494,7 @@ async def external_listing_search(
     rows = _typed_filter(rows, locality=locality, bhk=bhk, transaction_type=transaction_type)
     if budget_max is not None:
         rows = [r for r in rows if _numeric_price(r) is not None and _numeric_price(r) <= budget_max]
+    await asyncio.to_thread(_record_assistant_trial_start, str(key["tenant_id"]))
     return {"results": [_public_listing(row) for row in rows], "count": len(rows), "offset": offset}
 
 
@@ -419,6 +503,7 @@ async def external_requirements(limit: int = Query(20, ge=1, le=50), offset: int
     if "requirements:read" not in (key.get("scopes") or []):
         raise HTTPException(403, "Token does not have requirements:read scope")
     rows = await _tenant_parsed(limit=limit, offset=offset, kind="requirement")
+    await asyncio.to_thread(_record_assistant_trial_start, str(key["tenant_id"]))
     return {"results": [_public_requirement(row) for row in rows], "count": len(rows), "offset": offset}
 
 
@@ -427,6 +512,7 @@ async def external_matches(q: str = "", limit: int = Query(20, ge=1, le=50), key
     if "matches:read" not in (key.get("scopes") or []):
         raise HTTPException(403, "Token does not have matches:read scope")
     rows = await _tenant_parsed(limit=limit, offset=0, kind="listing", search=q)
+    await asyncio.to_thread(_record_assistant_trial_start, str(key["tenant_id"]))
     return {"matches": [_public_listing(row) for row in rows], "count": len(rows), "query": q}
 
 
@@ -729,6 +815,7 @@ async def external_run_standing_search(
     if not search:
         raise HTTPException(404, "Standing search not found")
     rows = await _tenant_parsed(limit=limit, offset=0, kind="listing", search=search["query_text"])
+    await asyncio.to_thread(_record_assistant_trial_start, tenant_id)
     storage.client.table("saved_market_searches").update({
         "last_viewed_at": datetime.now(timezone.utc).isoformat(),
     }).eq("tenant_id", tenant_id).eq("id", search_id).execute()

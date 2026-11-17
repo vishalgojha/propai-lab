@@ -26,6 +26,10 @@ button, a, select, input[type="checkbox"], input[type="radio"] { cursor: pointer
 button:disabled { cursor: not-allowed; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
+/* Setup guide CTA keeps its dark label on the emerald fill; the global accent
+   link color above must not turn it green-on-green (unlayered rules beat
+   Tailwind's layered utilities, so this needs a scoped unlayered class). */
+.setup-guide-cta, .setup-guide-cta:hover { color: #000; }
 button { border: 0; }
 :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 

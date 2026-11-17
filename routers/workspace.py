@@ -1374,8 +1374,11 @@ async def market_access_status(
     connected = bool(details.get("connected"))
     sync_ready = await asyncio.to_thread(_market_sync_ready, details)
     paid_active = False
-    trial_active = sync_ready
-    unlocked = paid_active or trial_active
+    trial = await asyncio.to_thread(assistant_trial_state, tenant_id)
+    groups_confirmed = await asyncio.to_thread(_market_groups_confirmed, tenant_id)
+    # Access semantics unchanged: synced data alone unlocks the market.
+    # Trial fields below are display state only - no enforcement.
+    unlocked = paid_active or sync_ready
 
     reason = "ready"
     message = "Market Inbox is available for this connected workspace."
@@ -1384,7 +1387,7 @@ async def market_access_status(
         message = "WhatsApp is temporarily disconnected. Previously synced market data remains available."
     elif not connected:
         reason = "connect_whatsapp"
-        message = "Connect WhatsApp and start your trial to unlock your personalized broker market feed."
+        message = "Connect WhatsApp to unlock your personalized broker market feed."
     elif not sync_ready:
         reason = "sync_pending"
         message = "WhatsApp is connected. PropAI is waiting for the first sync record before opening Market Inbox."
@@ -1397,14 +1400,115 @@ async def market_access_status(
         "whatsapp_connected": connected,
         "waba_configured": waba_configured,
         "initial_sync_complete": sync_ready,
-        "trial_active": trial_active,
+        "market_groups_confirmed": groups_confirmed,
+        "trial_state": trial["trial_state"],
+        "trial_active": trial["trial_active"],
+        "trial_started_via": trial["trial_started_via"],
+        "trial_first_search": trial["trial_first_search"],
         "paid_active": paid_active,
         "market_unlocked": unlocked,
-        "trial_started_at": details.get("connected_since") if trial_active else None,
-        "trial_ends_at": None,
+        "trial_started_at": trial["trial_started_at"],
+        "trial_ends_at": trial["trial_ends_at"],
         "reason": reason,
         "message": message,
     }
+
+
+def _parse_trial_timestamp(value) -> datetime | None:
+    """Parse a stored trial timestamp; naive values are read as UTC.
+    Returns None on missing or malformed input - never guesses."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def assistant_trial_state(tenant_id: str | None) -> dict:
+    """Real assistant-trial display state for /api/market/access and the
+    assistant-facing trial-status endpoint.
+
+    The clock starts on the first successful assistant search (recorded by the
+    REST and MCP search paths) and runs 15 days. Never raises: trial display
+    must not break the access check, and a read failure reports "unknown" -
+    never a false "not_started"."""
+    state = {
+        "trial_state": "unknown",
+        "trial_started_at": None,
+        "trial_ends_at": None,
+        "trial_active": False,
+        # Provenance of the start. True only for rows written by the
+        # first-successful-search path; None (unknown) for pre-existing rows;
+        # False when no trial exists at all. Never inferred from dates.
+        "trial_started_via": None,
+        "trial_first_search": None,
+    }
+    if not tenant_id or not getattr(storage, "client", None):
+        return state
+    try:
+        result = storage.client.table("organizations").select(
+            "mcp_trial_started_at, mcp_trial_ends_at, mcp_trial_started_via"
+        ).eq("id", tenant_id).limit(1).execute()
+        rows = (result.data or []) if result else []
+    except Exception:
+        logging.getLogger(__name__).warning("Unable to read assistant trial state", exc_info=True)
+        return state
+    row = rows[0] if rows else None
+    if not row or (not row.get("mcp_trial_started_at") and not row.get("mcp_trial_ends_at")):
+        state["trial_state"] = "not_started"
+        state["trial_first_search"] = False
+        return state
+    state["trial_started_via"] = row.get("mcp_trial_started_via")
+    from routers.external_agent import TRIAL_START_FIRST_SEARCH
+    state["trial_first_search"] = True if row.get("mcp_trial_started_via") == TRIAL_START_FIRST_SEARCH else None
+    if not row.get("mcp_trial_started_at"):
+        if row.get("mcp_trial_ends_at"):
+            # Partial record (an end with no start): indeterminate. Preserve
+            # the stored end, never report not_started, never claim active.
+            state["trial_ends_at"] = row.get("mcp_trial_ends_at")
+            return state  # trial_state stays "unknown"
+        state["trial_state"] = "not_started"
+        return state
+    started = _parse_trial_timestamp(row.get("mcp_trial_started_at"))
+    if started is None:
+        return state  # malformed start: unknown, do not misreport either way
+    state["trial_started_at"] = row.get("mcp_trial_started_at")
+    state["trial_ends_at"] = row.get("mcp_trial_ends_at")
+    if not row.get("mcp_trial_ends_at"):
+        # Legacy rows from before the 15-day window have a recorded start but
+        # no recorded end: the end date is indeterminate. Never claim an
+        # active 15-day trial for them; the display stays silent on "legacy".
+        state["trial_state"] = "legacy"
+        return state
+    ends = _parse_trial_timestamp(row.get("mcp_trial_ends_at"))
+    if ends is None:
+        state["trial_state"] = "unknown"
+        return state
+    if ends > datetime.now(timezone.utc):
+        state["trial_state"] = "active"
+        state["trial_active"] = True
+    else:
+        state["trial_state"] = "expired"
+    return state
+
+
+def _market_groups_confirmed(tenant_id: str | None):
+    """True once the workspace has confirmed at least one market group,
+    None when the state cannot be read (never a false negative on error)."""
+    if not tenant_id or not getattr(storage, "client", None):
+        return None
+    try:
+        result = storage.client.table("organization_group_connections").select(
+            "group_jid"
+        ).eq("organization_id", tenant_id).eq("is_active", True).eq("opted_out", False).limit(1).execute()
+        return bool(result and result.data)
+    except Exception:
+        logging.getLogger(__name__).warning("Unable to read group confirmation state", exc_info=True)
+        return None
 
 
 # ── Chat Suggestion Chips ──────────────────────────────────────────
