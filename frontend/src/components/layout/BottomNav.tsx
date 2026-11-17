@@ -3,14 +3,14 @@
 import { usePathname, useRouter } from "next/navigation";
 import {
   House,
-  Inbox,
+  MessageSquareText,
   Wifi,
   Menu,
 } from "lucide-react";
 
 const tabs = [
   { href: "/dashboard", label: "Home", icon: House },
-  { href: "/inbox", label: "Inbox", icon: Inbox },
+  { href: "/chat", label: "Chat", icon: MessageSquareText },
   { href: "/whatsapp?tab=numbers", label: "Connect", icon: Wifi },
 ];
 

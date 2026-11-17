@@ -19,7 +19,7 @@ const baseNavSections = [
     title: "WhatsApp",
     items: [
       { href: "/whatsapp?tab=numbers", label: "WhatsApp" },
-      { href: "/inbox", label: "Inbox" },
+      { href: "/inbox", label: "Review market data" },
     ],
   },
   {
