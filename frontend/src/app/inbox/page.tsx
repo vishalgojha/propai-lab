@@ -3078,6 +3078,7 @@ function UnifiedMarketInbox() {
               onClick={() => {
                 if (value === "extracted") {
                   if (triageFilter === "extracted") return;
+                  setQuery("");
                   setTriageFilter("extracted");
                 } else {
                   setTriageFilter("raw");

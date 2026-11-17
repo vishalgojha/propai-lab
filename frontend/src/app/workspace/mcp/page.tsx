@@ -234,7 +234,7 @@ export default function McpWorkspacePage() {
         </div>
         <p className="mt-4 text-xs leading-5 text-zinc-500">Connecting Instinct? The <Link href="/workspace/instinct" className="font-semibold text-amber-200 underline underline-offset-2">Instinct tab</Link> has the approval-link setup, no API key to copy.</p>
         <div className="mt-5 grid gap-3 text-sm text-zinc-300 sm:grid-cols-3"><div><div className="font-semibold text-white">Base URL</div><code className="mt-1 block text-xs text-amber-200">https://api.propai.live</code></div><div><div className="font-semibold text-white">Inventory</div><code className="mt-1 block text-xs text-zinc-400">/api/external/v1/listings/search</code></div><div><div className="font-semibold text-white">Matches</div><code className="mt-1 block text-xs text-zinc-400">/api/external/v1/matches</code></div></div>
-        <p className="mt-4 text-xs leading-5 text-zinc-400">Instinct setup: save the one-time token in Instinct Vault as a password/secret named <code className="text-amber-200">PROPAI_API_KEY</code>. Use endpoint <code className="text-amber-200">https://api.propai.live/api/external/v1</code> and send it as <code className="text-amber-200">X-API-Key</code> or <code className="text-amber-200">Authorization: Bearer</code>.</p>
+        <p className="mt-4 text-xs leading-5 text-zinc-400">Manual setup only: save the one-time token in Instinct Vault as a password/secret named <code className="text-amber-200">PROPAI_API_KEY</code>. Use endpoint <code className="text-amber-200">https://api.propai.live/api/external/v1</code> and send it as <code className="text-amber-200">X-API-Key</code> or <code className="text-amber-200">Authorization: Bearer</code>.</p>
         <label className="mt-5 flex max-w-xl items-start gap-3 rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-zinc-300">
           <input type="checkbox" checked={writeAccess} onChange={(event) => setWriteAccess(event.target.checked)} className="mt-0.5 h-4 w-4 accent-amber-300" />
           <span><span className="font-semibold text-white">Allow private CRM writes</span><span className="mt-1 block leading-5 text-zinc-500">Instinct may create workspace-private listings and buyer requirements. It cannot publish, delete, send WhatsApp messages, activate ads, or change ad budgets.</span></span>
@@ -295,7 +295,7 @@ export default function McpWorkspacePage() {
             {
               task: "instinct",
               label: "Connect Instinct",
-              steps: "Open the Instinct tab on this page and approve the connection link there. No API key to copy.",
+              steps: "Ask Instinct to connect to PropAI, then open the link it sends. Sign in, check the code and approve. No API key to copy.",
               site: null,
               siteLabel: null,
               shots: null,
@@ -315,7 +315,7 @@ export default function McpWorkspacePage() {
             {
               task: "gemini",
               label: "Connect Gemini",
-              steps: "In the Gemini web app: Settings > Connected Apps > Custom apps > Add a custom app, then paste the PropAI MCP URL from above.",
+              steps: "Currently US-only, age 18+, personal Google Account, English and History on. If eligible, use Gemini on the web: Settings > Connected Apps > Custom apps > Add a custom app, then paste the MCP URL above. If this option is missing in India, use Claude or Instinct instead.",
               site: "https://gemini.google.com/",
               siteLabel: "Open Gemini",
               shots: null,
@@ -333,19 +333,22 @@ export default function McpWorkspacePage() {
               <div className="font-semibold text-white">{label}</div>
               <p className="mt-1 text-xs leading-5 text-zinc-500">{steps}</p>
               {shots && (
-                <div className="mt-3 grid grid-cols-3 gap-2">
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
                   {shots.map(([src, caption]) => (
                     <figure key={src} className="overflow-hidden rounded-lg border border-white/10">
-                      <img src={src} alt={caption} className="h-28 w-full object-cover object-top" />
+                      <a href={src} target="_blank" rel="noreferrer" aria-label={`${caption}. Open full-size screenshot`}>
+                        <img src={src} alt={caption} className="h-auto w-full" loading="lazy" />
+                      </a>
                       <figcaption className="px-1.5 py-1 text-[10px] leading-3 text-zinc-500">{caption}</figcaption>
                     </figure>
                   ))}
                 </div>
               )}
               <div className="mt-3 flex flex-wrap items-center gap-2">
+                {task === "instinct" && <a href="/workspace/instinct" className="inline-flex items-center gap-2 rounded-lg border border-cyan-300/30 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-300/10">Open Instinct setup</a>}
                 {site && <a href={site} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-cyan-300/30 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-300/10">{siteLabel}</a>}
                 {site && <button type="button" onClick={() => void copyEndpoint()} className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/[0.06]"><Copy className="h-3.5 w-3.5" /> {copied ? "Copied" : "Copy MCP URL"}</button>}
-                <button type="button" onClick={() => void runAgentTask(task as "instinct" | "claude" | "gemini" | "verify", task === "instinct")} disabled={agentBusy === task} aria-busy={agentBusy === task} className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-400 hover:bg-white/[0.06] disabled:opacity-60">
+                <button type="button" onClick={() => void runAgentTask(task === "instinct" ? "verify" : task as "claude" | "gemini" | "verify")} disabled={agentBusy === task} aria-busy={agentBusy === task} className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-400 hover:bg-white/[0.06] disabled:opacity-60">
                   <Play className="h-3.5 w-3.5" aria-hidden="true" />{agentBusy === task ? "Running…" : "Verify PropAI side"}
                 </button>
               </div>
