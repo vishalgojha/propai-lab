@@ -37,7 +37,7 @@ export default function BrokerSignature() {
   return (
     <div ref={ref} className={`broker-signature ${active ? "is-active" : ""}`}>
       <div className="broker-message-panel">
-        <div className="broker-panel-meta"><span><PlugZap className="h-3.5 w-3.5" /> PropAI assistant connection</span><span>private · tenant-scoped</span></div>
+        <div className="broker-panel-meta"><span><PlugZap className="h-3.5 w-3.5" /> PropAI assistant connection</span><span>private · your workspace only</span></div>
         <div className="broker-message-bubble">
           {messageLines.map((line, index) => <p key={line} className="broker-message-line" style={{ transitionDelay: `${index * 180}ms` }}>{line}</p>)}
         </div>
