@@ -7,9 +7,9 @@ import { sendPasswordReset, signInWithEmail, signInWithMagicLink, signUp } from 
 
 type AccessMode = "signin" | "signup";
 
-export default function BrokerAccessPanel({ onClose, nextPath = "/inbox" }: { onClose: () => void; nextPath?: string }) {
+export default function BrokerAccessPanel({ onClose, nextPath = "/inbox", initialMode = "signin" }: { onClose: () => void; nextPath?: string; initialMode?: AccessMode }) {
   const router = useRouter();
-  const [mode, setMode] = useState<AccessMode>("signin");
+  const [mode, setMode] = useState<AccessMode>(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
