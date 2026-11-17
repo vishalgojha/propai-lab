@@ -8,6 +8,7 @@ import "./zone-contract.css";
 import { getPhones, getAuthMe, getBusinessApiConfig, BusinessApiConfig, getProfile, getWhatsAppStatus, fetchJSON, isLiveWhatsAppConnection, getSoundPreferences as getSavedSoundPreferences, saveSoundPreferences, type Phone, type WhatsAppStatus } from "@/lib/api";
 import {
   MessageSquare,
+  MessageSquareText,
   Wifi,
   WifiOff,
   UserCheck,
@@ -67,6 +68,12 @@ type NotificationNotice = {
 // reachable through the Modules menu; the market inbox is tucked away as
 // "Review market data".
 const baseNavSections = [
+  {
+    title: "Assistant",
+    items: [
+      { href: "/chat", label: "Chat", icon: MessageSquareText },
+    ],
+  },
   {
     title: "WhatsApp",
     items: [

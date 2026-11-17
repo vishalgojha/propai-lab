@@ -23,21 +23,6 @@ const baseNavSections = [
     ],
   },
   {
-    title: "Brokerage",
-    items: [
-      { href: "/clients", label: "Clients & Leads" },
-      { href: "/leads", label: "Follow-ups" },
-      { href: "/crm", label: "Inventory" },
-      { href: "/deals", label: "Deals" },
-    ],
-  },
-  {
-    title: "Marketing",
-    items: [
-      { href: "/social-flow", label: "Ads Studio" },
-    ],
-  },
-  {
     title: "Settings",
     items: [
       { href: "/account?tab=profile", label: "Account" },

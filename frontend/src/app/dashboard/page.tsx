@@ -263,10 +263,10 @@ export default function DashboardPage() {
         <div className="dashboard-section-heading"><div><h2 id="actions-heading">Move the work forward</h2><p>Jump straight into the parts of your workspace that need attention.</p></div></div>
         <div className="dashboard-action-grid">
           {[
-            { label: "Open Market Inbox", count: "→", icon: MessageCircle, href: "/inbox", detail: "WhatsApp-style broker workspace" },
-            { label: "Search Listings", count: "→", icon: Search, href: "/chat", detail: "Find any property, broker, group" },
+            { label: "Ask the assistant", count: "→", icon: Search, href: "/chat", detail: "Find listings, requirements and matches in chat" },
             { label: "Review Items", count: suggestionPending || "→", icon: ListChecks, href: "/chat?tab=review", detail: "Records needing confirmation" },
-            { label: "Manage Groups", count: "→", icon: Radio, href: "/whatsapp?tab=groups", detail: "Choose groups to connect for parsing" },
+            { label: "Review market data", count: "→", icon: MessageCircle, href: "/inbox", detail: "Triage and correct captured market posts" },
+            { label: "Connect groups", count: "→", icon: Radio, href: "/whatsapp?tab=groups", detail: "Choose groups to connect for parsing" },
           ].map(card => (
             <button
               key={card.label}

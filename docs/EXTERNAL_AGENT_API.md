@@ -91,6 +91,16 @@ Read endpoints:
 | `GET /messages/{raw_message_id}/conversation` | Fetch nearby messages from the same private DM chat | `raw_message_id`, `limit` |
 | `POST /messages/{raw_message_id}/extract` | Queue one selected WhatsApp group message for the existing extractor | `raw_messages:extract`; groups only |
 
+Listing search semantics: `q` is free text matched broadly across the
+parsed fields and the broker's source text (case-insensitive, one AND-ed
+token at a time, so `Bandra 2bhk` and `2 BHK Bandra` both work). The
+structured filters match typed fields only: `bhk` compares the parsed BHK
+count, `locality` matches the parsed micro_market / location_raw /
+building_name fields, `transaction_type` matches the parsed transaction
+type, and `budget_max` caps the parsed price. Pass structured facts as
+parameters and keep `q` for everything else; a post that merely mentions
+"2 BHK" in passing will match `q=2bhk` but not `bhk=2`.
+
 Optional private CRM writes (only for a key with the matching write scope):
 
 | `POST /inventory` | Create private CRM inventory | `inventory:write`; requires `building_name` or `location` |
