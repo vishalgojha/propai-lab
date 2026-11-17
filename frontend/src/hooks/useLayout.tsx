@@ -47,12 +47,17 @@ function tabPath(href: string): string {
   return href.split("?")[0] || "/";
 }
 
+function isRetiredBrokerPath(href: string) {
+  return ["/deals", "/mydeals", "/clients", "/leads"].some((path) => href === path || href.startsWith(`${path}/`));
+}
+
 function normalizeTabs(input: WorkspaceTab[]): WorkspaceTab[] {
   const seen = new Set<string>();
   const unique: WorkspaceTab[] = [];
   for (const tab of input) {
     if (!tab || typeof tab.href !== "string") continue;
     const path = tabPath(tab.href);
+    if (isRetiredBrokerPath(path)) continue;
     if (seen.has(path)) continue;
     seen.add(path);
     unique.push({
@@ -78,7 +83,10 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
   ]);
 
   useEffect(() => {
-    setLastTabState(localStorage.getItem(TAB_STORAGE_KEY) || "/inbox");
+    const savedLastTab = localStorage.getItem(TAB_STORAGE_KEY) || "/inbox";
+    const retired = isRetiredBrokerPath(tabPath(savedLastTab));
+    setLastTabState(retired ? "/dashboard" : savedLastTab);
+    if (retired) localStorage.setItem(TAB_STORAGE_KEY, "/dashboard");
     try {
       const saved = JSON.parse(localStorage.getItem(WORKSPACE_TABS_KEY) || "null");
       if (Array.isArray(saved) && saved.length) {
@@ -130,6 +138,7 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem(WORKSPACE_TABS_KEY, JSON.stringify(normalized));
         return normalized;
       }
+      if (isRetiredBrokerPath(currentHref)) return normalized;
       const next = [...normalized, { id: currentHref, href: currentHref, title: titleForHref(currentHref), closable: currentHref !== "/inbox" }];
       localStorage.setItem(WORKSPACE_TABS_KEY, JSON.stringify(next));
       return next;

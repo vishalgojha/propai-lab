@@ -115,10 +115,10 @@ export default function SocialFlowPage() {
     fetchJSON<ListingContext>(`/social-flow/listing-context?source_schema=${encodeURIComponent(sourceSchema)}&source_id=${encodeURIComponent(sourceId)}`)
       .then((context) => {
         setListingContext(context);
-        setMessages((current) => [...current, { role: "assistant", text: `I loaded “${context.title}” from My Deals. I’ll use its verified details for the next campaign draft.` }]);
+        setMessages((current) => [...current, { role: "assistant", text: `I loaded “${context.title}” from your saved listings. I’ll use its verified details for the next campaign draft.` }]);
         setInput("Create a campaign for this listing");
       })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "I couldn’t load that My Deals listing."));
+      .catch((reason) => setError(reason instanceof Error ? reason.message : "I couldn’t load that saved listing."));
   }, [tokenReady]);
 
   async function uploadFiles(files: FileList | null) {
@@ -143,7 +143,7 @@ export default function SocialFlowPage() {
     const text = prompt.trim();
     if (!text || busy) return;
     const effectivePrompt = listingContext
-      ? `${text}\n\nSelected listing from My Deals (verified structured fields):\n${listingContext.brief}\nUse this listing as the campaign source. Do not invent missing fields; ask for anything required.`
+      ? `${text}\n\nSelected listing from your saved listings (verified structured fields):\n${listingContext.brief}\nUse this listing as the campaign source. Do not invent missing fields; ask for anything required.`
       : text;
     setInput("");
     setError("");
@@ -269,7 +269,7 @@ export default function SocialFlowPage() {
           </section>
         ) : <>
         <section className={`propai-social-messages ${messages.length === 1 ? "propai-social-empty" : ""} min-h-0 flex-1 space-y-3 overflow-y-auto rounded-3xl border border-white/10 bg-white/[0.02] p-3 sm:p-5`}>
-            {listingContext && <div className="rounded-xl border border-emerald-300/20 bg-emerald-300/[0.06] px-3 py-2 text-xs text-emerald-200">Listing attached from My Deals · {listingContext.title}</div>}
+            {listingContext && <div className="rounded-xl border border-emerald-300/20 bg-emerald-300/[0.06] px-3 py-2 text-xs text-emerald-200">Listing attached from your saved listings · {listingContext.title}</div>}
         {connectionStatus !== "connected" && <div className="propai-meta-setup"><div className="min-w-0"><p className="text-sm font-semibold text-amber-100">{connectionStatus === "needs_setup" ? "Connect Meta to manage ads" : "Meta connection needs attention"}</p><p className="mt-1 text-xs text-zinc-400">{connectionMessage || "Connect once to manage campaigns from this workspace."}</p></div><div className="propai-meta-actions"><button type="button" onClick={() => void connectMeta()} disabled={busy} className="rounded-lg bg-amber-200 px-3 py-2 text-xs font-semibold text-black disabled:opacity-50">Connect Meta</button><details><summary>More setup options</summary><div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={() => void discoverMetaIds()} disabled={discoveringIds} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40 disabled:opacity-50">{discoveringIds ? "Looking up IDs…" : "Find IDs automatically"}</button><button type="button" onClick={() => setInput("Guide me to find my Meta Page ID and Ad Account ID")} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40">Guide me</button><a href="https://business.facebook.com/settings/accounts" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40">Ad accounts <ExternalLink className="h-3 w-3" /></a><a href="https://www.facebook.com/pages/?category=your_pages" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40">Facebook Pages <ExternalLink className="h-3 w-3" /></a></div></details></div></div>}
           {messages.map((message, index) => <div key={`${message.role}-${index}`} className={`propai-social-message flex ${message.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === "user" ? "bg-emerald-400 text-black" : "border border-white/10 bg-[#11151c] text-zinc-200"}`}><RichText value={message.text} /></div></div>)}
           {busy && <div className="flex items-center gap-2 px-2 text-sm text-zinc-500"><Sparkles className="h-4 w-4 animate-pulse text-emerald-400" /> PropAI is working…</div>}

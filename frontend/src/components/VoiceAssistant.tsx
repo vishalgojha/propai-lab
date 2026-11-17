@@ -64,7 +64,6 @@ AUTHORITATIVE PROPAI UI GUIDE — use this for explanatory questions. Answer dir
 Product navigation:
 - Dashboard: workspace overview and broker action shortcuts.
 - Market Inbox: live WhatsApp market feed; search listings and requirements, and filter by listings or requirements.
-- My Deals: the signed-in broker's saved listings and requirements. Editing fields changes the structured record and keeps the original WhatsApp evidence attached; never edit or save data yourself.
 - Auto Matched: experimental suggestions comparing open requirements with active listings. A match is not a guarantee.
 - WhatsApp > My Numbers: connect or reconnect WhatsApp numbers. QR scanning and authorization are always done by the broker.
 - WhatsApp > Groups: review which groups are eligible for extraction. The broker must personally select and confirm groups.
@@ -93,7 +92,6 @@ Boundaries:
 function describeCurrentPage(pathname: string) {
   if (pathname.startsWith("/whatsapp")) return "The broker is currently in WhatsApp setup.";
   if (pathname.startsWith("/inbox")) return "The broker is currently in Market Inbox.";
-  if (pathname.startsWith("/deals")) return "The broker is currently in My Deals.";
   if (pathname.startsWith("/auto-matched")) return "The broker is currently in experimental Auto Matched.";
   if (pathname.startsWith("/account")) return "The broker is currently in Account settings.";
   if (pathname.startsWith("/reports")) return "The broker is currently in Reports.";

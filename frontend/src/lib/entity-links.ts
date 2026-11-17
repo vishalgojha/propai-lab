@@ -50,7 +50,7 @@ export function entityTooltip(entity: Pick<EntityLinkLike, "type" | "exists">) {
     case "firm":
       return "Click to view firm profile";
     case "client":
-      return "Click to view client profile";
+      return "Open assistant";
     case "broker":
       return "Click to view broker profile";
     default:
@@ -78,7 +78,6 @@ export function entityProfileHref(entity: EntityLinkLike) {
   if (entity.type === "developer") return `/developers/${slug || encodedText}`;
   if (entity.type === "listing" && entity.id) return `/market/listings?listing=${encodeURIComponent(String(entity.id))}`;
   if (entity.type === "requirement") return "/chat";
-  if (entity.type === "client" && entity.id) return `/clients/${encodeURIComponent(String(entity.id))}`;
   return "/chat";
 }
 

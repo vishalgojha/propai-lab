@@ -8,7 +8,7 @@ type ModuleItem = { href: string; label: string };
 type ModuleSection = { title: string; items: ModuleItem[] };
 
 const sections: ModuleSection[] = [
-  { title: "Brokerage", items: [{ href: "/crm", label: "Inventory" }, { href: "/deals", label: "Deals" }, { href: "/clients", label: "Clients & Leads" }, { href: "/leads", label: "Follow-ups" }] },
+  { title: "Brokerage", items: [{ href: "/crm", label: "Inventory" }] },
   { title: "Connections", items: [{ href: "/whatsapp?tab=numbers", label: "WhatsApp" }, { href: "/workspace/mcp", label: "Integrations" }, { href: "/workspace/instinct", label: "Instinct" }, { href: "/social-flow", label: "Ads Studio" }] },
   { title: "Operations", items: [{ href: "/admin/pipeline-health?tab=providers", label: "Pipeline Health" }, { href: "/brokers", label: "Broker Profiles" }, { href: "/inbox", label: "Review market data" }, { href: "/admin", label: "Super Admin" }] },
 ];

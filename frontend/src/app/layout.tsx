@@ -62,8 +62,7 @@ type NotificationNotice = {
 };
 
 // Chat-first navigation: the sidebar centers on the assistant, connection
-// setup and settings. Secondary CRM screens (Clients & Leads, Follow-ups,
-// Inventory, Deals, Ads Studio) stay live at their routes and remain
+// setup and settings. Secondary screens (Inventory, Ads Studio) stay live at their routes and remain
 // reachable through the Modules menu; the market inbox is tucked away as
 // "Review market data".
 const baseNavSections = [
@@ -101,10 +100,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     || pathname === "/observations"
     || pathname.startsWith("/admin")
     || pathname.startsWith("/buildings")
-    || pathname.startsWith("/clients")
-    || pathname.startsWith("/deals")
     || pathname.startsWith("/groups")
-    || pathname.startsWith("/mydeals")
     || pathname.startsWith("/reports")
     || pathname.startsWith("/whatsapp")
     || pathname.startsWith("/workspace");
