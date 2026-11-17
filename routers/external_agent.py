@@ -491,7 +491,7 @@ async def external_inventory_search(q: str = "", limit: int = Query(50, ge=1, le
         # Parameter-safe filter token; do not permit PostgREST filter syntax.
         needle = re.sub(r"[^\w +.-]", " ", q.strip())[:120]
         query = query.or_(f"building_name.ilike.%{needle}%,location.ilike.%{needle}%,contact_number.ilike.%{needle}%")
-    rows = query.order("id").range(offset, offset + limit - 1).execute().data or []
+    rows = query.order("id").offset(offset).limit(limit).execute().data or []
     return {"private": True, "records": rows, "next_offset": offset + limit if len(rows) == limit else None}
 
 

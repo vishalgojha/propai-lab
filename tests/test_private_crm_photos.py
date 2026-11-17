@@ -74,3 +74,19 @@ def test_idempotent_retry_same_flat_not_global():
 def test_scope_is_separate():
     from routers.external_agent import _require_scope
     with pytest.raises(HTTPException): _require_scope({"scopes": ["inventory:write"]}, "photos:write")
+
+def test_search_uses_production_query_builder(monkeypatch):
+    import asyncio
+    from routers import external_agent
+    from storage.supabase import _QueryBuilder
+    seen = []
+    class Rest:
+        def table(self, name): return _QueryBuilder(self, name)
+        def _execute(self, query):
+            seen.append(query)
+            return SimpleNamespace(data=[])
+    monkeypatch.setattr(external_agent, 'storage', SimpleNamespace(client=Rest()))
+    result = asyncio.run(external_agent.external_inventory_search(q='Slope', limit=10, offset=20, key={'tenant_id':'a','scopes':['inventory:read']}))
+    assert result['records'] == []
+    assert seen[0]._offset == 20 and seen[0]._limit == 10
+    assert ('tenant_id', 'eq', 'a') in seen[0]._filters
