@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import secrets
+from dataclasses import asdict, is_dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -1102,10 +1103,21 @@ async def deny_connect_session(user_code: str, user: dict = Depends(require_user
     return {"ok": True, "approved": False}
 
 
+def _parsed_to_dict(row: object) -> dict:
+    """get_parsed returns ParsedObservation dataclasses despite its dict
+    annotation; this REST surface speaks plain dicts."""
+    if isinstance(row, dict):
+        return row
+    if is_dataclass(row) and not isinstance(row, type):
+        return asdict(row)
+    return dict(row)
+
+
 async def _tenant_parsed(*, limit: int, offset: int, kind: str, search: str = "") -> list[dict]:
-    return await asyncio.to_thread(
+    rows = await asyncio.to_thread(
         storage.get_parsed, limit=limit, offset=offset, kind=kind, search=search
     )
+    return [_parsed_to_dict(row) for row in rows]
 
 
 def _numeric_price(row: dict) -> float | None:
