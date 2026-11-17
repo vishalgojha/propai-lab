@@ -8,7 +8,6 @@ import "./zone-contract.css";
 import { getPhones, getAuthMe, getBusinessApiConfig, BusinessApiConfig, getProfile, getWhatsAppStatus, fetchJSON, isLiveWhatsAppConnection, getSoundPreferences as getSavedSoundPreferences, saveSoundPreferences, type Phone, type WhatsAppStatus } from "@/lib/api";
 import {
   MessageSquare,
-  Briefcase,
   Wifi,
   WifiOff,
   UserCheck,
@@ -18,7 +17,6 @@ import {
   MapPin,
   GraduationCap,
   Radar,
-  TrendingUp,
   Key,
   LogOut,
   Menu,
@@ -30,7 +28,6 @@ import {
   SlidersHorizontal,
   Bell,
   RefreshCw,
-  Megaphone,
   BrainCircuit,
   Wrench,
   PanelLeftClose,
@@ -64,27 +61,17 @@ type NotificationNotice = {
   detail: string;
 };
 
+// Chat-first navigation: the sidebar centers on the assistant, connection
+// setup and settings. Secondary CRM screens (Clients & Leads, Follow-ups,
+// Inventory, Deals, Ads Studio) stay live at their routes and remain
+// reachable through the Modules menu; the market inbox is tucked away as
+// "Review market data".
 const baseNavSections = [
   {
     title: "WhatsApp",
     items: [
       { href: "/whatsapp?tab=numbers", label: "WhatsApp", icon: Wifi },
-      { href: "/inbox", label: "Inbox", icon: MessageSquare },
-    ],
-  },
-  {
-    title: "Brokerage",
-    items: [
-      { href: "/clients", label: "Clients & Leads", icon: UserCheck },
-      { href: "/leads", label: "Follow-ups", icon: Sparkles },
-      { href: "/crm", label: "Inventory", icon: Briefcase },
-      { href: "/deals", label: "Deals", icon: TrendingUp },
-    ],
-  },
-  {
-    title: "Marketing",
-    items: [
-      { href: "/social-flow", label: "Ads Studio", icon: Megaphone },
+      { href: "/inbox", label: "Review market data", icon: MessageSquare },
     ],
   },
   {
