@@ -1338,12 +1338,14 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		}
 		log.Printf("[broker %s] direct message received chat=%s sender=%s id=%s from_me=%t own_id=%s own_lid=%s", s.brokerID, info.Chat.String(), info.Sender.String(), info.ID, info.IsFromMe, ownID, ownLID)
 	}
-	// Capture live media once. Self-chat receives the same private storage
-	// metadata as normal ingestion, so a photo can become part of a draft
-	// without downloading it twice.
+	// Capture live media once. Ordinary group/DM media is metadata-only by
+	// default (deferred, never downloaded or uploaded to storage); message
+	// text and captions are serialized into raw_messages regardless. Only the
+	// broker's own self-chat still downloads, so a photo can become a draft
+	// and a voice note can be transcribed.
 	var capturedMedia *inboundMedia
 	if evt.Message != nil {
-		capturedMedia = sm.captureMedia(s, evt.Message, info.Chat.String(), info.ID, true)
+		capturedMedia = sm.captureMedia(s, evt.Message, info.Chat.String(), info.ID, isOwnWhatsAppJID(s, info.Chat))
 	}
 	// Self-chat commands go to the AI agent, but we still forward the message.
 	// Check every message (not just IsFromMe) so phone-sent self-messages
