@@ -3530,6 +3530,24 @@ class SupabaseStorage(Storage):
         res = self.client.table("organizations").select("*").eq("slug", slug).limit(1).execute()
         return res.data[0] if res.data else None
 
+    def list_organizations_after(self, after_ts: str | None = None, after_id: str | None = None, limit: int = 100) -> list[dict]:
+        """Keyset-paginated organizations, ascending by (created_at, id).
+
+        Rows strictly after the (after_ts, after_id) cursor. No offset and
+        no newest-N window, so a full drain cannot skip or repeat rows.
+        """
+        q = self.client.table("organizations").select("id,name,created_at,is_active")
+        if after_ts:
+            if after_id:
+                q = q.or_(
+                    f"created_at.gt.{after_ts},"
+                    f"and(created_at.eq.{after_ts},id.gt.{after_id})"
+                )
+            else:
+                q = q.gt("created_at", after_ts)
+        res = q.order("created_at").order("id").limit(limit).execute()
+        return res.data or []
+
     def list_organizations(self, limit: int = 100, offset: int = 0) -> list[dict]:
         res = self.client.table("organizations").select("*")\
             .order("created_at", desc=True).limit(limit).offset(offset).execute()

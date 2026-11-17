@@ -203,18 +203,20 @@ async def admin_stats(user: dict = Depends(require_user)):
 @router.get("/api/internal/recent-signups")
 async def internal_recent_signups(
     limit: int = 20,
-    since: str | None = None,
+    after_ts: str | None = None,
+    after_id: str | None = None,
     authorization: str | None = Header(default=None),
 ):
-    """Token-gated feed of new workspace signups for the owner's alert watcher.
+    """Token-gated keyset feed of workspace signups for the owner's alert watcher.
 
     A new signup provisions an organization (one per owner, retry-safe), so
-    organizations ordered by created_at are the authoritative signup stream.
-    `since` is an inclusive ISO-8601 lower bound on created_at; callers
-    deduplicate on organization_id so boundary-timestamp ties cannot be
-    missed or double-alerted. Authenticated with the SIGNUP_NOTIFY_TOKEN
-    bearer env var instead of a user session so a standing monitor can poll
-    it.
+    organizations are the authoritative signup stream. Pagination is a true
+    keyset cursor on (created_at, id), ascending: pass the previous page's
+    next_cursor to get the strictly-following rows. A full page always
+    comes with next_cursor; a short page ends the drain. No offset, no
+    newest-N window, no client-side dedup required. Authenticated with the
+    SIGNUP_NOTIFY_TOKEN bearer env var instead of a user session so a
+    standing monitor can poll it.
     """
     expected = os.environ.get("SIGNUP_NOTIFY_TOKEN", "")
     if not expected:
@@ -222,46 +224,35 @@ async def internal_recent_signups(
     if authorization != f"Bearer {expected}":
         raise HTTPException(401, "Invalid token")
     limit = max(1, min(limit, 100))
-    if not since:
-        orgs = storage.list_organizations(limit=limit)
-    else:
+    if after_ts:
         try:
-            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
-            if since_dt.tzinfo is None:
-                since_dt = since_dt.replace(tzinfo=timezone.utc)
+            parsed = datetime.fromisoformat(after_ts.replace("Z", "+00:00"))
+            after_ts = parsed.isoformat()
         except ValueError:
-            raise HTTPException(400, "since must be ISO-8601")
-        # Drain mode: ascending keyset walk. Fetch a wide window, keep rows
-        # at/after since, sort oldest-first with an id tiebreak, and return
-        # the oldest `limit` of them. The caller repeats with the same since
-        # plus id dedup until a short page arrives, so bursts larger than the
-        # page and same-timestamp ties are fully drained. Safe while total
-        # organizations stay under the 5000-row fetch window.
-        orgs = storage.list_organizations(limit=5000)
-        kept = []
-        for o in orgs:
-            raw = o.get("created_at")
+            raise HTTPException(400, "after_ts must be ISO-8601")
+        if after_id:
             try:
-                created = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-                if created.tzinfo is None:
-                    created = created.replace(tzinfo=timezone.utc)
-            except (TypeError, ValueError):
-                continue
-            if created >= since_dt:
-                kept.append((created, str(o.get("id") or ""), o))
-        kept.sort(key=lambda t: (t[0], t[1]))
-        orgs = [o for _, _, o in kept[:limit]]
-    return {
-        "signups": [
-            {
-                "organization_id": o.get("id"),
-                "name": o.get("name"),
-                "created_at": o.get("created_at"),
-                "is_active": o.get("is_active"),
-            }
-            for o in orgs
-        ]
-    }
+                UUID(after_id)
+            except ValueError:
+                raise HTTPException(400, "after_id must be a UUID")
+        else:
+            after_id = "00000000-0000-0000-0000-000000000000"
+    elif after_id:
+        raise HTTPException(400, "after_id requires after_ts")
+    orgs = storage.list_organizations_after(after_ts=after_ts, after_id=after_id, limit=limit)
+    signups = [
+        {
+            "organization_id": o.get("id"),
+            "name": o.get("name"),
+            "created_at": o.get("created_at"),
+            "is_active": o.get("is_active"),
+        }
+        for o in orgs
+    ]
+    next_cursor = None
+    if len(orgs) == limit and orgs:
+        next_cursor = {"after_ts": str(orgs[-1].get("created_at")), "after_id": str(orgs[-1].get("id"))}
+    return {"signups": signups, "next_cursor": next_cursor}
 
 
 @router.get("/api/admin/super-admins")
