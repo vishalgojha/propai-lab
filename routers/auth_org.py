@@ -163,12 +163,12 @@ async def auth_me(
     if not user:
         return {"authenticated": False}
     try:
-        orgs = storage.get_user_organizations(user["id"])
+        orgs = await asyncio.to_thread(storage.get_user_organizations, user["id"])
     except Exception as exc:
         logger.error("Could not load organizations for auth/me user %s: %s", user.get("id"), exc)
         orgs = []
     try:
-        is_super_admin = storage.is_super_admin(user["id"])
+        is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
         role_check_available = True
     except Exception as exc:
         logger.error("Could not check super-admin status for user %s: %s", user.get("id"), exc)
