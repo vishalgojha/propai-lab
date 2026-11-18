@@ -42,6 +42,7 @@ app.use(express.urlencoded({ extended: false }));
 
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", process.env.CORS_ORIGIN || "*");
+  res.header("Access-Control-Expose-Headers", "Mcp-Session-Id, WWW-Authenticate");
   res.header("Access-Control-Allow-Headers", "Authorization, Content-Type, Mcp-Session-Id, MCP-Protocol-Version");
   res.header("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(204).end();
