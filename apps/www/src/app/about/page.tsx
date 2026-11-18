@@ -1,15 +1,19 @@
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
-import { NoPhotosFaqJsonLd } from "@/components/NoPhotosFaq";
 import { getPublicDataOverview } from "@/lib/public-data";
 import { getAllLocalities } from "@/lib/localities";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "About PropAI — Real Listings from Broker WhatsApp Groups",
+  title: "About PropAI | Live broker inventory from WhatsApp groups",
   description:
-    "Most listings online are old. PropAI reads the WhatsApp groups where brokers actually work, shows how many groups corroborate each listing, and auto-hides anything untouched for 30 days. No stale photos — message the broker for current ones.",
+    "PropAI turns brokers' WhatsApp posts into searchable property inventory your AI assistant can query. Public search needs no PropAI account. Posts leave public search after 30 quiet days.",
+  openGraph: {
+    title: "About PropAI | Live broker inventory from WhatsApp groups",
+    description:
+      "How PropAI turns broker WhatsApp posts into searchable property inventory you query through your own AI assistant.",
+  },
 };
 
 export default async function AboutPage() {
@@ -18,7 +22,6 @@ export default async function AboutPage() {
   return (
     <div className="www-shell min-h-screen text-white">
       <SiteHeader />
-      <NoPhotosFaqJsonLd />
       <main className="www-page-main www-content-page max-w-3xl mx-auto px-4 lg:px-6 py-10 lg:py-16">
         <h1 className="text-[32px] lg:text-[44px] leading-[1.1] font-bold text-white mb-6">
           About <span className="text-green-400">PropAI</span>
@@ -26,55 +29,40 @@ export default async function AboutPage() {
 
         <div className="space-y-8 text-[15px] lg:text-[17px] text-zinc-400 leading-relaxed">
           <p>
-            PropAI is a live property discovery platform for people looking to
-            buy, rent, or lease a home or commercial space in India. Most property
-            listings you find online are old. A broker posts a flat
-            in a WhatsApp group, it gets forwarded twenty times, and three weeks
-            later it&apos;s still floating around the internet — except it&apos;s
-            already been rented out.
-          </p>
-          <p>
-            PropAI reads the WhatsApp groups where brokers actually
-            work. Every listing you see here came from a real broker, in a real
-            conversation, usually within the last few days. We show you how many
-            separate broker groups have mentioned it and when it was last seen —
-            so instead of trusting one listing, you&apos;re seeing what&apos;s
-            actually corroborated across the market right now. Anything untouched
-            for 30 days gets auto-hidden. What you see is what&apos;s live today,
-            not what was live sometime this month.
+            PropAI turns the property posts brokers share in their WhatsApp
+            groups into searchable inventory you can query through your own AI
+            assistant. Searching the public inventory needs no PropAI account:
+            connect Instinct or any MCP-compatible assistant and ask for a place
+            in plain English. Your assistant provider&apos;s own account or
+            subscription terms apply separately.
           </p>
           <div>
             <h2 className="text-lg lg:text-xl font-semibold text-white mb-3">
-              Why there are no photos.
+              Captured posts, not verified availability
             </h2>
             <p>
-              This inventory turns over daily. A photo shot when a flat was first
-              listed is often wrong by the time you&apos;d see it — wrong
-              furnishing, wrong price, sometimes a different flat entirely. Instead
-              of stale photos, every listing routes straight to the broker who&apos;s
-              actually holding it — message them on WhatsApp and they&apos;ll send
-              you real, current photos, video walkthroughs, and tell you what&apos;s
-              actually still available.
+              Every listing is captured from a real broker&apos;s post, and the
+              original message is kept as its source trail. A listing shows what
+              a broker reported, not a confirmed availability check, so confirm
+              the current status and details with the broker before acting on
+              it. A post leaves public search after 30 days without being seen
+              again.
             </p>
           </div>
-          <p>
-            <span className="text-white font-medium">Direct to broker, no middleman chatbot.</span>{" "}
-            Your enquiry goes straight to a real person who calls you back. No forms
-            that go nowhere, no chatbot standing between you and the person who has
-            the keys.
-          </p>
           <div>
             <h2 className="text-lg lg:text-xl font-semibold text-white mb-3">
-              What is PropAI?
+              Taking a listing forward
+            </h2>
+            <p>Every listing page has a WhatsApp enquiry button.</p>
+          </div>
+          <div>
+            <h2 className="text-lg lg:text-xl font-semibold text-white mb-3">
+              The workspace behind the inventory
             </h2>
             <p>
-              PropAI connects property seekers with the broker network where
-              opportunities are first shared: WhatsApp. We structure eligible
-              broker messages into searchable property details, preserve the
-              source trail, and keep old listings out of public search when they
-              have not been seen for 30 days. PropAI is a discovery layer, not a
-              web-scraped property portal, so availability and final details should
-              always be confirmed directly with the broker.
+              Brokers connect their own WhatsApp groups at app.propai.live and
+              search their deal flow, listings and client requirements, through
+              their assistant. Broker access starts with a 15-day free trial.
             </p>
           </div>
         </div>

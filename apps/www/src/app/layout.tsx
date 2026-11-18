@@ -24,8 +24,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'PropAI — Find Property Through Verified Brokers',
-    description: 'Search verified residential and commercial property listings from WhatsApp broker networks.',
+    title: 'PropAI | Live broker inventory in your AI assistant',
+    description: 'Search live broker inventory from WhatsApp groups through your own AI assistant.',
     images: ['/opengraph-image'],
   },
   robots: 'noindex, nofollow',

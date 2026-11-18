@@ -21,6 +21,11 @@ export const metadata = {
   title: "Property Map — Live Listings | PropAI",
   description:
     "Explore fresh property listings on a map, with live broker inventory alongside every mapped result.",
+  openGraph: {
+    title: "Property Map | Live Listings | PropAI",
+    description:
+      "Broker posts on a map, captured from WhatsApp groups. Posts leave public search after 30 quiet days.",
+  },
 };
 
 // Keep the map responsive: it renders every returned card beside the map and
