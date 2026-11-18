@@ -1,18 +1,10 @@
-import Link from "next/link";
-import { Search, MessageSquare } from "lucide-react";
-import { describeNaturalSearch, searchNaturalLanguageListings } from "@/lib/natural-search";
-import { getAllBuildings, getAllLocalities, type BuildingSummary } from "@/lib/localities";
-import { slugify } from "@/lib/supabase";
-import { canonicalLocality } from "@/lib/locality-canon";
-import SearchBox from "@/components/SearchBox";
+import { searchNaturalLanguageListings } from "@/lib/natural-search";
+import { getAllLocalities } from "@/lib/localities";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import { ShortlistProvider } from "@/components/ShortlistProvider";
 import ShortlistBar from "@/components/ShortlistBar";
-import RequirementCapture from "@/components/RequirementCapture";
 import SearchResultsView from "@/components/SearchResultsView";
-import RelatedSearches from "@/components/RelatedSearches";
-import { generateSearchRelated } from "@/lib/related-searches";
 import { NOINDEX } from "@/lib/seo";
 
 const GOOGLE_MAPS_API_KEY =
@@ -26,7 +18,7 @@ export const dynamic = "force-dynamic";
 export const metadata = {
   title: "Search Listings — PropAI",
   description:
-    "Search live WhatsApp broker listings in plain English. Try queries like '3 BHK in Bandra West budget 2 to 3 lakh'.",
+    "Search PropAI listings through an assistant. Connect an assistant to PropAI, then ask for properties in plain language.",
   robots: NOINDEX,
   alternates: {
     canonical: "/search",
@@ -49,18 +41,33 @@ async function getSearchLocalities() {
   }
 }
 
-async function getSearchBuildings(): Promise<BuildingSummary[]> {
-  try {
-    return await Promise.race([
-      getAllBuildings(),
-      new Promise<BuildingSummary[]>((_, reject) =>
-        setTimeout(() => reject(new Error("Building lookup timed out")), 8000),
-      ),
-    ]);
-  } catch (err) {
-    console.error("getAllBuildings failed:", err);
-    return [];
-  }
+function HowToSearchPanel() {
+  return (
+    <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5 lg:p-6">
+      <h2 className="text-lg font-semibold text-[var(--text-primary)]">How to search</h2>
+      <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-[var(--text-secondary)]">
+        <li>Connect an assistant to PropAI.</li>
+        <li>Ask for properties in plain language (for example, locality, budget, BHK, or property type).</li>
+      </ol>
+      <div className="mt-4 space-y-2 text-sm text-[var(--text-secondary)]">
+        <p>
+          For Instinct, say{" "}
+          <span className="font-medium text-[var(--text-primary)]">&ldquo;Connect me to PropAI&rdquo;</span>.
+        </p>
+        <p>
+          For compatible MCP clients, use{" "}
+          <code className="rounded bg-black/10 px-1.5 py-0.5 text-[var(--text-primary)]">
+            https://mcp.propai.live/mcp
+          </code>
+          .
+        </p>
+        <p>
+          Matching listings can be returned as links, without broker phone numbers. Searches can currently return no
+          results.
+        </p>
+      </div>
+    </section>
+  );
 }
 
 export default async function SearchPage({ searchParams }: { searchParams: SearchParams }) {
@@ -69,14 +76,10 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
   const asset =
     assetParam === "residential" || assetParam === "commercial" ? assetParam : null;
 
-  const [knownLocalities, knownBuildings] = await Promise.all([
-    getSearchLocalities(),
-    getSearchBuildings(),
-  ]);
-
   let state: Awaited<ReturnType<typeof searchNaturalLanguageListings>> | null = null;
   let searchError = false;
   if (query) {
+    const knownLocalities = await getSearchLocalities();
     try {
       state = await searchNaturalLanguageListings(query, 24, asset, knownLocalities);
     } catch (err) {
@@ -85,307 +88,49 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
     }
   }
 
-  const summary = state?.parsed ? describeNaturalSearch(state.parsed) : "";
-
-  // Candidate search can return a nearby market when the exact locality has
-  // limited live inventory. Make that fallback explicit instead of claiming
-  // every card belongs to the requested locality.
-  const requestedLocalitySlugs = new Set(
-    (state?.parsed.matchedLocalities ?? []).map((locality) => canonicalLocality(locality.locality).slug),
-  );
-  const nearbyResultLocalities = state?.parsed.locality
-    ? Array.from(new Set(
-        state.results
-          .map((row) => row.micro_market || row.locality_resolved || row.locality_raw)
-          .filter((locality): locality is string => Boolean(locality))
-          .filter((locality) => !requestedLocalitySlugs.has(canonicalLocality(locality).slug)),
-      )).slice(0, 3)
-    : [];
-
-  const requestedLocalities = state?.parsed.matchedLocalities ?? [];
-
-  let relatedSections: Awaited<ReturnType<typeof generateSearchRelated>> = [];
-  if (state?.parsed) {
-    try {
-      relatedSections = await generateSearchRelated(state.parsed);
-    } catch (err) {
-      console.error("generateSearchRelated failed:", err);
-    }
-  }
-
-  const hasResults = Boolean(state);
+  const hasListingResults = Boolean(state && state.results.length > 0);
 
   return (
     <div className="www-shell min-h-screen">
       <SiteHeader />
       <ShortlistProvider>
-      <main className="www-page-main www-search-page mx-auto max-w-[1600px] px-4 py-6 sm:px-8 lg:py-12 xl:px-12">
-        <header className="max-w-5xl">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[var(--accent-primary)]/35 bg-[var(--accent-soft)] px-3 py-1 text-xs font-medium text-[var(--public-signal)]">
-            <Search className="h-3.5 w-3.5" aria-hidden="true" />
-            Natural-language search
-          </div>
-          <h1 className="max-w-3xl text-[28px] font-bold leading-[1.08] text-[var(--text-primary)] sm:text-[34px] lg:text-[48px]">
-            Search live listings the way you actually ask for them.
-          </h1>
-          <p className="mt-4 max-w-3xl text-[15px] text-[var(--text-secondary)] lg:text-[18px]">
-            Describe the home you want, and PropAI will look across live broker listings, localities, and buildings.
-          </p>
-
-          {!query && (
-            <div className="mt-8 max-w-2xl">
-              <SearchBox query="" asset={assetParam} localities={knownLocalities} buildings={knownBuildings} />
-            </div>
-          )}
-
-          {!query && (
-            <>
-              <div className="mt-8 flex flex-wrap gap-2">
-                {[
-                  "3 BHK in Bandra West budget 2 to 3 lakh",
-                  "2 BHK in Andheri West under 2 lakh",
-                  "Fully furnished rental in Powai",
-                  "Offices in BKC",
-                ].map((example) => (
-                  <Link
-                    key={example}
-                    href={`/search?q=${encodeURIComponent(example)}`}
-                    className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:border-[var(--accent-primary)] hover:bg-[var(--bg-surface-hover)] hover:text-[var(--text-primary)]"
-                  >
-                    {example}
-                  </Link>
-                ))}
-              </div>
-
-              <div className="mt-8 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5 lg:p-6">
-                <h2 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">Search tips</h2>
-                <ul className="grid gap-2 text-sm text-[var(--text-secondary)] sm:grid-cols-2">
-                  <li>• Type the way you&apos;d ask a broker — plain English works.</li>
-                  <li>• Add a locality: &ldquo;in Bandra West&rdquo;, &ldquo;near Andheri&rdquo;.</li>
-                  <li>• Set a budget: &ldquo;budget 2 to 3 lakh&rdquo; or &ldquo;under 2 lakh&rdquo;.</li>
-                  <li>• Specify config: &ldquo;2 BHK&rdquo;, &ldquo;3 BHK furnished&rdquo;.</li>
-                  <li>• Pick residential or commercial from the toggle above.</li>
-                  <li>• Stuck? Try a building or society name directly.</li>
-                </ul>
-              </div>
-            </>
-          )}
-        </header>
-
-        {searchError ? (
-          <section className="mt-10 rounded-2xl border border-red-400/20 bg-red-400/5 p-6 lg:p-8">
-            <h2 className="mb-2 text-lg font-semibold text-[var(--text-primary)]">Search is temporarily unavailable</h2>
-            <p className="text-sm text-[var(--text-secondary)]">
-              We couldn&apos;t complete your search right now. Please try again in a moment, or{" "}
-                <Link href="/search" className="text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)]">
-                refresh the page
-              </Link>.
+        <main className="www-page-main www-search-page mx-auto max-w-[1600px] px-4 py-6 sm:px-8 lg:py-12 xl:px-12">
+          <header className="max-w-4xl">
+            <h1 className="text-[28px] font-bold leading-[1.08] text-[var(--text-primary)] sm:text-[34px] lg:text-[48px]">
+              Search through an assistant
+            </h1>
+            <p className="mt-4 max-w-3xl text-[15px] text-[var(--text-secondary)] lg:text-[18px]">
+              PropAI is assistant-led. Use your assistant to ask for properties in plain language.
             </p>
-          </section>
-        ) : hasResults ? (
-          <section className="mt-10 space-y-6">
-            {/* ── No-intent clarification ─────────────────────────── */}
-            {state?.noResultsReason === "no_intent" && (
-              <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-6 lg:p-8">
-                <div className="flex items-start gap-3">
-                  <MessageSquare className="h-5 w-5 mt-0.5 shrink-0 text-amber-400" aria-hidden="true" />
-                  <div>
-                    <h2 className="text-lg font-semibold text-white mb-2">
-                      Tell us what property you&apos;re looking for
-                    </h2>
-                    <p className="text-sm text-zinc-400 mb-4">
-                      Try something like:
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        "3 BHK in Bandra West under 2 Cr",
-                        "2 BHK for rent in Andheri West",
-                        "Furnished flat in Powai budget 1 to 2 lakh",
-                        "Office space in BKC",
-                      ].map((example) => (
-                        <Link
-                          key={example}
-                          href={`/search?q=${encodeURIComponent(example)}`}
-                          className="rounded-full border border-white/10 bg-zinc-900/70 px-4 py-2 text-sm text-zinc-300 hover:border-green-400/40 hover:text-white transition-colors"
-                        >
-                          {example}
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            <div className="mt-8">
+              <HowToSearchPanel />
+            </div>
+          </header>
 
-            {/* ── No matches (has intent but no results) ──────────── */}
-            {state?.noResultsReason === "no_matches" && (
-              <div className="rounded-2xl border border-white/10 bg-zinc-950/80 p-6 lg:p-8">
-                <h2 className="text-lg font-semibold text-white mb-2">No current listings match those details</h2>
-                <p className="text-sm text-zinc-400">
-                  We couldn&apos;t find listings matching your criteria. Try broadening your search —
-                  remove the budget filter, try a nearby locality, or check back later when new inventory arrives.
-                </p>
-              </div>
-            )}
-
-            {/* ── Standard results header ─────────────────────────── */}
-            {state?.noResultsReason !== "no_intent" && (
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                {query && (
-                  <>
-                    <span className="text-zinc-500">Searching for:</span>
-                    <span className="rounded-full border border-white/10 bg-zinc-900 px-3 py-1 text-zinc-200">{query}</span>
-                  </>
-                )}
-                {summary && <span className="text-[var(--text-secondary)]">PropAI understood:</span>}
-                {state?.parsed.bhk != null && <span className="rounded-full border border-[var(--accent-primary)] bg-[var(--accent-soft)] px-3 py-1 text-[var(--accent-forest)]">{state.parsed.bhk === 0 ? "Studio" : `${state.parsed.bhk} BHK`}</span>}
-                {state?.parsed.asset && <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 capitalize text-[var(--text-primary)]">{state.parsed.asset}</span>}
-                {state?.parsed.intent && <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 text-[var(--text-primary)]">{state.parsed.intent === "rent" ? "For rent" : "For sale"}</span>}
-                {requestedLocalities.length > 0 ? requestedLocalities.map((locality) => (
-                  <span key={locality.slug} className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 text-[var(--text-primary)]">
-                    {locality.locality}
-                  </span>
-                )) : state?.parsed.locality && <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 text-[var(--text-primary)]">{state.parsed.locality}</span>}
-                {state?.parsed.minPrice != null || state?.parsed.maxPrice != null ? <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 text-[var(--text-primary)]">Budget understood</span> : null}
-                {!query && asset && (
-                  <span className="text-[var(--text-secondary)]">Showing {asset} listings</span>
-                )}
-              </div>
-            )}
-
-            {state && state.parsed.locality && state.noResultsReason !== "no_intent" && (
-              <div className="rounded-2xl border border-white/10 bg-zinc-950/80 p-4 text-sm text-zinc-400">
-                {requestedLocalities.length > 1 ? (
-                  <>
-                    We found matching results across{" "}
-                    {requestedLocalities.map((locality, index) => (
-                      <span key={locality.slug}>
-                        <Link
-                          href={`/localities/${slugify(locality.locality)}`}
-                          className="font-medium text-green-300 hover:text-green-200"
-                        >
-                          {locality.locality}
-                        </Link>{index < requestedLocalities.length - 1 ? ", " : ""}
-                      </span>
-                    ))}.
-                    {nearbyResultLocalities.length > 0 && ` Nearby results: ${nearbyResultLocalities.join(", ")}.`}
-                  </>
-                ) : nearbyResultLocalities.length > 0 ? (
-                  <>
-                    We found matching results for{" "}
-                    <Link
-                      href={`/localities/${slugify(state.parsed.locality)}`}
-                      className="font-medium text-green-300 hover:text-green-200"
-                    >
-                      {state.parsed.locality}
-                    </Link>{" "}
-                    and nearby areas, including {nearbyResultLocalities.join(", ")}.
-                  </>
-                ) : (
-                  <>
-                    We found matching results in{" "}
-                    <Link
-                      href={`/localities/${slugify(state.parsed.locality)}`}
-                      className="font-medium text-green-300 hover:text-green-200"
-                    >
-                      {state.parsed.locality}
-                    </Link>
-                    .
-                  </>
-                )}
-              </div>
-            )}
-
-            {state && state.localityUnmatched && (
-              <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-200/90">
-                We couldn&apos;t confirm live coverage for{" "}
-                <span className="font-medium text-amber-100">{state.parsed.statedLocalityText || "that locality"}</span>{" "}
-                yet, so no listings were returned for that locality.
-                {state.localitySuggestions.length > 0 && (
-                  <>
-                    <span className="block mt-2">Try one of these covered localities:</span>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {state.localitySuggestions.map((loc) => (
-                        <Link
-                          key={loc.slug}
-                          href={`/localities/${loc.slug}`}
-                          className="rounded-full border border-white/10 bg-zinc-900 px-3 py-1 text-xs text-zinc-200 hover:border-green-400/40 hover:text-white transition-colors"
-                        >
-                          {loc.locality}
-                        </Link>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
-            {state && state.results.length > 0 ? (
-              <>
-                <SearchResultsView
-                  results={state.results}
-                  googleMapsApiKey={GOOGLE_MAPS_API_KEY}
-                />
-                {relatedSections.length > 0 && (
-                  <RelatedSearches sections={relatedSections} />
-                )}
-              </>
-            ) : state?.noResultsReason !== "no_intent" && (
-              <div className="grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-6">
-                <RequirementCapture query={query} />
-
-                <aside className="rounded-3xl border border-white/10 bg-zinc-950/80 p-6 lg:p-8">
-                  <h2 className="text-lg font-semibold text-white mb-3">What happens next</h2>
-                  <p className="text-sm text-zinc-400">
-                    We keep the request attached to your timeline and follow up when matching inventory appears.
+          {query ? (
+            <section className="mt-10 space-y-6">
+              {searchError ? (
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 lg:p-8">
+                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">No matching listings right now</h2>
+                  <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                    We couldn&apos;t load results for this search right now. Searches can currently return no results.
                   </p>
-                  <div className="mt-6 rounded-2xl border border-white/10 bg-black/70 p-4 text-sm text-zinc-400">
-                    If a match lands inside your timeline, the requirement can be routed to a broker and/or sent back to you for follow-up.
-                  </div>
-                </aside>
-              </div>
-            )}
-            {relatedSections.length > 0 && state && state.results.length === 0 && state.noResultsReason !== "no_intent" && (
-              <RelatedSearches sections={relatedSections} />
-            )}
-          </section>
-        ) : (
-          <section className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
-            <div className="rounded-3xl border border-white/10 bg-zinc-950/80 p-6 lg:p-8 lg:col-span-2">
-              <h2 className="text-xl font-semibold text-white mb-3">What you can ask for</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-zinc-300">
-                {[
-                  "3 BHK in Bandra West budget 2 to 3 lakh",
-                  "2 BHK rental in Powai fully furnished",
-                  "Office in BKC under 5 crore",
-                  "Listings near Andheri West with 2 bathrooms",
-                ].map((example) => (
-                  <div key={example} className="rounded-2xl border border-white/10 bg-black/70 px-4 py-3">
-                    {example}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-3xl border border-white/10 bg-zinc-950/80 p-6 lg:p-8">
-              <h2 className="text-lg font-semibold text-white mb-3">Live coverage</h2>
-              <p className="text-sm text-zinc-400">
-                Search across the live WhatsApp inventory backing the public locality pages.
-              </p>
-              <div className="mt-5 text-sm text-zinc-500">
-                {knownLocalities.length > 0 ? (
-                  <>
-                    <div>{knownLocalities.length.toLocaleString()} localities tracked</div>
-                    <div className="mt-1">{knownLocalities.slice(0, 3).map((l) => l.locality).join(" • ")}</div>
-                  </>
-                ) : (
-                  <div>Loading live localities...</div>
-                )}
-              </div>
-            </div>
-          </section>
-        )}
-      </main>
-      <ShortlistBar />
+                </div>
+              ) : hasListingResults && state ? (
+                <SearchResultsView results={state.results} googleMapsApiKey={GOOGLE_MAPS_API_KEY} />
+              ) : (
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 lg:p-8">
+                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">No matching listings right now</h2>
+                  <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                    Searches can currently return no results. Matching listings, when available, can be returned as links
+                    without broker phone numbers.
+                  </p>
+                </div>
+              )}
+            </section>
+          ) : null}
+        </main>
+        <ShortlistBar />
       </ShortlistProvider>
       <SiteFooter />
     </div>
