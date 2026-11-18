@@ -3000,16 +3000,20 @@ class SupabaseStorage(Storage):
     def get_user_profile(self, phone: str = "", auth_user_id: str = "", tenant_id: str | None = None) -> dict | None:
         tid = tenant_id or self._tenant_id
         if auth_user_id:
-            try:
-                q = self.client.table("user_profiles").select("*").eq("auth_user_id", auth_user_id)
-                if tid:
-                    q = q.eq("tenant_id", tid)
-                q = q.limit(1)
-                res = q.execute()
-                if res.data:
-                    return res.data[0]
-            except Exception:
-                pass
+            # The auth user id comes from the verified token. A profile belongs
+            # to that user whichever tenant created it, so look in the active
+            # tenant first and then user-globally. Phone lookups stay tenant
+            # scoped: a phone alone never proves ownership.
+            for scope in ([tid, None] if tid else [None]):
+                try:
+                    q = self.client.table("user_profiles").select("*").eq("auth_user_id", auth_user_id)
+                    if scope:
+                        q = q.eq("tenant_id", scope)
+                    res = q.limit(1).execute()
+                    if res.data:
+                        return res.data[0]
+                except Exception:
+                    pass
         if not phone:
             return None
         norm = self._normalize_phone(phone)
@@ -3041,12 +3045,9 @@ class SupabaseStorage(Storage):
         existing = None
         if auth_user_id:
             existing = self.get_user_profile(auth_user_id=auth_user_id, tenant_id=tid)
-            # Profile identity is user-global. Older accounts may retain their
-            # profile row under the legacy default tenant after switching to a
-            # real workspace; reuse that row instead of inserting a duplicate
-            # auth_user_id and triggering the unique constraint.
-            if not existing:
-                existing = self.get_user_profile(auth_user_id=auth_user_id)
+            # get_user_profile falls back to a user-global lookup by the verified
+            # auth user id, so a row kept under a legacy tenant is reused
+            # instead of inserting a duplicate auth_user_id.
         if not existing and norm:
             existing = self.get_user_profile(phone=norm, tenant_id=tid)
         # A phone lookup can find a legacy row that is already owned by a
@@ -3080,8 +3081,36 @@ class SupabaseStorage(Storage):
         else:
             if not norm and auth_user_id:
                 payload["phone"] = f"auth_{auth_user_id[:8]}"
-            res = self.client.table("user_profiles").insert(payload).execute()
+            try:
+                res = self.client.table("user_profiles").insert(payload).execute()
+            except httpx.HTTPStatusError as exc:
+                if exc.response is None or exc.response.status_code != 409:
+                    raise
+                res = self._update_profile_after_insert_conflict(payload, auth_user_id)
+                if res is None:
+                    raise
         return res.data[0] if res and res.data else None
+
+    def _update_profile_after_insert_conflict(self, payload: dict, auth_user_id: str):
+        """Recover from a 409 on insert without deleting or re-owning a row.
+
+        The insert lost against an existing profile. Update only descriptive
+        fields of the row owned by this auth user (found by auth_user_id, which
+        comes from the verified token); never touch identity columns and never
+        write to any other row.
+        """
+        # Only the row already owned by the verified auth user is eligible.
+        # A phone-only match is never claimed or written, in any tenant.
+        if not auth_user_id:
+            return None
+        res = self.client.table("user_profiles").select("id,auth_user_id").eq("auth_user_id", auth_user_id).limit(1).execute()
+        row = res.data[0] if res.data else None
+        if row is not None and str(row.get("auth_user_id")) != str(auth_user_id):
+            return None
+        if row is None:
+            return None
+        fields = {k: payload[k] for k in ("first_name", "last_name", "city", "updated_at") if k in payload}
+        return self.client.table("user_profiles").update(fields).eq("id", row["id"]).eq("auth_user_id", auth_user_id).execute()
 
     def get_sound_preferences(self, auth_user_id: str, tenant_id: str | None = None) -> dict:
         profile = self.get_user_profile(auth_user_id=auth_user_id, tenant_id=tenant_id)

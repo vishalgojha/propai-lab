@@ -140,3 +140,91 @@ def test_unpaired_once_other_errors_propagate(status, body):
     storage.get_org_placeholder_whatsapp_connection = lambda org: None
     with pytest.raises(RuntimeError):
         storage.add_unpaired_org_whatsapp_connection_once("o1", "b1")
+
+
+def _profile_storage(existing_rows, calls):
+    import httpx
+
+    def handler(request):
+        q = dict(request.url.params)
+        calls.append((request.method, request.url.path, q, request.content.decode() or None))
+        if request.method == "POST":
+            return httpx.Response(409, json={"code": "23505", "message": "duplicate key value violates unique constraint"})
+        if request.method == "PATCH":
+            return httpx.Response(200, json=[{"id": 5, "city": "Mumbai"}])
+        rows = existing_rows
+        if "tenant_id" in q:
+            rows = [r for r in rows if r.get("tenant_id") == q["tenant_id"].split(".", 1)[1]]
+        if "auth_user_id" in q:
+            rows = [r for r in rows if r.get("auth_user_id") == q["auth_user_id"].split(".", 1)[1]]
+        if "phone" in q:
+            rows = [r for r in rows if r.get("phone") == q["phone"].split(".", 1)[1]]
+        return httpx.Response(200, json=rows)
+
+    return _real_storage(handler)
+
+
+def _patches(calls):
+    import json
+    return [(c[2], json.loads(c[3])) for c in calls if c[0] == "PATCH"]
+
+
+def test_phone_only_row_in_other_tenant_is_never_claimed_or_written():
+    calls = []
+    st = _profile_storage([{"id": 5, "phone": "9820056180", "auth_user_id": None, "tenant_id": "legacy"}], calls)
+    st._tenant_id = "t1"
+    with pytest.raises(Exception):
+        st.save_user_profile("919820056180", {"first_name": "V", "city": "Mumbai"}, auth_user_id="u1", tenant_id="t1")
+    assert _patches(calls) == [], "no write may reach the unowned cross-tenant row"
+    assert not any(b'"auth_user_id"' in (c[3] or "").encode() and c[0] == "PATCH" for c in calls)
+
+
+def test_own_row_under_other_tenant_updated_by_auth_user_id_without_rebinding():
+    import json
+    calls = []
+    st = _profile_storage([{"id": 5, "phone": "9820056180", "auth_user_id": "u1", "tenant_id": "legacy"}], calls)
+    st._tenant_id = "t1"
+    st.save_user_profile("919820056180", {"first_name": "V", "city": "Mumbai"}, auth_user_id="u1", tenant_id="t1")
+    assert not [c for c in calls if c[0] == "POST"]
+    (params, body), = _patches(calls)
+    assert params.get("auth_user_id") == "eq.u1"
+    assert body["tenant_id"] == "legacy" and body["auth_user_id"] == "u1"
+    assert body["phone"] == "9820056180"
+
+
+def test_conflict_recovery_only_writes_row_owned_by_this_auth_user_and_only_descriptive_fields():
+    calls = []
+    st = _profile_storage([{"id": 5, "phone": "9820056180", "auth_user_id": "u1", "tenant_id": "old"}], calls)
+    payload = {"phone": "9820056180", "first_name": "V", "last_name": "", "city": "Mumbai", "email": "x@y", "updated_at": "now", "auth_user_id": "u1", "tenant_id": "t1"}
+    assert st._update_profile_after_insert_conflict(payload, "u1").data[0]["city"] == "Mumbai"
+    (params, body), = _patches(calls)
+    assert params == {"id": "eq.5", "auth_user_id": "eq.u1"}
+    assert set(body) == {"first_name", "last_name", "city", "updated_at"}
+
+
+def test_conflict_recovery_never_writes_unowned_phone_row():
+    calls = []
+    st = _profile_storage([{"id": 5, "phone": "9820056180", "auth_user_id": None, "tenant_id": "old"}], calls)
+    payload = {"phone": "9820056180", "first_name": "V", "city": "Mumbai", "auth_user_id": "u1"}
+    assert st._update_profile_after_insert_conflict(payload, "u1") is None
+    assert _patches(calls) == []
+
+
+def test_conflict_recovery_never_writes_to_row_owned_by_other_user():
+    calls = []
+    st = _profile_storage([{"id": 5, "phone": "9820056180", "auth_user_id": "someone-else"}], calls)
+    payload = {"phone": "9820056180", "first_name": "V", "city": "Mumbai", "auth_user_id": "u1"}
+    assert st._update_profile_after_insert_conflict(payload, "u1") is None
+    assert _patches(calls) == []
+
+
+
+def test_get_profile_reads_own_row_saved_under_other_tenant_but_not_phone_only_rows():
+    calls = []
+    st = _profile_storage([{"id": 5, "phone": "9820056180", "auth_user_id": "u1", "tenant_id": "legacy"}], calls)
+    st._tenant_id = "t1"
+    assert st.get_user_profile(auth_user_id="u1", tenant_id="t1")["id"] == 5
+    calls2 = []
+    st2 = _profile_storage([{"id": 6, "phone": "9820056180", "auth_user_id": None, "tenant_id": "legacy"}], calls2)
+    st2._tenant_id = "t1"
+    assert st2.get_user_profile(phone="919820056180", auth_user_id="u1", tenant_id="t1") is None
