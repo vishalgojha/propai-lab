@@ -15,6 +15,14 @@ function brokerId(context?: ToolContext) {
   return context?.user?.broker_id || context?.user?.id;
 }
 
+function requireTenantId(context?: ToolContext) {
+  const id = context?.user?.tenant_id;
+  if (!id) {
+    throw new Error("Authenticated organization scope is required");
+  }
+  return id;
+}
+
 function requireBrokerId(context?: ToolContext) {
   const id = brokerId(context);
   if (!id) {
@@ -77,7 +85,7 @@ export function registerMcpResources(server: McpServer, context: ToolContext = {
     },
     async (uri: URL) => {
       const id = requireBrokerId(context);
-      const payload = await getBrokerActivity({ brokerId: id, days: 7 });
+      const payload = await getBrokerActivity({ brokerId: requireTenantId(context), days: 7 });
       return jsonResource(uri.toString(), payload);
     },
   );
@@ -92,7 +100,7 @@ export function registerMcpResources(server: McpServer, context: ToolContext = {
     },
     async (uri: URL) => {
       const id = requireBrokerId(context);
-      const payload = await getHotLeadTriage({ brokerId: id, days: 7, limit: 12 });
+      const payload = await getHotLeadTriage({ brokerId: requireTenantId(context), days: 7, limit: 12 });
       return jsonResource(uri.toString(), payload);
     },
   );
@@ -107,7 +115,7 @@ export function registerMcpResources(server: McpServer, context: ToolContext = {
     },
     async (uri: URL) => {
       const id = requireBrokerId(context);
-      const items = await getPendingFollowUps({ brokerId: id, limit: 25 });
+      const items = await getPendingFollowUps({ brokerId: requireTenantId(context), limit: 25 });
       return jsonResource(uri.toString(), {
         count: items.length,
         items,
@@ -125,7 +133,7 @@ export function registerMcpResources(server: McpServer, context: ToolContext = {
     },
     async (uri: URL) => {
       const id = requireBrokerId(context);
-      const items = await getRecentSavedListings({ brokerId: id, limit: 50 });
+      const items = await getRecentSavedListings({ brokerId: requireTenantId(context), limit: 50 });
       return jsonResource(uri.toString(), {
         count: items.length,
         items,
@@ -143,7 +151,7 @@ export function registerMcpResources(server: McpServer, context: ToolContext = {
     },
     async (uri: URL) => {
       const id = requireBrokerId(context);
-      const items = await getRecentRequirements({ brokerId: id, limit: 50 });
+      const items = await getRecentRequirements({ brokerId: requireTenantId(context), limit: 50 });
       return jsonResource(uri.toString(), {
         count: items.length,
         items,
@@ -156,13 +164,13 @@ export function registerMcpResources(server: McpServer, context: ToolContext = {
     new ResourceTemplate("propai://thread/{remote_jid}", {
       list: async () => {
         const id = requireBrokerId(context);
-        const items = await getStoredThreadMessages({ brokerId: id, limit: 10 });
+        const items = await getStoredThreadMessages({ brokerId: requireTenantId(context), limit: 10 });
         return listResourceUris(items);
       },
       complete: {
         remote_jid: async (value) => {
           const id = requireBrokerId(context);
-          const items = await getStoredThreadMessages({ brokerId: id, limit: 25 });
+          const items = await getStoredThreadMessages({ brokerId: requireTenantId(context), limit: 25 });
           return [...new Set(items
             .map((item) => item.remote_jid)
             .filter((item) => item.toLowerCase().includes(value.toLowerCase()))
@@ -178,7 +186,7 @@ export function registerMcpResources(server: McpServer, context: ToolContext = {
     async (uri, variables) => {
       const id = requireBrokerId(context);
       const remoteJid = String(variables.remote_jid || "").trim();
-      const items = await getStoredThreadMessages({ brokerId: id, remoteJid, limit: 100 });
+      const items = await getStoredThreadMessages({ brokerId: requireTenantId(context), remoteJid, limit: 100 });
       return jsonResource(uri.toString(), {
         remote_jid: remoteJid,
         count: items.length,
@@ -196,7 +204,7 @@ export function registerMcpResources(server: McpServer, context: ToolContext = {
     new ResourceTemplate("propai://thread/{remote_jid}/actions", {
       list: async () => {
         const id = requireBrokerId(context);
-        const items = await getStoredThreadMessages({ brokerId: id, limit: 10 });
+        const items = await getStoredThreadMessages({ brokerId: requireTenantId(context), limit: 10 });
         return {
           resources: [...new Set(items.map((item) => item.remote_jid))].map((remoteJid) => ({
             uri: `propai://thread/${encodeURIComponent(remoteJid)}/actions`,
@@ -209,7 +217,7 @@ export function registerMcpResources(server: McpServer, context: ToolContext = {
       complete: {
         remote_jid: async (value) => {
           const id = requireBrokerId(context);
-          const items = await getStoredThreadMessages({ brokerId: id, limit: 25 });
+          const items = await getStoredThreadMessages({ brokerId: requireTenantId(context), limit: 25 });
           return [...new Set(items
             .map((item) => item.remote_jid)
             .filter((item) => item.toLowerCase().includes(value.toLowerCase()))
@@ -225,7 +233,7 @@ export function registerMcpResources(server: McpServer, context: ToolContext = {
     async (uri, variables) => {
       const id = requireBrokerId(context);
       const remoteJid = String(variables.remote_jid || "").trim();
-      const items = await getStoredThreadMessages({ brokerId: id, remoteJid, limit: 80 });
+      const items = await getStoredThreadMessages({ brokerId: requireTenantId(context), remoteJid, limit: 80 });
       const actions = await extractThreadActionsWithLlm({
         remoteJid,
         lines: items

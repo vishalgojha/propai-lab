@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpServer, MCP_TOOL_NAMES } from "./index.js";
+import { mountRawBrokerRoute } from "./rawRoute.js";
+import { configureRawOAuth, mountRawOAuth, rawProtectedResourceMetadata, verifyRawAccessToken, boundTenantResolver } from "./rawOAuth.js";
 import {
   deviceAuthorizeHandler,
   oauthAuthorizationServerMetadata,
@@ -10,11 +12,14 @@ import {
   oauthProtectedResourceMetadata,
   oauthRegisterHandler,
   oauthTokenHandler,
+  publicUrl,
   setMcpUnauthorizedHeaders,
 } from "./oauth.js";
 import { closeSessionRecord, createSessionRecord, touchSessionRecord } from "./sessionStore.js";
 import { resolveBrokerIdForUser, resolveTenantIdForUser, verifyPropAIToken } from "./supabase.js";
 import type { AuthenticatedUser } from "./types.js";
+import { createAuthMiddleware } from "./mcpAccess.js";
+import { createMcpHandler, type McpSession } from "./mcpHttp.js";
 
 declare global {
   namespace Express {
@@ -28,11 +33,6 @@ declare global {
 const app = express();
 const PORT = Number(process.env.MCP_PORT || 3000);
 const PUBLIC_URL = process.env.MCP_SERVER_URL || "https://mcp.propai.live";
-
-type McpSession = {
-  server: ReturnType<typeof createMcpServer>;
-  transport: StreamableHTTPServerTransport;
-};
 
 const sessions = new Map<string, McpSession>();
 
@@ -122,108 +122,49 @@ app.get("/.well-known/mcp-server.json", (_req, res) => {
 });
 
 app.get("/.well-known/oauth-authorization-server", oauthAuthorizationServerMetadata);
-app.get("/.well-known/oauth-protected-resource", oauthProtectedResourceMetadata);
+app.get("/.well-known/oauth-protected-resource", (req, res) => oauthProtectedResourceMetadata(req, res));
 app.get("/authorize", oauthAuthorizeGetHandler);
 app.post("/authorize", oauthAuthorizePostHandler);
 app.post("/oauth/token", oauthTokenHandler);
 app.post("/register", oauthRegisterHandler);
 app.post("/device/authorize", deviceAuthorizeHandler);
 
-async function authMiddleware(req: Request, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization || "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
+const accessDeps = {
+  verify: verifyPropAIToken,
+  resolveBrokerId: resolveBrokerIdForUser,
+  resolveTenantId: resolveTenantIdForUser,
+  challenge: (req: Request, res: Response) => setMcpUnauthorizedHeaders(req, res),
+};
+// The 15-day trial starts on the first successful assistant search (recorded
+// inside the search tool handlers), never on authentication or session setup.
+const authMiddleware = createAuthMiddleware("public-or-user", accessDeps);
 
-  if (!token) {
-    // Account-free public access: no token means the public market toolset
-    // only. A presented token is still strictly verified below - invalid or
-    // expired credentials keep failing with 401 and never downgrade into a
-    // silent public session, so callers always know when auth broke.
-    req.publicOnly = true;
-    return next();
-  }
-
-  try {
-    const user = await verifyPropAIToken(token);
-    const brokerId = await resolveBrokerIdForUser(user);
-    const tenantId = await resolveTenantIdForUser(user);
-    if (!tenantId) {
-      setMcpUnauthorizedHeaders(req, res);
-      return res.status(403).json({ error: "Tenant membership is required" });
-    }
-    // The 15-day trial starts on the first successful assistant search
-    // (recorded inside the search tool handlers), never on authentication
-    // or session setup, so connecting does not consume the trial.
-    req.user = {
-      ...user,
-      broker_id: brokerId || user.broker_id || user.id,
-      tenant_id: tenantId,
-    };
-    return next();
-  } catch {
-    setMcpUnauthorizedHeaders(req, res);
-    return res.status(401).json({ error: "Invalid token" });
-  }
-}
-
-app.all("/mcp", authMiddleware, async (req: Request, res: Response) => {
-  if (!["GET", "POST", "DELETE"].includes(req.method)) {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  const sessionId = req.headers["mcp-session-id"];
-  let session = typeof sessionId === "string" ? sessions.get(sessionId) : undefined;
-  if (typeof sessionId === "string") {
-    await touchSessionRecord(sessionId).catch(() => {});
-  }
-
-  if (!session) {
-    const server = createMcpServer({ user: req.user, publicOnly: req.publicOnly === true });
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => crypto.randomUUID(),
-      onsessioninitialized: async (newSessionId) => {
-        sessions.set(newSessionId, { server, transport });
-        await createSessionRecord({
-          sessionId: newSessionId,
-          userId: req.user?.id,
-          userAgent: String(req.headers["user-agent"] || ""),
-        }).catch(() => {});
-      },
-      onsessionclosed: async (closedSessionId) => {
-        const closedSession = sessions.get(closedSessionId);
-        sessions.delete(closedSessionId);
-        await closeSessionRecord(closedSessionId).catch(() => {});
-        await closedSession?.server.close();
-      },
-    });
-
-    transport.onclose = async () => {
-      if (transport.sessionId) {
-        sessions.delete(transport.sessionId);
-        await closeSessionRecord(transport.sessionId).catch(() => {});
-      }
-    };
-
-    session = { server, transport };
-    await server.connect(transport);
-  }
-
-  try {
-    await session.transport.handleRequest(req, res, req.method === "POST" ? req.body : undefined);
-  } catch (error) {
-    console.error("MCP request error:", error);
-    if (!res.headersSent) {
-      res.status(500).json({
-        jsonrpc: "2.0",
-        error: { code: -32603, message: "Internal server error" },
-        id: null,
-      });
-    }
-  }
+const handleMcp = createMcpHandler({
+  sessions,
+  createServer: createMcpServer,
+  challenge: (req, res) => setMcpUnauthorizedHeaders(req, res),
+  records: { create: createSessionRecord, touch: touchSessionRecord, close: closeSessionRecord },
+});
+app.all("/mcp", authMiddleware, handleMcp);
+// Limited sign-in for /raw-mcp: opaque route-only tokens; the legacy flow above is unchanged.
+configureRawOAuth({ verifySession: verifyPropAIToken, resolveTenantId: resolveTenantIdForUser, publicUrl });
+mountRawOAuth(app);
+const rawAccessDeps = {
+  verify: verifyRawAccessToken,
+  resolveBrokerId: async (user: { id: string }) => user.id,
+  resolveTenantId: boundTenantResolver(resolveTenantIdForUser), // live membership must still equal the org signed in for
+  challenge: accessDeps.challenge,
+};
+const rawSessions = mountRawBrokerRoute(app, {
+  access: rawAccessDeps as never,
+  challenge: (req, res, metadataPath) => setMcpUnauthorizedHeaders(req, res, metadataPath),
+  records: { create: createSessionRecord, touch: touchSessionRecord, close: closeSessionRecord },
+  metadata: (req, res) => rawProtectedResourceMetadata(req, res),
 });
 
 async function closeSessions() {
   await Promise.all(
-    [...sessions.values()].map(async (session) => {
+    [...sessions.values(), ...rawSessions.values()].map(async (session) => {
       await session.transport.close();
       await session.server.close();
     }),

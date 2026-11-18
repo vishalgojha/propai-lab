@@ -195,9 +195,9 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "extract_thread_actions", input);
+      await logToolCall(id, "extract_thread_actions", input, context?.user?.tenant_id);
       const thread = await summarizeThread({
-        brokerId: id,
+        brokerId: requireTenantId(context),
         remote_jid: input.remote_jid,
         limit: input.limit,
       });
@@ -252,8 +252,8 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "stale_lead_reactivation", input);
-      const result = await getStaleLeadReactivation({ brokerId: id, ...input });
+      await logToolCall(id, "stale_lead_reactivation", input, context?.user?.tenant_id);
+      const result = await getStaleLeadReactivation({ brokerId: requireTenantId(context), ...input });
 
       if (!result.items.length) {
         return textResponse("No stale leads worth reactivating found for this window.", result);
@@ -287,7 +287,7 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "pricing_negotiation_brief", input);
+      await logToolCall(id, "pricing_negotiation_brief", input, context?.user?.tenant_id);
       const result = await buildPricingNegotiationBrief({ ...input, tenantId: requireTenantId(context) });
       recordAssistantSearchSuccess(requireTenantId(context));
 
@@ -325,8 +325,8 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "save_thread_requirement", input);
-      const result = await createRequirementRecord({ brokerId: id, ...input });
+      await logToolCall(id, "save_thread_requirement", input, context?.user?.tenant_id);
+      const result = await createRequirementRecord({ brokerId: requireTenantId(context), ...input });
       return textResponse(
         `Thread requirement saved${result.lead?.lead_id ? ` with lead id ${result.lead.lead_id}` : ""} for ${input.location_pref || "the requested location"}.`,
         deprecatedAlias(result, "create_requirement"),
@@ -390,8 +390,8 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "create_thread_follow_up", input);
-      const result = await scheduleFollowUp({ brokerId: id, ...input });
+      await logToolCall(id, "create_thread_follow_up", input, context?.user?.tenant_id);
+      const result = await scheduleFollowUp({ brokerId: requireTenantId(context), ...input });
       return textResponse(
         `Thread follow-up scheduled for ${input.lead_name} at ${result.due_at}.`,
         deprecatedAlias(result, "set_follow_up"),
@@ -411,8 +411,8 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "triage_hot_leads", input);
-      const result = await getHotLeadTriage({ brokerId: id, days: input.days, limit: input.limit });
+      await logToolCall(id, "triage_hot_leads", input, context?.user?.tenant_id);
+      const result = await getHotLeadTriage({ brokerId: requireTenantId(context), days: input.days, limit: input.limit });
 
       if (!result.items.length) {
         return textResponse("No hot-lead candidates found for this window yet.", result);
@@ -451,8 +451,8 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "create_requirement", input);
-      const result = await createRequirementRecord({ brokerId: id, ...input });
+      await logToolCall(id, "create_requirement", input, context?.user?.tenant_id);
+      const result = await createRequirementRecord({ brokerId: requireTenantId(context), ...input });
       return textResponse(
         `Requirement saved for ${input.location_pref || "the requested location"} with lead id ${result.lead.lead_id}.`,
         result,
@@ -478,8 +478,8 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "match_requirement_to_broker", input);
-      const result = await matchBuyerToInventory({ brokerId: id, tenantId: requireTenantId(context), ...input });
+      await logToolCall(id, "match_requirement_to_broker", input, context?.user?.tenant_id);
+      const result = await matchBuyerToInventory({ brokerId: requireTenantId(context), tenantId: requireTenantId(context), ...input });
       recordAssistantSearchSuccess(requireTenantId(context));
 
       if (!result.items.length) {
@@ -519,7 +519,7 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "draft_broadcast", input);
+      await logToolCall(id, "draft_broadcast", input, context?.user?.tenant_id);
       const message = buildBroadcastDraft(input);
       return textResponse(message, { draft: message });
     },
@@ -551,7 +551,7 @@ export function createMcpServer(context: ToolContext = {}) {
     async (input) => {
       const id = requireTenantId(context);
       await logToolCall(context?.user?.id, "listing_ad_pack", input, id);
-      const saved = input.listing_id ? await getWorkspaceListingById({ brokerId: id, listingId: input.listing_id }) : null;
+      const saved = input.listing_id ? await getWorkspaceListingById({ brokerId: requireTenantId(context), listingId: input.listing_id }) : null;
       if (input.listing_id && !saved) {
         return textResponse(`Saved listing ${input.listing_id} was not found in your workspace. Use broker_inventory to choose one of your own listings.`, { listing_id: input.listing_id, found: false });
       }
@@ -578,7 +578,7 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "price_estimate", input);
+      await logToolCall(id, "price_estimate", input, context?.user?.tenant_id);
       const result = await estimatePrice({ ...input, tenantId: requireTenantId(context) });
       recordAssistantSearchSuccess(requireTenantId(context));
       return textResponse(result.summary, result);
@@ -603,8 +603,8 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "qualify_lead", input);
-      const result = await qualifyLead({ brokerId: id, ...input });
+      await logToolCall(id, "qualify_lead", input, context?.user?.tenant_id);
+      const result = await qualifyLead({ brokerId: requireTenantId(context), ...input });
       return textResponse(
         `Lead qualified with ${result.priority_bucket} priority and ${result.urgency} urgency.`,
         result,
@@ -668,8 +668,8 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "set_follow_up", input);
-      const result = await scheduleFollowUp({ brokerId: id, ...input });
+      await logToolCall(id, "set_follow_up", input, context?.user?.tenant_id);
+      const result = await scheduleFollowUp({ brokerId: requireTenantId(context), ...input });
       return textResponse(
         `Follow-up scheduled for ${input.lead_name} at ${result.due_at}.`,
         result,
@@ -689,9 +689,9 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "summarise_thread", input);
+      await logToolCall(id, "summarise_thread", input, context?.user?.tenant_id);
       const thread = await summarizeThread({
-        brokerId: id,
+        brokerId: requireTenantId(context),
         remote_jid: input.remote_jid,
         limit: input.limit,
       });
@@ -729,7 +729,7 @@ export function createMcpServer(context: ToolContext = {}) {
       },
     },
     async (input) => {
-      await logToolCall(brokerId(context), "building_intel", input);
+      await logToolCall(brokerId(context), "building_intel", input, context?.user?.tenant_id);
       const result = await getBuildingIntel({ ...input, tenantId: requireTenantId(context) });
       recordAssistantSearchSuccess(requireTenantId(context));
 
@@ -804,7 +804,7 @@ export function createMcpServer(context: ToolContext = {}) {
     },
   }, async (input) => {
     const id = brokerId(context);
-    await logToolCall(id, "search", input);
+    await logToolCall(id, "search", input, context?.user?.tenant_id);
     let result;
     try {
       result = await executeMarketSearch({ ...input, tenantId: requireTenantId(context) });
@@ -881,7 +881,7 @@ export function createMcpServer(context: ToolContext = {}) {
     },
   }, async (input) => {
     const id = brokerId(context);
-    await logToolCall(id, "fetch", input);
+    await logToolCall(id, "fetch", input, context?.user?.tenant_id);
 
     const [type, ...rest] = input.id.split(":");
     const value = rest.join(":"); // Handle values with colons (e.g., building names)

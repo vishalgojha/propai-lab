@@ -8,6 +8,7 @@ import {
   pruneAuthorizationCodes,
   saveAuthorizationCode,
 } from "./oauthStore.js";
+import { RAW_STATE_PREFIX, handleRawDeviceAuthorize, isRawClientId } from "./rawOAuth.js";
 import { supabaseAuth } from "./supabase.js";
 
 // OAuth error helper
@@ -46,7 +47,7 @@ const DEVICE_CODE_LENGTH = 4;
 const DEVICE_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const DEVICE_CODE_PREFIX = "PROP-";
 
-function publicUrl(req: Request) {
+export function publicUrl(req: Request) {
   const forwardedProto = String(req.get("x-forwarded-proto") || "").split(",")[0]?.trim();
   const forwardedHost = String(req.get("x-forwarded-host") || "").split(",")[0]?.trim();
   const host = forwardedHost || req.get("host");
@@ -236,10 +237,10 @@ export function oauthAuthorizationServerMetadata(req: Request, res: Response) {
   });
 }
 
-export function oauthProtectedResourceMetadata(req: Request, res: Response) {
+export function oauthProtectedResourceMetadata(req: Request, res: Response, resourcePath = "/mcp") {
   const issuer = publicUrl(req);
   return res.json({
-    resource: `${issuer}/mcp`,
+    resource: `${issuer}${resourcePath}`,
     authorization_servers: [issuer],
     bearer_methods_supported: ["header"],
   });
@@ -590,6 +591,10 @@ export async function oauthTokenHandler(req: Request, res: Response) {
 }
 
 export async function deviceAuthorizeHandler(req: Request, res: Response) {
+  // Raw-route sign-ins carry a marker and are handled by the separate limited flow (never as a legacy flow).
+  if (String(req.body?.state || "").startsWith(RAW_STATE_PREFIX)) return handleRawDeviceAuthorize(req, res);
+  // A client id registered for the raw flow can never complete the legacy flow, even if the marker was stripped.
+  if (isRawClientId(String(req.body?.client_id || ""))) return res.status(400).json({ error: "invalid_request", error_description: "This client must sign in through the raw flow." });
   try {
     const userCode = String(req.body?.user_code || "").trim().toUpperCase();
     const clientId = String(req.body?.client_id || "").trim();
@@ -677,6 +682,7 @@ export async function deviceAuthorizeHandler(req: Request, res: Response) {
   }
 }
 
-export function setMcpUnauthorizedHeaders(req: Request, res: Response) {
-  res.setHeader("WWW-Authenticate", `Bearer resource_metadata=\"${resourceMetadataUrl(req)}\"`);
+export function setMcpUnauthorizedHeaders(req: Request, res: Response, metadataPath?: string) {
+  const url = metadataPath ? `${publicUrl(req)}${metadataPath}` : resourceMetadataUrl(req);
+  res.setHeader("WWW-Authenticate", `Bearer resource_metadata=\"${url}\"`);
 }

@@ -651,9 +651,13 @@ export async function logToolCall(
 ) {
   console.log(JSON.stringify({ event: "mcp_tool_call", broker_id: brokerId || null, tool: toolName }));
 
+  // An analytics row is written only under a verified organization id; a
+  // broker/user id is never used as the tenant scope.
+  if (!tenantId) return;
+
   try {
     await supabase.from("agent_events").insert({
-      tenant_id: tenantId || brokerId,
+      tenant_id: tenantId,
       event_type: "mcp_tool_call",
       description: `MCP tool called: ${toolName}`,
       metadata: { input },

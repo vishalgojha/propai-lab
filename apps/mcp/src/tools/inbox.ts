@@ -37,8 +37,8 @@ export function registerInboxTools(server: McpServer, context: ToolContext) {
     },
   }, async (input) => {
     const id = requireBrokerId(context);
-    await logToolCall(id, "conversation_search", input);
-    const messages = await getStoredThreadMessages({ brokerId: id, limit: input.limit });
+    await logToolCall(id, "conversation_search", input, requireTenantId(context));
+    const messages = await getStoredThreadMessages({ brokerId: requireTenantId(context), limit: input.limit });
     recordAssistantSearchSuccess(requireTenantId(context));
     if (!messages.length) return textResponse("No stored conversations found.", { conversations: [] });
     const jids = [...new Set(messages.map((m) => m.remote_jid).filter(Boolean))];
@@ -53,8 +53,8 @@ export function registerInboxTools(server: McpServer, context: ToolContext) {
     },
   }, async (input) => {
     const id = requireBrokerId(context);
-    await logToolCall(id, "conversation_timeline", input);
-    const messages = await getStoredThreadMessages({ brokerId: id, remoteJid: input.remote_jid, limit: input.limit });
+    await logToolCall(id, "conversation_timeline", input, requireTenantId(context));
+    const messages = await getStoredThreadMessages({ brokerId: requireTenantId(context), remoteJid: input.remote_jid, limit: input.limit });
     if (!messages.length) return textResponse(`No messages found for "${input.remote_jid}".`, { messages: [] });
     const summary = messages.slice(0, 5).map((m) => `${m.sender || "unknown"}: ${(m.text || "").slice(0, 80)}`).join("\n");
     return textResponse(`${messages.length} message(s) in conversation.\nRecent:\n${summary}`, { messages, total: messages.length });
@@ -68,8 +68,8 @@ export function registerInboxTools(server: McpServer, context: ToolContext) {
     },
   }, async (input) => {
     const id = requireBrokerId(context);
-    await logToolCall(id, "conversation_summarize", input);
-    const result = await summarizeThread({ brokerId: id, remote_jid: input.remote_jid, limit: input.limit });
+    await logToolCall(id, "conversation_summarize", input, requireTenantId(context));
+    const result = await summarizeThread({ brokerId: requireTenantId(context), remote_jid: input.remote_jid, limit: input.limit });
     const keyPoints = result.key_points?.slice(-3).map((kp: any) => `• ${kp.sender}: ${kp.text.slice(0, 120)}`).join("\n") || "";
     return textResponse(
       `${result.message_count} messages · ${result.inbound_count} in / ${result.outbound_count} out\nParticipants: ${result.participants?.join(", ") || "N/A"}\n${keyPoints ? `\nKey points:\n${keyPoints}` : ""}`,

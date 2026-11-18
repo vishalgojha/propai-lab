@@ -81,8 +81,8 @@ export function registerBrokerTools(server: McpServer, context: ToolContext) {
     },
   }, async (input) => {
     const id = requireBrokerId(context);
-    await logToolCall(id, "broker_activity", input);
-    const result = await getBrokerActivity({ brokerId: id, days: input.days });
+    await logToolCall(id, "broker_activity", input, requireTenantId(context));
+    const result = await getBrokerActivity({ brokerId: requireTenantId(context), days: input.days });
     return textResponse(
       `Activity over ${input.days}d: ${result.leads_total} total leads, ${result.listings_total} listings, ${result.requirements_total} requirements, ${result.messages_total} messages, ${result.pending_follow_ups} pending follow-ups`,
       result,
@@ -96,8 +96,8 @@ export function registerBrokerTools(server: McpServer, context: ToolContext) {
     },
   }, async (input) => {
     const id = requireBrokerId(context);
-    await logToolCall(id, "broker_inventory", input);
-    const activity = await getBrokerActivity({ brokerId: id, days: 90 });
+    await logToolCall(id, "broker_inventory", input, requireTenantId(context));
+    const activity = await getBrokerActivity({ brokerId: requireTenantId(context), days: 90 });
     const listings = await getWorkspaceListings({ brokerId: requireTenantId(context), limit: input.limit });
     return textResponse(
       `Your inventory (90d): ${activity.listings_total} listings, ${activity.requirements_total} requirements, ${activity.pending_follow_ups} pending follow-ups\n\nUse a returned listing id with listing_ad_pack to draft an ad for that exact listing.`,

@@ -72,29 +72,26 @@ function isMissingWorkspaceMembershipSchemaError(error: unknown) {
     || haystack.includes("preferred_session_label");
 }
 
+/**
+ * Actor/attribution id only. It is never a data scope: every tenant filter
+ * uses the membership organization from resolveTenantIdForUser.
+ *
+ * Nothing the user can edit and nothing stale is trusted: user_metadata and
+ * app_metadata claims are ignored, and email-only or merely invited
+ * memberships are not honored. A workspace owner is used only when an active
+ * workspace_members row names this immutable user id; otherwise the user's own
+ * id is the actor.
+ */
 export async function resolveBrokerIdForUser(user?: AuthenticatedUser | null) {
   const currentUserId = String(user?.id || "").trim();
-  const currentUserEmail = normalizeEmail(user?.email);
-  const metadataBrokerId = String(
-    (user?.user_metadata as Record<string, unknown> | undefined)?.workspace_owner_id
-      || (user?.app_metadata as Record<string, unknown> | undefined)?.workspace_owner_id
-      || "",
-  ).trim();
-
-  if (metadataBrokerId) {
-    return metadataBrokerId;
-  }
-
-  if (!currentUserId) {
-    return null;
-  }
+  if (!currentUserId) return null;
 
   try {
     const byUserId = await supabase
       .from("workspace_members")
       .select("workspace_owner_id, status")
       .eq("member_user_id", currentUserId)
-      .in("status", ["invited", "active"])
+      .eq("status", "active")
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -103,27 +100,8 @@ export async function resolveBrokerIdForUser(user?: AuthenticatedUser | null) {
       if (!isMissingWorkspaceMembershipSchemaError(byUserId.error)) {
         console.warn("Failed to resolve MCP broker id by user id:", byUserId.error.message);
       }
-    } else if (byUserId.data?.workspace_owner_id) {
+    } else if (byUserId.data?.workspace_owner_id && byUserId.data.status === "active") {
       return String(byUserId.data.workspace_owner_id);
-    }
-
-    if (currentUserEmail) {
-      const byEmail = await supabase
-        .from("workspace_members")
-        .select("workspace_owner_id, status")
-        .eq("member_email", currentUserEmail)
-        .in("status", ["invited", "active"])
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (byEmail.error) {
-        if (!isMissingWorkspaceMembershipSchemaError(byEmail.error)) {
-          console.warn("Failed to resolve MCP broker id by email:", byEmail.error.message);
-        }
-      } else if (byEmail.data?.workspace_owner_id) {
-        return String(byEmail.data.workspace_owner_id);
-      }
     }
   } catch (error) {
     console.warn("Unexpected error resolving MCP broker id:", error instanceof Error ? error.message : error);
