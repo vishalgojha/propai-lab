@@ -2474,6 +2474,7 @@ export interface Phone {
   qr_available: boolean;
   qr?: string;
   pairing_error?: string;
+  pairing_error_code?: string;
   total_messages_received: number;
 }
 

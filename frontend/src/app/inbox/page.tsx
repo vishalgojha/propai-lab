@@ -2950,7 +2950,6 @@ function UnifiedMarketInbox() {
           {([
             ["groups", "Groups", triageCounts.groups],
             ["dms", "DMs", triageCounts.dms],
-            ["extracted", "Extracted records", triageCounts.extracted],
           ] as ["groups" | "dms" | TriageFilter, string, number | null][]).map(([value, label, count]) => {
             const selected = value === "extracted"
               ? triageFilter === "extracted"

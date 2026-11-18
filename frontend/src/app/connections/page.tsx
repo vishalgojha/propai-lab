@@ -52,6 +52,18 @@ function pairingSecondsUntil(expiresAt: string): number {
   return Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000));
 }
 
+type PairingFailureKind = "service" | "retry" | "other";
+
+// Pairing refusals carry a machine code from the ingestor. Service-side codes
+// are not caused by the user's phone or number and a reset cannot fix them, so
+// say that instead of showing a bare red line next to a "Reset confirmed" note.
+function classifyPairingFailure(code: string | null | undefined): PairingFailureKind {
+  const value = String(code || "").trim();
+  if (value === "lock_held_by_this_process") return "retry";
+  if (["lock_held", "db_timeout", "device_lookup_failed", "start_failed"].includes(value)) return "service";
+  return "other";
+}
+
 function connectionSnapshotKey(userId: string) {
   if (typeof window === "undefined" || !userId) return "";
   const tenant = window.localStorage.getItem("propai_active_tenant") || "default";
@@ -305,6 +317,7 @@ function PhoneCard({
   const [pairCodeExpiresAt, setPairCodeExpiresAt] = useState<string | null>(null);
   const [pairCodeSecondsRemaining, setPairCodeSecondsRemaining] = useState(0);
   const [pairingSucceeded, setPairingSucceeded] = useState(false);
+  const [pairErrorCode, setPairErrorCode] = useState<string | null>(null);
   const [pairCodeCopied, setPairCodeCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -400,6 +413,7 @@ function PhoneCard({
     if (pairCodeInput.length < 10) return;
     setActionLoading("pair-code");
     setActionError(null);
+    setPairErrorCode(null);
     try {
       // Pair-code owns session setup. Starting QR/connect immediately before it
       // races two WhatsApp pairing modes and causes intermittent 502 responses.
@@ -546,6 +560,7 @@ function PhoneCard({
         }
         const pairingError = String(result.pairing_error || result.status?.pairing_error || "").trim();
         if (pairingError || ["error", "pairing_error", "not_started"].includes(String(result.state || ""))) {
+          setPairErrorCode(String(result.pairing_error_code || result.status?.pairing_error_code || "") || null);
           setActionError(pairingError || "WhatsApp did not start pairing. Wait a minute, then request one new code.");
           setPairCodePending(false);
           return;
@@ -683,6 +698,7 @@ function PhoneCard({
     setPairCodeSecondsRemaining(0);
     setPairingSucceeded(false);
     setPairCodeCopied(false);
+    setPairErrorCode(null);
     setPairQrPending(false);
     setPairQrStartedAt(null);
     setPairQrValue(null);
@@ -1051,7 +1067,21 @@ function PhoneCard({
                       <div>{resetWarning}</div>
                     </div>
                   )}
-                  {actionError && <p className="text-xs text-red-400">{actionError}</p>}
+                  {actionError && classifyPairingFailure(pairErrorCode) !== "other" ? (
+                    <div role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-100">
+                      <div className="font-semibold">
+                        {classifyPairingFailure(pairErrorCode) === "retry" ? "Almost ready" : "Pairing can't start right now"}
+                      </div>
+                      <div>{actionError}</div>
+                      <div className="mt-1 text-amber-200/80">
+                        {classifyPairingFailure(pairErrorCode) === "retry"
+                          ? "Tap Get linking code once more."
+                          : "This is a PropAI service problem. Don't reset again; that won't fix it."}
+                      </div>
+                    </div>
+                  ) : actionError ? (
+                    <p className="text-xs text-red-400">{actionError}</p>
+                  ) : null}
                   <p className="text-xs text-zinc-400">
                     {pairingPhoneEditable
                       ? "Enter the WhatsApp number to pair, including country code (for India, start with 91):"

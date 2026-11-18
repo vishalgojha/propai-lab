@@ -118,12 +118,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
   const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab, tabs, saveTabScroll } = useLayout();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [expandedSidebarSections, setExpandedSidebarSections] = useState<Record<string, boolean>>({
-    WhatsApp: true,
-    Brokerage: true,
-    Marketing: true,
-    Settings: true,
-  });
   const [phones, setPhones] = useState<Phone[]>([]);
   const [offline, setOffline] = useState(false);
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
@@ -565,25 +559,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const savedCollapsed = window.localStorage.getItem("propai_sidebar_collapsed");
     if (savedCollapsed !== null) setSidebarCollapsed(savedCollapsed === "true");
-    const savedSections = window.localStorage.getItem("propai_sidebar_sections");
-    if (savedSections) {
-      try {
-        setExpandedSidebarSections((current) => ({ ...current, ...JSON.parse(savedSections) }));
-      } catch {
-        window.localStorage.removeItem("propai_sidebar_sections");
-      }
-    }
+    // Sidebar sections are always expanded so the navigation looks the same on
+    // every page. Drop any collapsed state saved by older builds.
+    window.localStorage.removeItem("propai_sidebar_sections");
   }, []);
-
-  useEffect(() => {
-    const activeSection = navSections.find((section) => section.items.some((item) => {
-      const itemPath = item.href.split("?")[0];
-      return pathname === itemPath || (itemPath !== "/" && pathname.startsWith(itemPath));
-    }))?.title;
-    if (activeSection) {
-      setExpandedSidebarSections((current) => current[activeSection] === false ? { ...current, [activeSection]: true } : current);
-    }
-  }, [pathname, navSections]);
 
   useEffect(() => {
     const handleSidebarShortcut = (event: KeyboardEvent) => {
@@ -640,14 +619,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     );
-  }
-
-  function toggleSidebarSection(title: string) {
-    setExpandedSidebarSections((current) => {
-      const next = { ...current, [title]: current[title] === false };
-      window.localStorage.setItem("propai_sidebar_sections", JSON.stringify(next));
-      return next;
-    });
   }
 
   function toggleDesktopSidebar() {
@@ -743,17 +714,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
           {navSections.map((section) => (
             <div key={section.title} className={`${sidebarCollapsed ? "mb-2" : "mb-4"}`}>
               {section.title && !sidebarCollapsed && (
-                <button
-                  type="button"
-                  onClick={() => toggleSidebarSection(section.title)}
-                  className="mb-1.5 flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[9px] font-bold uppercase tracking-[0.15em] text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
-                  aria-expanded={expandedSidebarSections[section.title] !== false}
-                >
+                <div className="mb-1.5 flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[9px] font-bold uppercase tracking-[0.15em] text-text-muted">
                   <span>{section.title}</span>
-                  <ChevronDown className={`ml-auto h-3 w-3 transition-transform ${expandedSidebarSections[section.title] === false ? "-rotate-90" : ""}`} aria-hidden="true" />
-                </button>
+                </div>
               )}
-              {(!section.title || sidebarCollapsed || expandedSidebarSections[section.title] !== false) && section.items.map((item: NavItem) => {
+              {(!section.title || sidebarCollapsed || true) && section.items.map((item: NavItem) => {
                 const itemPath = item.href.split("?")[0];
                 const active = pathname === itemPath || (itemPath !== "/" && pathname.startsWith(itemPath));
                 const Icon = item.icon;
