@@ -3727,6 +3727,49 @@ class SupabaseStorage(Storage):
         res = self.client.table("org_whatsapp_connections").insert(data).execute()
         return res.data[0] if res.data else None
 
+    @staticmethod
+    def _is_missing_rpc_error(exc: BaseException, function_name: str) -> bool:
+        """True only for PostgREST's "function not found" (HTTP 404, PGRST202).
+
+        ``_RestClient.rpc`` wraps HTTP failures in RuntimeError; the structured
+        response lives on the chained httpx error. Permission, schema and
+        runtime failures must keep propagating.
+        """
+        cause = exc.__cause__ if isinstance(exc, RuntimeError) else exc
+        if not isinstance(cause, httpx.HTTPStatusError) or cause.response is None:
+            return False
+        if cause.response.status_code != 404:
+            return False
+        try:
+            body = cause.response.json()
+        except ValueError:
+            return False
+        return isinstance(body, dict) and body.get("code") == "PGRST202" and function_name in str(body.get("message") or "")
+
+    def add_unpaired_org_whatsapp_connection_once(self, org_id: str, broker_id: str) -> dict | None:
+        """Create the org's unpaired placeholder card unless one already exists.
+
+        Uses a database function with a per-org advisory lock so concurrent API
+        workers cannot each insert one. When the function is not installed yet
+        it falls back to a check-then-insert that is guarded only inside this
+        process: with several API workers that is NOT duplicate-proof until the
+        migration is applied.
+        """
+        name = "add_unpaired_whatsapp_connection_once"
+        try:
+            rows = self.client.rpc(name, {"p_org": org_id, "p_broker_id": broker_id})
+        except RuntimeError as exc:
+            if not self._is_missing_rpc_error(exc, name):
+                raise
+            _logger.warning("%s is not installed; using process-local guarded insert for %s", name, org_id)
+            existing = self.get_org_placeholder_whatsapp_connection(org_id)
+            if existing:
+                return existing
+            return self.add_org_whatsapp_connection(org_id, f"Unpaired:{broker_id}", "", broker_id)
+        if isinstance(rows, dict):
+            rows = [rows]
+        return rows[0] if rows else None
+
     def update_org_whatsapp_connection(self, conn_id: int, updates: dict) -> dict | None:
         payload = {k: v for k, v in updates.items() if v is not None}
         if not payload:

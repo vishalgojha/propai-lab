@@ -157,3 +157,49 @@ def test_status_stays_generating_while_a_background_retry_is_running(monkeypatch
     result = asyncio.run(run())
 
     assert result["state"] == "generating"
+
+
+def _coded(status, code, message):
+    return httpx.Response(
+        status,
+        json={"error": message, "code": code, "retryable": status == 409},
+        request=httpx.Request("POST", "http://ingestor:3001/pair-code/start"),
+    )
+
+
+def test_database_timeout_is_not_retried_and_keeps_its_cause(monkeypatch):
+    message = "PropAI's database was too slow to start pairing."
+    calls = _wire_pairing(monkeypatch, [_coded(500, "db_timeout", message)])
+
+    asyncio.run(_start_pair())
+
+    assert len(calls) == 1
+    result = whatsapp_sync._phone_pair_results[PHONE_ID]
+    assert result["state"] == "pairing_error"
+    assert result["pairing_error"] == message
+    assert result["pairing_error_code"] == "db_timeout"
+
+
+def test_lock_held_elsewhere_is_not_retried_as_if_it_were_a_release_delay(monkeypatch):
+    message = "Pairing for this number is blocked: another service instance holds its session lock."
+    calls = _wire_pairing(monkeypatch, [_coded(423, "lock_held", message)])
+
+    asyncio.run(_start_pair())
+
+    assert len(calls) == 1
+    result = whatsapp_sync._phone_pair_results[PHONE_ID]
+    assert result["pairing_error"] == message
+    assert result["pairing_error_code"] == "lock_held"
+
+
+def test_retryable_local_lock_conflict_retries_then_reports_its_code(monkeypatch):
+    message = "A previous pairing attempt for this number is still finishing."
+    calls = _wire_pairing(monkeypatch, [_coded(409, "lock_held_by_this_process", message)] * 3)
+
+    asyncio.run(_start_pair())
+
+    assert len(calls) == 3
+    result = whatsapp_sync._phone_pair_results[PHONE_ID]
+    assert result["state"] == "pairing_error"
+    assert result["pairing_error"] == message
+    assert result["pairing_error_code"] == "lock_held_by_this_process"

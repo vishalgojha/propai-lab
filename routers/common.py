@@ -556,7 +556,21 @@ def _normalize_real_phone(value: object) -> str:
     return ""
 
 
+_signup_phone_locks: dict[str, threading.Lock] = {}
+_signup_phone_locks_guard = threading.Lock()
+
+
 def _ensure_signup_whatsapp_phone(user: dict, org_id: str) -> None:
+    # Concurrent login requests used to each pass the "no unpaired card yet"
+    # check and each insert one, leaving duplicate "New Phone" cards. Serialize
+    # per org inside this process so check-then-insert is atomic here.
+    with _signup_phone_locks_guard:
+        lock = _signup_phone_locks.setdefault(org_id, threading.Lock())
+    with lock:
+        _ensure_signup_whatsapp_phone_locked(user, org_id)
+
+
+def _ensure_signup_whatsapp_phone_locked(user: dict, org_id: str) -> None:
     """Register the phone collected at signup as the first pairing card.
 
     Signup should create a ready-to-pair workspace.  This is deliberately
@@ -587,9 +601,14 @@ def _ensure_signup_whatsapp_phone(user: dict, org_id: str) -> None:
         # pairing can collect the number in the pairing dialog, while QR
         # pairing does not need a number at all.
         canonical_phone = f"91{phone}" if phone else f"Unpaired:{broker_id}"
-        connection = storage.add_org_whatsapp_connection(
-            org_id, canonical_phone, "", broker_id
-        )
+        if phone:
+            connection = storage.add_org_whatsapp_connection(
+                org_id, canonical_phone, "", broker_id
+            )
+        else:
+            connection = storage.add_unpaired_org_whatsapp_connection_once(
+                org_id, broker_id
+            )
         if connection and phone:
             storage.add_org_whatsapp_phone_directory(
                 org_id, broker_id, canonical_phone, "", True
@@ -1500,9 +1519,26 @@ def _ingestor_error_detail(response: httpx.Response) -> str:
         return ""
     return str(payload.get("error") or payload.get("detail") or "").strip()
 
+def _ingestor_error_code(response: httpx.Response | None) -> str:
+    """Machine code the ingestor attaches to a pairing-start refusal, if any."""
+    if response is None:
+        return ""
+    try:
+        payload = response.json()
+    except (ValueError, AttributeError):
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    return str(payload.get("code") or "").strip()
+
 def _ingestor_failure_message(response: httpx.Response | None) -> str:
     if response is None:
         return "WhatsApp service is unavailable. Try again in a moment."
+    # A coded refusal carries its own truthful explanation. Do not let the
+    # status-code defaults below (for example 503 meaning "auth not
+    # configured") replace it.
+    if _ingestor_error_code(response) and _ingestor_error_detail(response):
+        return _ingestor_error_detail(response)
     if response.status_code == 401:
         return "WhatsApp service authentication failed. PROPAI_INTERNAL_TOKEN must match on the API and ingestor services."
     if response.status_code == 503:

@@ -132,3 +132,19 @@ def test_409_without_ingestor_detail_keeps_instance_message():
         "This phone session is active on another ingestor instance. "
         "Redeploy the ingestor once, then retry."
     )
+
+
+def test_coded_503_keeps_the_ingestor_explanation_not_the_auth_message():
+    response = httpx.Response(
+        503,
+        json={"error": "PropAI's database was too slow to start pairing.", "code": "db_timeout"},
+        request=httpx.Request("POST", "http://ingestor:3001/pair-code/start"),
+    )
+
+    assert common._ingestor_failure_message(response) == "PropAI's database was too slow to start pairing."
+
+
+def test_uncoded_503_still_reports_missing_ingestor_auth():
+    response = httpx.Response(503, json={}, request=httpx.Request("POST", "http://ingestor:3001/x"))
+
+    assert common._ingestor_failure_message(response) == "WhatsApp service authentication is not configured on the ingestor."

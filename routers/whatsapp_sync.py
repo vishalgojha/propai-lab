@@ -35,6 +35,21 @@ _PAIR_START_RETRY_DELAY = 3.0
 _logger = __import__("logging").getLogger(__name__)
 
 
+def _response_error_code(resp) -> str:
+    """Machine code from an ingestor refusal body, or empty."""
+    try:
+        payload = resp.json()
+    except Exception:
+        return ""
+    return str(payload.get("code") or "").strip() if isinstance(payload, dict) else ""
+
+
+class _CodedPairError(RuntimeError):
+    def __init__(self, message: str, code: str):
+        super().__init__(message)
+        self.code = code
+
+
 # ── Models ────────────────────────────────────────────────────────
 
 class BusinessApiConfigRequest(BaseModel):
@@ -966,6 +981,7 @@ async def pair_code_phone(
 
     async def perform_pair_start() -> None:
         detail = ""
+        last_code = ""
         try:
             for attempt in range(1, _PAIR_START_MAX_ATTEMPTS + 1):
                 if attempt > 1:
@@ -1000,8 +1016,9 @@ async def pair_code_phone(
                     if callable(_ingestor_failure_message)
                     else f"WhatsApp service returned HTTP {resp.status_code}"
                 )
+                last_code = _response_error_code(resp)
                 if resp.status_code != 409:
-                    raise RuntimeError(detail)
+                    raise _CodedPairError(detail, _response_error_code(resp))
                 # A 409 from /pair-code/start means the broker session is still
                 # releasing or the setup window expired against a slow database.
                 # Both clear on their own, so keep the dashboard in "generating"
@@ -1019,6 +1036,7 @@ async def pair_code_phone(
                 "ok": False,
                 "state": "pairing_error",
                 "pairing_error": detail or "WhatsApp did not accept the pairing request. Wait a minute, then request one new code.",
+                "pairing_error_code": last_code,
             }
         except Exception as exc:
             _logger.exception("WhatsApp pairing start failed in background for phone_id=%s", phone_id)
@@ -1026,6 +1044,7 @@ async def pair_code_phone(
                 "ok": False,
                 "state": "pairing_error",
                 "pairing_error": str(exc),
+                "pairing_error_code": getattr(exc, "code", ""),
             }
         finally:
             _phone_pair_tasks.pop(phone_id, None)
