@@ -39,6 +39,19 @@ export default function McpWorkspacePage() {
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyMessage, setKeyMessage] = useState("");
   const [writeAccess, setWriteAccess] = useState(false);
+  const [marketEnabled, setMarketEnabled] = useState(false);
+  const [mcpMarketAccess,setMcpMarketAccess] = useState<boolean|null>(null);
+  useEffect(()=>{ void fetchJSON<{enabled:boolean}>("/external/v1/market/mcp-reader-access").then(r=>setMcpMarketAccess(r.enabled)).catch(()=>setMcpMarketAccess(null)); },[]);
+  async function updateMcpMarketAccess() {
+    if(mcpMarketAccess===null)return;
+    if(!mcpMarketAccess&&!window.confirm("Allow your existing signed-in broker MCP connection to cross-search explicitly consenting property-group messages? This does not share your own groups, add DMs or enable writes. Public/anonymous access is unchanged."))return;
+    setKeyBusy(true);setKeyMessage("");
+    try { const r=await fetchJSON<{enabled:boolean}>("/external/v1/market/mcp-reader-access",{method:"PUT",body:JSON.stringify({enabled:!mcpMarketAccess})});setMcpMarketAccess(r.enabled);setKeyMessage(r.enabled?"Property cross-search enabled for your existing signed-in /raw-mcp connection. Refresh its tool list. No new server URL or token is needed.":"Property cross-search disabled for your MCP sign-in. Existing private tools are unchanged."); }
+    catch(e){setKeyMessage(e instanceof Error?e.message:"Could not update MCP cross-search access");}
+    finally{setKeyBusy(false);}
+  }
+
+  useEffect(() => { void fetchJSON<{enabled:boolean}>("/external/v1/market/policy").then(p=>setMarketEnabled(p.enabled)).catch(()=>setMarketEnabled(false)); }, []);
   const [keysLoading, setKeysLoading] = useState(true);
   const [keysError, setKeysError] = useState(false);
   const [externalKeys, setExternalKeys] = useState<ExternalAgentKey[]>([]);
@@ -143,6 +156,17 @@ export default function McpWorkspacePage() {
     } finally {
       setKeyScopeBusy(null);
     }
+  }
+
+  async function updateKeyMarketAccess(key: ExternalAgentKey, enabled: boolean) {
+    if (enabled && !window.confirm(`Allow ${key.label} to search property messages in other brokers' explicitly consenting groups? This does not share your groups, enable DMs or add write access. Your current key remains unchanged.`)) return;
+    setKeyScopeBusy(key.id); setKeyMessage("");
+    try {
+      const result = await fetchJSON<{scopes:string[]}>(`/external/v1/market/keys/${encodeURIComponent(key.id)}/access`, {method:"PUT",body:JSON.stringify({enabled})});
+      setExternalKeys(current=>current.map(item=>item.id===key.id?{...item,scopes:result.scopes}:item));
+      setKeyMessage(enabled ? "Property cross-search enabled for this existing key. Ask your assistant to refresh the PropAI API guide; no replacement token is needed." : "Property cross-search removed from this key. Private workspace access is unchanged.");
+    } catch(e) { setKeyMessage(e instanceof Error?e.message:"Could not update property search access"); }
+    finally { setKeyScopeBusy(null); }
   }
 
   async function updateKeyPhotoAccess(key: ExternalAgentKey, enabled: boolean) {
@@ -258,6 +282,11 @@ export default function McpWorkspacePage() {
         </label>
         <button type="button" onClick={() => void createExternalToken()} disabled={keyBusy} className="mt-5 inline-flex items-center gap-2 rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{keyBusy ? "Creating…" : "Create Instinct token"}</button>
         <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4">
+          {marketEnabled && <div className="mb-5 rounded-lg border border-emerald-400/30 p-4">
+            <h3 className="text-sm font-semibold text-white">Existing broker MCP connection</h3>
+            <p className="mt-2 text-xs leading-5 text-zinc-400">Enable property cross-search for your own signed-in mcp.propai.live/raw-mcp connection. This grants reader access only, not sharing of your own groups, DM access or writes. Refresh the existing connection's tool list after enabling. No replacement connection is required.</p>
+            {mcpMarketAccess===null?<p className="mt-3 text-xs text-zinc-400">MCP permission could not be verified. Refresh before changing it.</p>:<button type="button" disabled={keyBusy} onClick={()=>void updateMcpMarketAccess()} className="mt-3 rounded-lg border border-emerald-400/30 px-3 py-2 text-xs text-emerald-200">{mcpMarketAccess?"Disable MCP property cross-search":"Enable MCP property cross-search"}</button>}
+          </div>}
           <h3 className="text-sm font-semibold text-white">Existing external API keys</h3>
           <p className="mt-1 text-xs leading-5 text-zinc-500">Enable private CRM writes on the current key without rotating its secret. This does not change private DM permission.</p>
           <div className="mt-3 space-y-2">
@@ -272,6 +301,7 @@ export default function McpWorkspacePage() {
                 <div className="flex flex-wrap gap-2">
                   <button type="button" onClick={() => void updateKeyWriteAccess(key, !hasWriteAccess)} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{keyScopeBusy === key.id ? "Updating…" : hasWriteAccess ? "Remove write access" : "Enable private CRM writes"}</button>
                   <button type="button" onClick={() => void updateKeyPhotoAccess(key, !key.scopes.includes("photos:write"))} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-emerald-300/30 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-300/10 disabled:opacity-60">{key.scopes.includes("photos:write") ? "Disable private photos" : "Enable private photos only"}</button>
+                  {marketEnabled && <button type="button" onClick={() => void updateKeyMarketAccess(key, !key.scopes.includes("broker_market:read"))} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-emerald-300/30 px-3 py-2 text-xs font-semibold text-emerald-200 disabled:opacity-60">{key.scopes.includes("broker_market:read") ? "Disable property cross-search" : "Enable property cross-search"}</button>}
                   <button type="button" onClick={() => void rotateKey(key)} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5 disabled:opacity-60">Rotate token</button>
                 </div>
               </div>;

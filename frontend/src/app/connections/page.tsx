@@ -1118,6 +1118,15 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
   const [activeControl, setActiveControl] = useState<"start" | "pause" | "stop" | null>(null);
   const [stopConfirmationOpen, setStopConfirmationOpen] = useState(false);
   const [selectionConfirmationOpen, setSelectionConfirmationOpen] = useState(false);
+  const [marketPolicy, setMarketPolicy] = useState<{enabled:boolean;consent_version:string;consent_text:string}|null>(null);
+  const [marketConfirmed, setMarketConfirmed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    fetchJSON<{enabled:boolean;consent_version:string;consent_text:string}>("/external/v1/market/policy")
+      .then(p => { if (active) setMarketPolicy(p); }).catch(() => { if(active) setMarketPolicy(null); });
+    return () => { active = false; };
+  }, []);
+
   const [refreshingDirectory, setRefreshingDirectory] = useState(false);
   const [groupQuery, setGroupQuery] = useState("");
   const [groupSort, setGroupSort] = useState<"participants_desc" | "participants_asc" | "recent" | "name">("participants_desc");
@@ -1217,11 +1226,21 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     try {
       const selectedJids = Array.from(selectedGroups);
       const result = await selectOnboardingGroups(phone.id, selectedJids);
+      if (marketPolicy?.enabled && marketConfirmed && selectedJids.length > 0) {
+        try {
+          await fetchJSON("/external/v1/market/source-consent", {
+            method: "PUT", body: JSON.stringify({whatsapp_connection_id: phone.id,
+              group_jids: result.selected_group_jids, consent_version: marketPolicy.consent_version, confirmed: true}),
+          });
+        } catch {
+          throw new Error("Group selection saved, but cross-search sharing was NOT confirmed. Review the selection and retry.");
+        }
+      }
       // The response is the authoritative persisted state. Keep it in the
       // checkbox model even if the following directory refresh is eventually
       // consistent and briefly returns the previous connection rows.
       setSelectedGroups(new Set(result.selected_group_jids));
-      setMessage("Selection saved for optional extraction. Raw WhatsApp capture is unaffected.");
+      setMessage(marketPolicy?.enabled && marketConfirmed ? "Selection saved. Only new messages in explicitly confirmed groups are eligible for property cross-search. No paid extraction started." : "Existing group settings saved. Raw cross-search sharing was not enabled. Typed-listing publication and live capture keep their existing behavior.");
       await loadGroups();
       setSelectedGroups(new Set(result.selected_group_jids));
       await onRefresh();
@@ -1238,6 +1257,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       setError(`Select at most ${data.cap} groups.`);
       return;
     }
+    setMarketConfirmed(false);
     setSelectionConfirmationOpen(true);
   };
 
@@ -1749,7 +1769,17 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
               </div>
               <div className="min-w-0">
                 <h2 id="confirm-selection-title" className="text-sm font-semibold text-white">Confirm group selection</h2>
-                <p className="mt-1 text-xs leading-5 text-zinc-400">New group messages captured after pairing, and your direct chats, keep being saved privately either way. Confirming these {selectedGroups.size} group{selectedGroups.size === 1 ? "" : "s"} turns their listings into shared-market listings that other brokers can search. Unchecked groups and your direct chats always stay private to your workspace.</p>
+                {marketPolicy?.enabled ? (
+                  <div className="mt-2 space-y-3 text-xs leading-5 text-zinc-300">
+                    <p>Existing group settings, including optional extraction and typed-listing publication, are unchanged. The choice below adds raw-message cross-search separately.</p>
+                    <p>{marketPolicy.consent_text}</p>
+                    <p className="text-zinc-400">Only new messages after this confirmation are eligible. No message archive is copied, and no paid extraction starts.</p>
+                    <label className="flex items-start gap-2 rounded-lg border border-emerald-400/30 p-3">
+                      <input type="checkbox" checked={marketConfirmed} onChange={e => setMarketConfirmed(e.target.checked)} className="mt-1" />
+                      <span>I have authority to share these groups' message text with other PropAI brokers for property cross-search, and I agree to this sharing.</span>
+                    </label>
+                  </div>
+                ) : <p className="mt-1 text-xs leading-5 text-zinc-400">Save selected groups for optional listing extraction. Raw cross-account message search is not enabled. Unchecked groups and direct chats stay private to your workspace.</p>}
               </div>
               <button type="button" onClick={() => setSelectionConfirmationOpen(false)} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close selection confirmation">
                 <X className="h-4 w-4" />
@@ -1757,7 +1787,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
             </div>
             <div className="flex justify-end gap-2 px-5 py-3">
               <button type="button" onClick={() => setSelectionConfirmationOpen(false)} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5">Cancel</button>
-              <button type="button" onClick={() => { setSelectionConfirmationOpen(false); void handleConfirmSelection(); }} className="rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20">Confirm selection</button>
+              <button type="button" onClick={() => { setSelectionConfirmationOpen(false); void handleConfirmSelection(); }} className="rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40">{marketPolicy?.enabled && marketConfirmed ? "Confirm selection and sharing" : "Save existing group settings only"}</button>
             </div>
           </div>
         </div>
