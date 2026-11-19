@@ -64,6 +64,12 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // Cover the authenticated client layout and every app route, including
+        // login/connect pages that do not export server metadata.
+        source: "/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+      {
         // The authenticated app shell contains deployment-specific chunk URLs and
         // user-specific navigation. Never let the CDN retain it across releases.
         // Hashed Next assets, API routes and public files are excluded below.

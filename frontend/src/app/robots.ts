@@ -1,13 +1,7 @@
 import type { MetadataRoute } from "next";
 
 export default function robots(): MetadataRoute.Robots {
-  return {
-    rules: [
-      {
-        userAgent: "*",
-        allow: "/",
-        disallow: ["/dashboard", "/inbox", "/crm", "/deals", "/mydeals", "/clients", "/groups", "/admin", "/api/"],
-      },
-    ],
-  };
+  // Crawlers must be able to read the app's sitewide noindex response header.
+  // This is not an access-control rule; authentication stays unchanged.
+  return { rules: { userAgent: "*", allow: "/", disallow: "/api/" } };
 }

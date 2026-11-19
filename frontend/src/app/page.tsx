@@ -12,7 +12,7 @@ export const metadata: Metadata = {
       "Organise your WhatsApp property network into a searchable broker workspace for listings, requirements, matches, and deals.",
     type: "website",
   },
-  robots: { index: true, follow: true },
+  robots: { index: false, follow: false },
 };
 
 export default function BrokerLandingPage() {
