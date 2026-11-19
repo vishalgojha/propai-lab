@@ -1207,10 +1207,10 @@ def _generate_user_code() -> str:
     return f"{body[:4]}-{body[4:]}"
 
 
-def _connect_session_by_user_code(user_code: str) -> dict:
+def _connect_session_by_user_code(user_code: str, *, allow_expired: bool = False) -> dict:
     code = (user_code or "").strip().upper()
     result = storage.client.table("external_agent_connect_sessions").select(
-        "id,status,label,write_access,expires_at"
+        "id,status,label,write_access,expires_at,tenant_id,approved_by,api_key_id"
     ).eq("user_code", code).limit(1).execute()
     row = (result.data or [None])[0] if result else None
     if not row:
@@ -1219,7 +1219,7 @@ def _connect_session_by_user_code(user_code: str) -> dict:
         expired = datetime.fromisoformat(str(row.get("expires_at")).replace("Z", "+00:00")) <= datetime.now(timezone.utc)
     except ValueError:
         expired = True
-    if expired:
+    if expired and not allow_expired:
         raise HTTPException(410, "Connect session expired; start a new connection from the agent")
     return row
 
@@ -1299,13 +1299,36 @@ async def poll_connect_session(device_code: str):
 @router.get("/connect/sessions/by-code/{user_code}")
 async def preview_connect_session(user_code: str, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
     """Broker-facing: what the signed-in connect page renders before deciding."""
-    row = _connect_session_by_user_code(user_code)
-    if row.get("status") != "pending":
-        raise HTTPException(409, "Connect session already decided")
+    row = _connect_session_by_user_code(user_code, allow_expired=True)
+    state = row.get("status")
+    # Terminal state belongs only to the person/workspace that decided it.
+    if state != "pending" and (row.get("tenant_id") != tenant_id or row.get("approved_by") != user.get("id")):
+        raise HTTPException(404, "Connect session not found")
+    result = {"label": row.get("label") or "Instinct", "write_access": bool(row.get("write_access")), "scopes": []}
+    # Fixed known destination, never a caller-controlled redirect or a secret-bearing URL.
+    if result["label"].strip().casefold() == "instinct":
+        result["return_url"] = "https://wa.me/16508702892"
+    if state in {"approved", "consumed"}:
+        key = storage.client.table("external_agent_api_keys").select("id,revoked_at,expires_at").eq("id", row.get("api_key_id")).eq("tenant_id", tenant_id).limit(1).execute()
+        key_row = (key.data or [None])[0] if key else None
+        if not key_row or key_row.get("revoked_at"):
+            return {**result, "status": "revoked"}
+        key_expiry = key_row.get("expires_at")
+        if key_expiry and datetime.fromisoformat(str(key_expiry).replace("Z", "+00:00")) <= datetime.now(timezone.utc):
+            return {**result, "status": "expired"}
+        # A collected key remains valid after its short approval link expires.
+        if state == "consumed":
+            return {**result, "status": "connected"}
+    if datetime.fromisoformat(str(row["expires_at"]).replace("Z", "+00:00")) <= datetime.now(timezone.utc):
+        return {**result, "status": "expired"}
+    if state in {"approved", "denied", "approving", "expired"}:
+        return {**result, "status": state}
+    if state != "pending":
+        raise HTTPException(409, "Connect session is not available")
     scopes = sorted(DEFAULT_READ_SCOPES)
     if row.get("write_access"):
         scopes.extend(sorted(WRITE_SCOPES | TOOL_WRITE_SCOPES))
-    return {"label": row.get("label") or "Instinct", "write_access": bool(row.get("write_access")), "scopes": scopes}
+    return {**result, "status": "pending", "scopes": scopes}
 
 
 @router.post("/connect/sessions/by-code/{user_code}/approve")
