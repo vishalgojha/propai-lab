@@ -2,6 +2,7 @@ import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 
 export const metadata = {
+  robots: { index: true, follow: true },
   title: "Privacy Policy — PropAI",
   description:
     "How PropAI collects, uses, stores, and protects information across its property discovery and broker tools.",

@@ -4,6 +4,7 @@ import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 
 export const metadata = {
+  robots: { index: true, follow: true },
   title: "Contact PropAI — Reach the Team & List Your Inventory",
   description:
     "Get in touch with PropAI. Brokers can list inventory directly; buyers and tenants reach verified brokers straight through WhatsApp.",

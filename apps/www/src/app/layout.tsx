@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     description: 'Search live broker inventory from WhatsApp groups through your own AI assistant.',
     images: ['/opengraph-image'],
   },
-  robots: 'noindex, nofollow',
+  robots: { index: false, follow: true },
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,

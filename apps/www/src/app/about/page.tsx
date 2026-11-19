@@ -6,6 +6,7 @@ import { getAllLocalities } from "@/lib/localities";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
+  robots: { index: true, follow: true },
   title: "About PropAI | Live broker inventory from WhatsApp groups",
   description:
     "PropAI turns brokers' WhatsApp posts into searchable property inventory your AI assistant can query. Public search needs no PropAI account. Posts leave public search after 30 quiet days.",

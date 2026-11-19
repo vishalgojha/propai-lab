@@ -2,6 +2,7 @@ import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 
 export const metadata = {
+  robots: { index: true, follow: true },
   title: "Terms of Service — PropAI",
   description:
     "Terms governing use of PropAI property discovery, broker workspace, and advertising tools.",
