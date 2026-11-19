@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/hmac"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -45,13 +47,15 @@ var (
 // ── Status ──────────────────────────────────────────────────────────────────
 
 type Status struct {
-	BrokerID        string `json:"broker_id,omitempty"`
-	Connected       bool   `json:"connected"`
-	ConnectionState string `json:"connection_state"`
-	QR              string `json:"qr,omitempty"`
-	QRAvailable     bool   `json:"qr_available,omitempty"`
-	PairingCode     string `json:"pairing_code,omitempty"`
-	PairingPhone    string `json:"pairing_phone,omitempty"`
+	PairingOperationID string `json:"pairing_operation_id,omitempty"`
+	PairingStartedAt   string `json:"pairing_started_at,omitempty"`
+	BrokerID           string `json:"broker_id,omitempty"`
+	Connected          bool   `json:"connected"`
+	ConnectionState    string `json:"connection_state"`
+	QR                 string `json:"qr,omitempty"`
+	QRAvailable        bool   `json:"qr_available,omitempty"`
+	PairingCode        string `json:"pairing_code,omitempty"`
+	PairingPhone       string `json:"pairing_phone,omitempty"`
 	// PairingWindowExpiresAt is the end of WhatsMeow's documented 160-second
 	// login websocket window. PairPhone's exact code expiry is intentionally
 	// undocumented, so clients must label this as the session window rather
@@ -86,6 +90,9 @@ type Status struct {
 
 type BrokerSession struct {
 	mu                       sync.RWMutex
+	eventWg                  sync.WaitGroup
+	panicRetries             int
+	loopDone                 chan struct{}
 	statusPostMu             sync.Mutex
 	lastStatusPost           time.Time
 	lastPostedState          string
@@ -103,8 +110,9 @@ type BrokerSession struct {
 	cancel                   context.CancelFunc
 	disconnected             chan struct{}
 	disconnectOnce           func() struct{}
-	lockConn                 *sql.Conn
+	lockConn                 *brokerLockHandle
 	lockReleaseOnce          sync.Once
+	lockReleaseConfirmed     bool
 	reconnectFailures        int
 	reconnectCount           int
 	totalMessages            int64
@@ -128,9 +136,26 @@ func (s *BrokerSession) getStatus() Status {
 	return s.status
 }
 
-func (s *BrokerSession) requestPairing(mode, phone string) {
+func (s *BrokerSession) requestPairing(mode, phone string) bool {
 	s.mu.Lock()
-	s.resetting = false
+	if s.resetting {
+		s.mu.Unlock()
+		return false
+	}
+	// Duplicate HTTP requests and single-flight waiters join one active operation.
+	// They must not reset an issued code or wake the mode-switch loop again.
+	active := s.status.PairingError == "" && !s.status.Connected && s.pairingMode == mode && s.pairingPhone == phone
+	if started, err := time.Parse(time.RFC3339Nano, s.status.PairingStartedAt); err != nil || time.Since(started) >= 160*time.Second {
+		active = false
+	}
+	if active {
+		s.mu.Unlock()
+		return false
+	}
+	if s.status.PairingOperationID == "" || s.status.ConnectionState != "new" {
+		s.status.PairingOperationID = fmt.Sprintf("pair-%d", time.Now().UnixNano())
+		s.status.PairingStartedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
 	s.pairingMode = mode
 	s.pairingPhone = phone
 	s.pairingRequestGeneration++
@@ -143,6 +168,7 @@ func (s *BrokerSession) requestPairing(mode, phone string) {
 	default:
 	}
 	s.mu.Unlock()
+	return true
 }
 
 func (s *BrokerSession) setStatus(st Status) {
@@ -159,6 +185,12 @@ func (s *BrokerSession) setStatus(st Status) {
 	}
 	// Preserve current values for fields not explicitly set in the new status
 	cur := s.status
+	if st.PairingOperationID == "" {
+		st.PairingOperationID = cur.PairingOperationID
+	}
+	if st.PairingStartedAt == "" {
+		st.PairingStartedAt = cur.PairingStartedAt
+	}
 	if st.PhoneNumber == "" {
 		st.PhoneNumber = cur.PhoneNumber
 	}
@@ -292,24 +324,32 @@ func (s *BrokerSession) unlinkAndClearDevice() (bool, error) {
 	return true, nil
 }
 
-func (s *BrokerSession) releaseLock() {
+func (s *BrokerSession) releaseLock() bool {
 	s.lockReleaseOnce.Do(func() {
 		if s.lockConn == nil {
+			s.lockReleaseConfirmed = true
 			return
 		}
-		releaseBrokerLockConn(s.lockConn, s.brokerID)
+		s.lockReleaseConfirmed = releaseBrokerLockConn(s.lockConn, s.brokerID)
 		s.lockConn = nil
 	})
+	return s.lockReleaseConfirmed
 }
 
 // ── Session manager ────────────────────────────────────────────────────────
 
 type SessionManager struct {
-	mu        sync.RWMutex
-	sessions  map[string]*BrokerSession
-	container *sqlstore.Container
-	db        *sql.DB
-	sessionWg sync.WaitGroup
+	mu            sync.RWMutex
+	sessions      map[string]*BrokerSession
+	container     *sqlstore.Container
+	db            *sql.DB
+	lockDB        *sql.DB
+	owner         *singletonLockOwner
+	starting      map[string]chan struct{}
+	startupCancel map[string]context.CancelFunc
+	resetting     map[string]bool
+	startupStatus map[string]Status
+	sessionWg     sync.WaitGroup
 }
 
 type inboxThreadCursor struct {
@@ -343,11 +383,14 @@ type selfChatAgentResponse struct {
 	Message string `json:"message"`
 }
 
-func NewSessionManager(container *sqlstore.Container, db *sql.DB) *SessionManager {
+func NewSessionManager(container *sqlstore.Container, db, lockDB *sql.DB) *SessionManager {
 	return &SessionManager{
-		sessions:  make(map[string]*BrokerSession),
-		container: container,
-		db:        db,
+		sessions:      make(map[string]*BrokerSession),
+		container:     container,
+		db:            db,
+		lockDB:        lockDB,
+		starting:      make(map[string]chan struct{}),
+		startupStatus: make(map[string]Status),
 	}
 }
 
@@ -367,14 +410,44 @@ func (sm *SessionManager) List() []*BrokerSession {
 	return out
 }
 
-func (sm *SessionManager) Remove(brokerID string) {
+func (sm *SessionManager) Remove(brokerID string) bool {
 	sm.mu.Lock()
 	session := sm.sessions[brokerID]
-	delete(sm.sessions, brokerID)
-	sm.mu.Unlock()
-	if session != nil {
-		session.releaseLock()
+	if session == nil {
+		sm.mu.Unlock()
+		return true
 	}
+	ownsBarrier := !sm.resetting[brokerID]
+	if sm.resetting == nil {
+		sm.resetting = make(map[string]bool)
+	}
+	sm.resetting[brokerID] = true
+	session.mu.Lock()
+	session.resetting = true
+	session.mu.Unlock()
+	sm.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
+	defer cancel()
+	if session.cancel != nil {
+		session.cancel()
+	}
+	if err := session.drainSessionEvents(ctx); err != nil {
+		return false
+	}
+	if err := session.retireLoop(ctx); err != nil {
+		return false
+	}
+	sm.mu.Lock()
+	if sm.sessions[brokerID] != session {
+		sm.mu.Unlock()
+		return false
+	}
+	delete(sm.sessions, brokerID)
+	if ownsBarrier {
+		delete(sm.resetting, brokerID)
+	}
+	sm.mu.Unlock()
+	return session.releaseLock()
 }
 
 func brokerLockKey(brokerID string) int64 {
@@ -404,13 +477,21 @@ func (s *BrokerSession) failCodePairing(message string) {
 	})
 }
 
-func (sm *SessionManager) acquireBrokerLock(ctx context.Context, brokerID string) (*sql.Conn, bool, error) {
-	conn, err := sm.db.Conn(ctx)
+func (sm *SessionManager) acquireBrokerLock(ctx context.Context, brokerID string) (*brokerLockHandle, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	if sm.owner != nil {
+		return sm.owner.acquire(ctx, brokerID)
+	}
+	conn, err := sm.lockDB.Conn(ctx)
 	if err != nil {
 		return nil, false, err
 	}
 	var locked bool
 	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", brokerLockKey(brokerID)).Scan(&locked); err != nil {
+		// Acquisition might have reached PostgreSQL even if the response timed out.
+		// Discard instead of returning an ambiguously locked connection to the pool.
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		_ = conn.Close()
 		return nil, false, err
 	}
@@ -418,21 +499,39 @@ func (sm *SessionManager) acquireBrokerLock(ctx context.Context, brokerID string
 		_ = conn.Close()
 		return nil, false, nil
 	}
-	return conn, true, nil
+	return &brokerLockHandle{conn: conn}, true, nil
 }
 
-func releaseBrokerLockConn(conn *sql.Conn, brokerID string) {
+func releaseBrokerLockConn(handle *brokerLockHandle, brokerID string) bool {
+	if handle == nil {
+		return true
+	}
+	if handle.owner != nil {
+		return handle.owner.release(brokerID)
+	}
+	conn := handle.conn
 	if conn == nil {
-		return
+		return true
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", brokerLockKey(brokerID)); err != nil {
-		log.Printf("[broker %s] error releasing session lock: %v", brokerID, err)
+	var unlocked bool
+	confirmed := true
+	if err := conn.QueryRowContext(ctx, "SELECT pg_advisory_unlock($1)", brokerLockKey(brokerID)).Scan(&unlocked); err != nil || !unlocked {
+		confirmed = false
+		log.Printf("[broker %s] session lock release not confirmed (unlocked=%t): %v", brokerID, unlocked, err)
+		// Never return a possibly still-locked physical connection to the pool.
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 	}
-	if err := conn.Close(); err != nil {
-		log.Printf("[broker %s] error closing session lock connection: %v", brokerID, err)
-	}
+	_ = conn.Close()
+	return confirmed
+}
+
+func (sm *SessionManager) getStartupStatus(brokerID string) (Status, bool) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	st, ok := sm.startupStatus[brokerID]
+	return st, ok
 }
 
 func (sm *SessionManager) startOrGet(
@@ -445,6 +544,10 @@ func (sm *SessionManager) startOrGet(
 	// blocked every session endpoint, including pair-code/start, until both API
 	// aliases timed out.
 	sm.mu.Lock()
+	if sm.resetting[brokerID] {
+		sm.mu.Unlock()
+		return nil
+	}
 	existing := sm.sessions[brokerID]
 	sm.mu.Unlock()
 	if existing != nil {
@@ -454,17 +557,80 @@ func (sm *SessionManager) startOrGet(
 		return existing
 	}
 
-	// Bound all database setup below the API's ten-second ingestor timeout. A
-	// stalled database must fail this broker's attempt, never wedge the global
-	// session registry indefinitely.
+	// One canonical in-flight startup per broker. Status is held in the
+	// ingestor, not a single API worker; concurrent requests share its result.
+	sm.mu.Lock()
+	if sm.resetting[brokerID] {
+		sm.mu.Unlock()
+		return nil
+	}
+	if sm.starting == nil {
+		sm.starting = make(map[string]chan struct{})
+	}
+	if sm.startupStatus == nil {
+		sm.startupStatus = make(map[string]Status)
+	}
+	if done := sm.starting[brokerID]; done != nil {
+		sm.mu.Unlock()
+		<-done
+		sm.mu.RLock()
+		session := sm.sessions[brokerID]
+		resetting := sm.resetting[brokerID]
+		sm.mu.RUnlock()
+		if resetting {
+			return nil
+		}
+		if session != nil && configureBeforeStart != nil {
+			configureBeforeStart(session)
+		}
+		return session
+	}
+	// Recheck under the same lock used to publish startup to close the gap.
+	if existing := sm.sessions[brokerID]; existing != nil {
+		sm.mu.Unlock()
+		if configureBeforeStart != nil {
+			configureBeforeStart(existing)
+		}
+		return existing
+	}
+	done := make(chan struct{})
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
+	if sm.startupCancel == nil {
+		sm.startupCancel = make(map[string]context.CancelFunc)
+	}
+	sm.startupCancel[brokerID] = cancel
+	sm.starting[brokerID] = done
+	sm.startupStatus[brokerID] = Status{BrokerID: brokerID, ConnectionState: "generating", PairingOperationID: fmt.Sprintf("pair-%d", time.Now().UnixNano()), PairingStartedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	sm.mu.Unlock()
+	failure := "WhatsApp session setup failed. No pairing code was issued."
+	defer func() {
+		sm.mu.Lock()
+		if sm.sessions[brokerID] == nil {
+			st := sm.startupStatus[brokerID]
+			st.ConnectionState = "pairing_error"
+			st.PairingError = failure
+			sm.startupStatus[brokerID] = st
+		} else {
+			delete(sm.startupStatus, brokerID)
+		}
+		delete(sm.starting, brokerID)
+		delete(sm.startupCancel, brokerID)
+		close(done)
+		sm.mu.Unlock()
+	}()
+
+	// Bound database setup. Cancellation is also used by the reset barrier.
 	lockConn, locked, err := sm.acquireBrokerLock(ctx, brokerID)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			failure = "WhatsApp session capacity is busy or its database is slow. No code was issued; ask support before retrying."
+		}
 		log.Printf("[broker %s] error acquiring session lock: %v", brokerID, err)
 		return nil
 	}
 	if !locked {
+		failure = "This WhatsApp session is still owned by another service connection. No code was issued; ask support before retrying."
 		log.Printf("[broker %s] session lock already held by another ingestor instance", brokerID)
 		return nil
 	}
@@ -472,7 +638,13 @@ func (sm *SessionManager) startOrGet(
 	// Check if we have a stored device mapping
 	deviceJID, err := sm.lookupDeviceJID(ctx, brokerID)
 	if err != nil {
+		failure = "WhatsApp session database lookup failed. No code was issued; ask support before retrying."
 		log.Printf("[broker %s] error looking up device mapping: %v", brokerID, err)
+		releaseBrokerLockConn(lockConn, brokerID)
+		return nil
+	}
+	if ctx.Err() != nil {
+		failure = "Pairing preparation was cancelled. No code was issued."
 		releaseBrokerLockConn(lockConn, brokerID)
 		return nil
 	}
@@ -495,12 +667,29 @@ func (sm *SessionManager) startOrGet(
 	}
 
 	session := sm.newSession(brokerID, device)
+	if st, ok := sm.getStartupStatus(brokerID); ok {
+		session.status.PairingOperationID = st.PairingOperationID
+		session.status.PairingStartedAt = st.PairingStartedAt
+	}
 	session.lockConn = lockConn
+
+	// Configure before map publication: status callbacks perform HTTP and must
+	// not hold the global session-manager mutex. Same-broker callers wait on done.
+	if configureBeforeStart != nil {
+		configureBeforeStart(session)
+	}
 
 	// Another local request may have installed the session while this request
 	// was acquiring the cross-instance advisory lock. Prefer that canonical
 	// session and release the unused lock connection cleanly.
 	sm.mu.Lock()
+	if sm.resetting[brokerID] || ctx.Err() != nil {
+		sm.mu.Unlock()
+		session.cancel()
+		releaseBrokerLockConn(lockConn, brokerID)
+		failure = "Pairing preparation was cancelled. No code was issued."
+		return nil
+	}
 	if existing = sm.sessions[brokerID]; existing != nil {
 		sm.mu.Unlock()
 		releaseBrokerLockConn(lockConn, brokerID)
@@ -508,9 +697,6 @@ func (sm *SessionManager) startOrGet(
 			configureBeforeStart(existing)
 		}
 		return existing
-	}
-	if configureBeforeStart != nil {
-		configureBeforeStart(session)
 	}
 	sm.sessions[brokerID] = session
 	sm.sessionWg.Add(1)
@@ -528,17 +714,21 @@ func (sm *SessionManager) startOrGetForPairing(brokerID, mode, phone string) *Br
 	// status endpoint so the dashboard can show its cause. Discard it only when
 	// the user explicitly starts a fresh attempt.
 	sm.mu.Lock()
-	previous := sm.sessions[brokerID]
-	if previous != nil && previous.getStatus().ConnectionState == "pairing_error" {
-		delete(sm.sessions, brokerID)
+	if sm.resetting[brokerID] {
+		sm.mu.Unlock()
+		return nil
 	}
+	previous := sm.sessions[brokerID]
 	sm.mu.Unlock()
 	if previous != nil && previous.getStatus().ConnectionState == "pairing_error" {
-		previous.cancel()
-		previous.releaseLock()
+		if !sm.Remove(brokerID) {
+			return nil
+		}
 	}
 	return sm.startOrGet(brokerID, func(session *BrokerSession) {
-		session.requestPairing(mode, phone)
+		if !session.requestPairing(mode, phone) {
+			return
+		}
 		session.setStatus(Status{
 			Connected:       false,
 			ConnectionState: "pairing_requested",
@@ -585,6 +775,7 @@ func (sm *SessionManager) newSession(brokerID string, device *store.Device) *Bro
 	ctx, cancel := context.WithCancel(context.Background())
 	return &BrokerSession{
 		brokerID:           brokerID,
+		loopDone:           make(chan struct{}),
 		device:             device,
 		ctx:                ctx,
 		cancel:             cancel,
@@ -644,29 +835,45 @@ func (sm *SessionManager) deleteDeviceMapping(ctx context.Context, brokerID stri
 // ── Session lifecycle ──────────────────────────────────────────────────────
 
 func (sm *SessionManager) runSession(s *BrokerSession) {
-	// Keep a panic in one broker's session from taking down the ingestor
-	// process. The recovery defer is registered before the normal cleanup
-	// defers so it runs after the client has been disconnected and the session
-	// lock/WaitGroup slot have been released, allowing this broker to restart
-	// through the existing session lifecycle.
+	defer sm.sessionWg.Done()
+	defer func() {
+		if s.loopDone != nil {
+			close(s.loopDone)
+		}
+	}()
+	defer func() {
+		s.mu.RLock()
+		resetting := s.resetting
+		s.mu.RUnlock()
+		if !resetting {
+			s.releaseLock()
+		}
+	}()
+	for s.ctx.Err() == nil {
+		if !sm.runSessionLoop(s) {
+			return
+		}
+		select {
+		case <-time.After(time.Second):
+		case <-s.ctx.Done():
+			return
+		}
+	}
+}
+
+// Panic retry stays inside the SAME ownership lifetime. Never release the
+// broker key and then launch a new goroutine using its stale lock handle.
+func (sm *SessionManager) runSessionLoop(s *BrokerSession) (panicked bool) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			log.Printf("[broker %s] recovered panic in session goroutine (restarting): event/session panic=%v", s.brokerID, recovered)
-			s.setStatus(Status{
-				Connected:        false,
-				ConnectionState:  "reconnecting",
-				SocketState:      "disconnected",
-				LastDisconnectAt: time.Now().UTC().Format(time.RFC3339),
-			})
-			if s.ctx.Err() == nil {
-				sm.sessionWg.Add(1)
-				go sm.runSession(s)
-			}
+			log.Printf("[broker %s] session panic; retaining ownership for in-lifetime retry: %v", s.brokerID, recovered)
+			s.mu.Lock()
+			s.panicRetries++
+			s.mu.Unlock()
+			panicked = true
 		}
 	}()
 	log.Printf("[broker %s] starting session goroutine", s.brokerID)
-	defer s.releaseLock()
-	defer sm.sessionWg.Done()
 	defer func() {
 		if s.client != nil {
 			s.client.RemoveEventHandlers()
@@ -676,6 +883,13 @@ func (sm *SessionManager) runSession(s *BrokerSession) {
 
 sessionLoop:
 	for attempt := 0; ; attempt++ {
+		s.mu.RLock()
+		retiring := s.resetting
+		s.mu.RUnlock()
+		if retiring {
+			<-s.ctx.Done()
+			break sessionLoop
+		}
 		// Check if session was stopped externally
 		select {
 		case <-s.ctx.Done():
@@ -989,6 +1203,7 @@ sessionLoop:
 		}
 		stopHeartbeat()
 	}
+	return false
 }
 
 func shouldRetryQRPairing(device *store.Device) bool {
@@ -1019,6 +1234,10 @@ func (s *BrokerSession) startHeartbeat() chan struct{} {
 // ── Event handler ──────────────────────────────────────────────────────────
 
 func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
+	if !s.admitSessionEvent() {
+		return
+	}
+	defer s.eventWg.Done()
 	switch v := evt.(type) {
 	case *events.QR:
 		code := strings.Join(v.Codes, "\n")
@@ -2425,8 +2644,12 @@ func (sm *SessionManager) pairCodeHandler(w http.ResponseWriter, r *http.Request
 func (sm *SessionManager) startCodePairing(w http.ResponseWriter, brokerID, phone string) (*BrokerSession, bool) {
 	session := sm.StartOrGetForCodePairing(brokerID, phone)
 	if session == nil {
-		w.WriteHeader(http.StatusConflict)
-		json.NewEncoder(w).Encode(map[string]string{"error": "pairing session is still releasing; retry in a few seconds"})
+		message := "WhatsApp session setup failed; no pairing code was issued."
+		if st, ok := sm.getStartupStatus(brokerID); ok && st.PairingError != "" {
+			message = st.PairingError
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": message, "code": "session_start_failed"})
 		return nil, false
 	}
 	return session, true
@@ -2507,6 +2730,10 @@ func (sm *SessionManager) pairCodeStatusHandler(w http.ResponseWriter, r *http.R
 	}
 	session := sm.Get(brokerID)
 	if session == nil {
+		if st, ok := sm.getStartupStatus(brokerID); ok {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": st.PairingError == "", "state": st.ConnectionState, "status": st, "pairing_error": st.PairingError})
+			return
+		}
 		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "state": "not_started"})
 		return
 	}
@@ -2519,6 +2746,9 @@ func (sm *SessionManager) pairCodeStatusHandler(w http.ResponseWriter, r *http.R
 }
 
 func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
+	sm.resetHandlerWithPolicy(w, r, true)
+}
+func (sm *SessionManager) resetHandlerWithPolicy(w http.ResponseWriter, r *http.Request, remoteUnlink bool) {
 	w.Header().Set("Content-Type", "application/json")
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -2529,8 +2759,34 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"error": "broker_id is required"})
 		return
 	}
+	resetCtx, cancelReset := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancelReset()
+	finishReset, err := sm.beginReset(resetCtx, brokerID)
+	if err != nil {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Reset is still waiting for pairing preparation to stop. No reset was confirmed.", "code": "reset_busy"})
+		return
+	}
+	defer finishReset()
+
 	s := sm.Get(brokerID)
 	if s == nil {
+		guard, locked, lockErr := sm.acquireBrokerLock(resetCtx, brokerID)
+		if lockErr != nil || !locked {
+			w.WriteHeader(http.StatusLocked)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Session ownership could not be verified. No reset was performed.", "code": "reset_lock_unverified"})
+			return
+		}
+		releaseGuard := func() bool {
+			if guard == nil {
+				return true
+			}
+			c := guard
+			guard = nil
+			return releaseBrokerLockConn(c, brokerID)
+		}
+		defer releaseGuard()
+
 		// A process restart may leave persisted credentials without an active
 		// in-memory session. Reset those too; otherwise the UI would claim a
 		// successful reset while the next start silently restores the old device.
@@ -2581,11 +2837,17 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete persisted WhatsApp device mapping"})
 			return
 		}
+		if !releaseGuard() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Session data was cleared but lock release was not confirmed. Contact support; do not repeat reset.", "code": "reset_release_unverified"})
+			return
+		}
+
 		resetAt := time.Now().UTC()
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"ok":                  true,
 			"broker_id":           brokerID,
-			"credentials_deleted": true,
+			"credentials_deleted": credentialsWarning == "",
 			"mapping_deleted":     true,
 			"credentials_warning": credentialsWarning,
 			"pairing_required":    true,
@@ -2608,7 +2870,21 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[broker %s] SESSION_WIPED reason=http_reset timestamp=%s reconnectFailures=%d reconnectCount=%d",
 		brokerID, time.Now().UTC().Format(time.RFC3339), s.reconnectFailures, s.reconnectCount)
 	resetAt := time.Now().UTC()
-	whatsAppUnlinked, unlinkErr := s.unlinkAndClearDevice()
+	whatsAppUnlinked := false
+	var unlinkErr error
+	if remoteUnlink {
+		whatsAppUnlinked, unlinkErr = s.unlinkAndClearDevice()
+	} else {
+		unlinkErr = s.clearDevice()
+	}
+	retireCtx, cancelRetire := context.WithTimeout(r.Context(), 10*time.Second)
+	retireErr := s.retireLoop(retireCtx)
+	cancelRetire()
+	if retireErr != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Session shutdown is not yet confirmed. No reset receipt was issued. Contact support; do not repeat reset.", "code": "reset_retirement_unverified"})
+		return
+	}
 	remoteUnlinkWarning := ""
 	if unlinkErr != nil {
 		// A remote Logout can time out after the reset has begun. Do not leave
@@ -2653,7 +2929,11 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 	if s.cancel != nil {
 		s.cancel()
 	}
-	sm.Remove(brokerID)
+	if !sm.Remove(brokerID) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Session data was cleared but lock release was not confirmed. Contact support; do not repeat reset.", "code": "reset_release_unverified"})
+		return
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"ok":                    true,
 		"broker_id":             brokerID,
@@ -2677,68 +2957,26 @@ func (sm *SessionManager) disconnectHandler(w http.ResponseWriter, r *http.Reque
 		json.NewEncoder(w).Encode(map[string]string{"error": "broker_id is required"})
 		return
 	}
-	s := sm.Get(brokerID)
-	if s == nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "note": "no session to disconnect"})
+	barrierCtx, cancelBarrier := context.WithTimeout(r.Context(), 7*time.Second)
+	finish, barrierErr := sm.beginReset(barrierCtx, brokerID)
+	cancelBarrier()
+	if barrierErr != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Session retirement could not be confirmed. Contact support; do not start another session.", "code": "disconnect_retirement_unverified"})
 		return
 	}
-	if s.cancel != nil {
-		s.cancel()
+	defer finish()
+	if !sm.Remove(brokerID) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Session retirement could not be confirmed. Contact support; do not start another session.", "code": "disconnect_retirement_unverified"})
+		return
 	}
-	// Respond immediately so the caller (Cloudflare/FastAPI) never times out.
-	// Remove() does a blocking DB call (advisory lock release) that must not
-	// hold the HTTP response hostage.
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
-	// Fire-and-forget cleanup in a separate goroutine.
-	go func() {
-		sm.Remove(brokerID)
-		log.Printf("[broker %s] disconnected and removed", brokerID)
-	}()
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true, "disconnect_confirmed": true})
 }
 
+// Delete uses the same credential barrier but preserves local-only semantics.
 func (sm *SessionManager) deleteSessionHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if !requireMethod(w, r, http.MethodPost) {
-		return
-	}
-	brokerID := brokerIDFromRequest(r)
-	if brokerID == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "broker_id is required"})
-		return
-	}
-
-	if session := sm.Get(brokerID); session != nil {
-		if session.cancel != nil {
-			session.cancel()
-		}
-		_ = session.clearDevice()
-		sm.Remove(brokerID)
-	} else if deviceJID, err := sm.lookupDeviceJID(context.Background(), brokerID); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to look up stored WhatsApp session"})
-		return
-	} else if deviceJID != "" {
-		if jid, parseErr := types.ParseJID(deviceJID); parseErr == nil {
-			if device, getErr := sm.container.GetDevice(context.Background(), jid); getErr == nil && device != nil {
-				deleteCtx, cancelDelete := context.WithTimeout(context.Background(), 8*time.Second)
-				deleteErr := device.Delete(deleteCtx)
-				cancelDelete()
-				if deleteErr != nil {
-					log.Printf("[broker %s] error deleting inactive device: %v", brokerID, deleteErr)
-				}
-			}
-		}
-	}
-
-	if err := sm.deleteDeviceMapping(context.Background(), brokerID, "http_delete"); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete stored WhatsApp session"})
-		return
-	}
-	log.Printf("[broker %s] session and device mapping deleted", brokerID)
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	sm.resetHandlerWithPolicy(w, r, false)
 }
 
 func (sm *SessionManager) connectedSession(brokerID string) (*BrokerSession, error) {
@@ -3517,6 +3755,11 @@ func main() {
 		log.Fatal("database configuration missing: set DATABASE_URL (recommended), SUPABASE_DATABASE_URL, SUPABASE_DB_URL, or both SUPABASE_REF and SUPABASE_DB_PASSWORD")
 	}
 
+	lockDatabaseURL, err := resolveSessionLockDatabaseURL()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// Open DB connection for broker-device mapping
 	db, err := sql.Open("pgx", databaseURL)
 	if err != nil {
@@ -3569,7 +3812,30 @@ func main() {
 		log.Fatalf("error creating store container: %v", err)
 	}
 
-	sm := NewSessionManager(container, db)
+	// One pinned session backend holds singleton and legacy broker keys.
+	// No overlapping deployment. A lost backend exits, it is never replaced.
+	lockDB, err := sql.Open("pgx", lockDatabaseURL)
+	if err != nil {
+		log.Fatalf("error opening session-lock database: %v", err)
+	}
+	defer lockDB.Close()
+	lockDB.SetMaxOpenConns(1)
+	lockDB.SetMaxIdleConns(0)
+	ownerCtx, cancelOwner := context.WithTimeout(context.Background(), 8*time.Second)
+	owner, err := newSingletonLockOwner(ownerCtx, lockDB, func() {
+		log.Print("singleton session-lock ownership uncertain; exiting without auto reconnect")
+		os.Exit(1)
+	})
+	cancelOwner()
+	if err != nil {
+		log.Fatalf("singleton ownership unavailable: %v", err)
+	}
+	defer owner.close()
+	monitorCtx, stopMonitor := context.WithCancel(context.Background())
+	defer stopMonitor()
+	go owner.monitor(monitorCtx)
+	sm := NewSessionManager(container, db, lockDB)
+	sm.owner = owner
 
 	// Load existing broker sessions from stored device mappings
 	rows, err := db.Query("SELECT whatsapp_connection_key, device_jid FROM broker_whatsapp_devices")
@@ -3587,24 +3853,23 @@ func main() {
 				log.Printf("[broker %s] invalid JID %q: %v", brokerID, deviceJID, parseErr)
 				continue
 			}
+			// Keep legacy keys as a handover guard, including before store cleanup.
+			lockConn, locked, lockErr := sm.acquireBrokerLock(ctx, brokerID)
+			if lockErr != nil || !locked {
+				log.Fatalf("[broker %s] startup refused: legacy session ownership unavailable: %v", brokerID, lockErr)
+			}
 			device, getErr := container.GetDevice(ctx, jid)
 			if getErr != nil {
-				log.Printf("[broker %s] error getting device: %v", brokerID, getErr)
-				continue
+				releaseBrokerLockConn(lockConn, brokerID)
+				log.Fatalf("[broker %s] restore could not verify device: %v", brokerID, getErr)
 			}
 			if device == nil {
-				log.Printf("[broker %s] device %q not found in store, removing mapping", brokerID, deviceJID)
-				db.Exec("DELETE FROM broker_whatsapp_devices WHERE whatsapp_connection_key=$1", brokerID)
-				continue
-			}
-			lockConn, locked, lockErr := sm.acquireBrokerLock(ctx, brokerID)
-			if lockErr != nil {
-				log.Printf("[broker %s] error acquiring session lock during restore: %v", brokerID, lockErr)
-				continue
-			}
-			if !locked {
-				log.Printf("[broker %s] deployment handoff pending because another ingestor instance owns the lock", brokerID)
-				go sm.restoreSessionWhenAvailable(brokerID)
+				log.Printf("[broker %s] stored device absent, removing stale mapping", brokerID)
+				if _, err := db.Exec("DELETE FROM broker_whatsapp_devices WHERE whatsapp_connection_key=$1", brokerID); err != nil {
+					releaseBrokerLockConn(lockConn, brokerID)
+					log.Fatalf("[broker %s] could not clear verified stale mapping: %v", brokerID, err)
+				}
+				releaseBrokerLockConn(lockConn, brokerID)
 				continue
 			}
 			session := sm.newSession(brokerID, device)
