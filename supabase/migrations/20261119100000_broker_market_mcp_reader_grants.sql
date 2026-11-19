@@ -32,7 +32,10 @@ begin
  if p_enabled then
   insert into public.broker_market_mcp_reader_grants(organization_id,user_id,granted_by,granted_at,revoked_at)
   values(p_tenant,p_user,p_actor,now(),null)
-  on conflict(organization_id,user_id) do update set granted_by=p_actor, granted_at=now(), revoked_at=null;
+  -- Constraint-name arbiter: the RETURNS TABLE output params are named
+  -- organization_id/user_id and would shadow column names in a positional
+  -- ON CONFLICT (org, user) target inside PL/pgSQL.
+  on conflict on constraint broker_market_mcp_reader_grants_pkey do update set granted_by=p_actor, granted_at=now(), revoked_at=null;
  else
   update public.broker_market_mcp_reader_grants g set revoked_at=now()
    where g.organization_id=p_tenant and g.user_id=p_user and g.revoked_at is null;

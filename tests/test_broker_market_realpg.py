@@ -26,6 +26,10 @@ def db():
         create table raw_messages(id bigint primary key,tenant_id uuid,message text,timestamp timestamptz,sender_phone text,sender_jid text,is_group boolean,source text,pipeline_version text,raw_payload jsonb,event_id text,message_uid text,synced_at timestamptz);
         ''')
         q.execute(Path('supabase/migrations/20261119090000_broker_property_cross_search.sql').read_text())
+        # Production large-table builds are separate, autocommit CONCURRENTLY statements.
+        staged=Path('ops/broker-market/indexes.concurrent.sql').read_text()
+        for statement in '\n'.join(line for line in staged.splitlines() if not line.startswith('\\')).split(';'):
+            if statement.strip():q.execute(statement)
     yield c
     c.close()
     with admin.cursor() as q:q.execute('drop database '+name+' with (force)')

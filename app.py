@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 
 from routers.common import (
     storage,
+    request_read_memo_middleware,
     _ingestor_urls,
     _ingestor_auth_headers,
     _broker_live_statuses,
@@ -197,6 +198,13 @@ _GENERAL_RATE = max(1, int(os.getenv("PROPAI_RATE_LIMIT_PER_MINUTE", "240")))
 _SEARCH_RATE = max(1, int(os.getenv("PROPAI_SEARCH_RATE_LIMIT_PER_MINUTE", "60")))
 _CHAT_RATE = max(1, int(os.getenv("PROPAI_CHAT_RATE_LIMIT_PER_MINUTE", "30")))
 _EXPORT_RATE = max(1, int(os.getenv("PROPAI_EXPORT_RATE_LIMIT_PER_MINUTE", "10")))
+
+
+# Request-local read memo lifecycle: fresh per HTTP request, cleared and reset
+# when the request finishes (see routers.common). Starlette runs the last
+# registered middleware outermost, so the burst limiter below stays on the
+# outside and the memo wraps the whole handler chain.
+app.middleware("http")(request_read_memo_middleware)
 
 
 @app.middleware("http")

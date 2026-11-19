@@ -18,6 +18,7 @@ from storage import set_tenant_id, get_tenant_id
 from routers.common import (
     storage, require_user, get_tenant_context, _resolve_active_organization_id_async,
     _scoped_phone, _require_org_permission,
+    _list_whatsapp_connections_memo, _list_whatsapp_directory_memo,
 )
 
 router = APIRouter(tags=["whatsapp_sync"])
@@ -526,9 +527,11 @@ async def list_phones(
 ):
     org_id = await _request_organization_id(user, tenant_id)
     try:
-        phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
+        # Request-local memoized readers: dedupe the identical reads already
+        # made by the auth/tenant chain in this same request.
+        phones = await asyncio.to_thread(_list_whatsapp_connections_memo, org_id)
         directory_entries = await asyncio.to_thread(
-            storage.list_org_whatsapp_phone_directory, org_id
+            _list_whatsapp_directory_memo, org_id
         )
     except Exception as exc:
         _logger.error("WhatsApp phone lookup failed for org %s: %s", org_id, exc)

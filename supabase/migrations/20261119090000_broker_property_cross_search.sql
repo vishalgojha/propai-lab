@@ -33,12 +33,8 @@ create trigger broker_market_revoke_source before update on public.organization_
 for each row execute function public.broker_market_revoke_changed_source();
 revoke all on function public.broker_market_revoke_changed_source() from public,anon,authenticated;
 
--- Query support without copying text or building embeddings.
-create index broker_market_source_time_idx on public.raw_messages
- (tenant_id, (split_part(event_id,':',1)), ((raw_payload #>> '{data,key,remoteJid}')), timestamp desc,id desc)
- where is_group is true and source='WHATSAPP' and pipeline_version='go-ingestor';
-create index broker_market_text_fts_idx on public.raw_messages using gin (to_tsvector('english',message))
- where is_group is true and source='WHATSAPP' and pipeline_version='go-ingestor';
+-- Large-table indexes are staged separately in ops/broker-market/indexes.concurrent.sql.
+-- Never run them in this policy transaction.
 
 -- No arbitrary raw-message ID endpoint: API verifies a reader-bound signed search reference.
 -- Both search and re-read use this exact source predicate, before pagination.
