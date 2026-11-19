@@ -199,6 +199,11 @@ _CHAT_RATE = max(1, int(os.getenv("PROPAI_CHAT_RATE_LIMIT_PER_MINUTE", "30")))
 _EXPORT_RATE = max(1, int(os.getenv("PROPAI_EXPORT_RATE_LIMIT_PER_MINUTE", "10")))
 
 
+# Temporary diagnostics are disabled by default and self-stop after 180s.
+from services.runtime_diagnostics import RuntimeDiagnostics
+app.add_middleware(RuntimeDiagnostics, storage=storage)
+
+
 @app.middleware("http")
 async def request_protection(request: Request, call_next):
     """Bound request bursts before they become DB/provider bursts.
