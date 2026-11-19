@@ -4,7 +4,7 @@
 
 Approval to implement is not production approval. Do not apply this plan before the final release impact is approved. Keep broad private capture, DM processing, retention and deletion work outside this release.
 
-1. Review and ship the narrow auth request-local read dedup / UI in-flight gate as a prerequisite. No cross-request cache, pool or worker-count change. Verify actual authenticated phones/groups controls with the production app. Local tests do not prove the production latency hypothesis. Stop feature rollout if owner controls remain unusable.
+1. This shared-only candidate excludes the failed auth-v3/v4 fixes. API baseline stays 344cb000 and UI baseline is the live broker-link correction 3d0ea0c. Dark schema/index/backend staging does not depend on the broad loading repair. Before enabling real sharing, verify the actual authenticated source consent and MCP reader controls are usable. If they are not, keep shared flags off and do not grant sources on an owner's behalf.
 2. Keep `BROKER_PROPERTY_CROSS_SEARCH_ENABLED=false` on API and MCP. Prepare the same explicit `BROKER_MARKET_SIGNING_SECRET` on both services using protected configuration, without printing or placing its value in artifacts. Do not rely on fallback service-key names. Keep this value stable through code rollback so signed references are not invalidated unintentionally.
 3. Take the read-only database preflight below immediately before migration. Apply only the small transactional policy and grant migrations. They retain 2-second lock and 10-second statement limits. A lock timeout means stop, not raise the timeout blindly or kill sessions.
 4. Build raw-message indexes one at a time with the separate `indexes.concurrent.sql` in autocommit mode, NEVER inside the migration transaction or a migration runner that wraps the file. Each build has 2-second lock / 15-minute statement limits. A timeout can leave an invalid index. Inspect it; do not blindly drop it or assume IF NOT EXISTS proves usable equivalence.
@@ -16,7 +16,7 @@ Approval to implement is not production approval. Do not apply this plan before 
 
 - Inspect `pg_index` validity/readiness and `pg_get_indexdef` for raw_messages. Reuse only a genuinely equivalent valid existing index, otherwise reconcile names before building. No unconditional DROP.
 - Check pg_stat_activity, lock waits, long transactions and pg_stat_progress_create_index. Do not start another concurrent build on the same table.
-- Verify managed-database storage headroom in the database provider dashboard, not host `df`. Budget for two new indexes, concurrent build workspace and ongoing writes. Provider database free space is currently UNVERIFIED and is an execution gate.
+- Verify managed-database storage headroom in the database provider dashboard, not host `df`. Budget for two new indexes, concurrent build workspace and ongoing writes. Retain the provider headroom evidence already gathered, and refresh storage/I/O state immediately before execution.
 - Check provider connection/CPU/I/O headroom and current replication health. Current process counts are not proof of spare I/O.
 - Confirm rollback images/commits and protected paired config are available before changing services.
 
@@ -25,7 +25,7 @@ Read-only observation on 2026-11-19 about 14:46 IST at https://coolify.propai.li
 ## Rollback and abort
 
 - First disable the shared feature on API and MCP. Stop tests and ensure in-flight tool calls fail closed on their fresh grant/source checks. Keep captured raw history and all source/grant audit rows; never delete raw messages, consent or user history as rollback.
-- Revert UI/API/MCP images to the recorded approved versions if required. Auth correction can remain only as its separately approved patch, otherwise revert it independently. No ingestor deployment is part of this shared release.
+- Revert UI/API/MCP images to the recorded approved versions if required. The failed auth corrections are not included in this shared-only candidate. No ingestor deployment is part of this shared release.
 - Leave additive policy tables/functions and valid indexes in place initially. Old code does not use them. Do not run a destructive schema rollback while newer processes can still reference it.
 - If a concurrent build fails, keep feature off, inspect the exact index name/definition/validity and active build. Only an explicitly reviewed cleanup may DROP INDEX CONCURRENTLY for the failed new index, outside any transaction, followed by a reviewed retry. Never terminate arbitrary database sessions.
 - Stop for lock/build timeout, rising connection errors, API auth regression, missing paired secret, invalid indexes, grant/source isolation failure, unintended contact disclosure or unusable owner controls. Report observed impact and evidence before retrying.

@@ -50,115 +50,6 @@ class _StorageProxy:
 
 storage = _StorageProxy()
 
-# ── Request-local read memo (auth/tenant chain) ─────────────────────────────
-# The auth/tenant resolution chain repeated identical PostgREST lookups several
-# times inside ONE request (org list x3, WhatsApp connections x3, directory x2).
-# This memo deduplicates those reads within a single request task only:
-# each request gets its own context, asyncio.to_thread propagates the dict
-# reference, and nothing is shared across requests, so revocation and signup
-# provisioning semantics are unchanged (no TTL, no cross-request caching).
-# Reads-after-writes stay correct because every write site below explicitly
-# invalidates the affected keys.
-class _RequestMemoState:
-    """Shared lifecycle state for one request's memo.
-
-    `open` flips to False exactly once, when the HTTP request finishes. Both
-    sides of the cache gate on it: reads never serve entries from a closed
-    state, and loader results are only stored after a closure recheck, so a
-    loader that was blocked past the response cannot write back into it, and
-    an inherited/background task can never refill it for later stale reuse.
-    """
-
-    __slots__ = ("open", "data")
-
-    def __init__(self) -> None:
-        self.open = True
-        self.data: dict = {}
-
-
-_REQUEST_READ_MEMO: contextvars.ContextVar[_RequestMemoState | None] = contextvars.ContextVar(
-    "propai_request_read_memo", default=None
-)
-
-
-def _request_memo() -> _RequestMemoState:
-    state = _REQUEST_READ_MEMO.get()
-    if state is None:
-        state = _RequestMemoState()
-        _REQUEST_READ_MEMO.set(state)
-    return state
-
-
-def _memoized_read(key, loader):
-    state = _request_memo()
-    if state.open and key in state.data:
-        return state.data[key]
-    value = loader()
-    # Closure recheck: the loader may have blocked past the end of the request
-    # (the middleware closes the state at response time). Once closed, never
-    # store and never serve: every read goes to storage fresh.
-    if state.open:
-        state.data[key] = value
-    return value
-
-
-def _memo_invalidate(*keys) -> None:
-    state = _REQUEST_READ_MEMO.get()
-    if not state or not state.open:
-        return
-    for key in keys:
-        state.data.pop(key, None)
-
-
-def _get_user_organizations_memo(user_id) -> list:
-    return _memoized_read(
-        ("get_user_organizations", str(user_id)),
-        lambda: storage.get_user_organizations(user_id),
-    )
-
-
-def _list_whatsapp_connections_memo(org_id) -> list:
-    return _memoized_read(
-        ("list_org_whatsapp_connections", str(org_id)),
-        lambda: storage.list_org_whatsapp_connections(org_id),
-    )
-
-
-def _list_whatsapp_directory_memo(org_id) -> list:
-    return _memoized_read(
-        ("list_org_whatsapp_phone_directory", str(org_id)),
-        lambda: storage.list_org_whatsapp_phone_directory(org_id),
-    )
-
-
-def _invalidate_whatsapp_lists(org_id) -> None:
-    _memo_invalidate(
-        ("list_org_whatsapp_connections", str(org_id)),
-        ("list_org_whatsapp_phone_directory", str(org_id)),
-    )
-
-
-async def request_read_memo_middleware(request, call_next):
-    """Explicit per-HTTP-request lifecycle for the request-local read memo.
-
-    A fresh _RequestMemoState is installed before the app runs; when the
-    request finishes the state is CLOSED, its entries are dropped, and the
-    ContextVar is reset. A child or background task that inherited the request
-    context keeps a reference to the same state object: once closed it neither
-    serves nor stores memo entries, so every read re-queries storage and no
-    memoized value can outlive the request that created it. The lazy
-    _request_memo() fallback remains for non-HTTP callers (scripts, direct
-    function tests).
-    """
-    state = _RequestMemoState()
-    token = _REQUEST_READ_MEMO.set(state)
-    try:
-        return await call_next(request)
-    finally:
-        state.open = False
-        state.data.clear()
-        _REQUEST_READ_MEMO.reset(token)
-
 _provider_rotation_lock = threading.Lock()
 _provider_rotation_offsets: dict[str, int] = {}
 
@@ -327,14 +218,14 @@ async def require_user(user: dict | None = Depends(get_current_user)) -> dict:
 
 def _resolve_user_organization_id(user: dict) -> str | None:
     try:
-        orgs = _get_user_organizations_memo(user["id"])
+        orgs = storage.get_user_organizations(user["id"])
     except Exception as exc:
         print(f"[auth] get_user_organizations failed: {exc}", flush=True)
         return None
     if orgs:
         try:
             for org in sorted(orgs, key=lambda o: o.get("created_at") or "", reverse=True):
-                phones = _list_whatsapp_connections_memo(org["id"])
+                phones = storage.list_org_whatsapp_connections(org["id"])
                 if phones:
                     return org["id"]
                 _ensure_signup_whatsapp_phone(user, str(org["id"]))
@@ -413,8 +304,6 @@ def _resolve_user_organization_id(user: dict) -> str | None:
                 organization_id=tid,
                 permission_keys=["view_inbox", "reply_whatsapp"],
             )
-        # Membership changed mid-request: any memoized org list is now stale.
-        _memo_invalidate(("get_user_organizations", str(user["id"])))
         _ensure_signup_whatsapp_phone(user, tid)
         return tid
 
@@ -434,8 +323,6 @@ def _resolve_user_organization_id(user: dict) -> str | None:
             organization_id=tid,
             permission_keys=["view_inbox", "reply_whatsapp"],
         )
-        # Membership changed mid-request: any memoized org list is now stale.
-        _memo_invalidate(("get_user_organizations", str(user["id"])))
         _ensure_signup_whatsapp_phone(user, tid)
         return tid
     return None
@@ -446,7 +333,7 @@ def _resolve_active_organization_id(user: dict, tenant_id: str | None) -> str:
         try:
             user_org_ids = {
                 str(org.get("id"))
-                for org in _get_user_organizations_memo(user["id"])
+                for org in storage.get_user_organizations(user["id"])
                 if org.get("id")
             }
             if tenant_id in user_org_ids:
@@ -467,10 +354,6 @@ async def _resolve_active_organization_id_async(
     user: dict, tenant_id: str | None, timeout: float = 4.0
 ) -> str:
     """Resolve workspace context without allowing synchronous storage to stall a route."""
-    # Establish the request-local memo in the request task's context BEFORE any
-    # asyncio.to_thread hop: to_thread runs on a copied context, so a ContextVar
-    # first set inside a worker thread would not be visible to later reads.
-    _request_memo()
     try:
         return await asyncio.wait_for(
             asyncio.to_thread(_resolve_active_organization_id, user, tenant_id),
@@ -502,14 +385,11 @@ async def get_tenant_context(
     x_tenant_id: str | None = Header(None),
 ) -> str | None:
     set_tenant_id(None)
-    # Establish the request-local memo in the request task's context BEFORE any
-    # asyncio.to_thread hop (see _resolve_active_organization_id_async).
-    _request_memo()
     tid = None
     if user:
         org_lookup_ok = True
         try:
-            orgs = await asyncio.to_thread(_get_user_organizations_memo, user["id"])
+            orgs = await asyncio.to_thread(storage.get_user_organizations, user["id"])
         except Exception as exc:
             # A temporary Supabase/Auth database failure must not turn every
             # authenticated profile request into a 500.  Fail closed: no
@@ -700,8 +580,8 @@ def _ensure_signup_whatsapp_phone_locked(user: dict, org_id: str) -> None:
     metadata = user.get("user_metadata") or {}
     phone = _normalize_real_phone((user.get("phone") or "") or metadata.get("phone") or "")
     try:
-        connections = _list_whatsapp_connections_memo(org_id)
-        directory = _list_whatsapp_directory_memo(org_id)
+        connections = storage.list_org_whatsapp_connections(org_id)
+        directory = storage.list_org_whatsapp_phone_directory(org_id)
         if phone:
             known = connections + directory
             if any(_normalize_real_phone(row.get("phone_number")) == phone for row in known):
@@ -733,9 +613,6 @@ def _ensure_signup_whatsapp_phone_locked(user: dict, org_id: str) -> None:
             storage.add_org_whatsapp_phone_directory(
                 org_id, broker_id, canonical_phone, "", True
             )
-        if connection:
-            # Provisioning wrote rows: later reads in this request must re-query.
-            _invalidate_whatsapp_lists(org_id)
     except Exception as exc:
         logger.warning("Signup WhatsApp phone provisioning failed for %s: %s", org_id, exc)
 
