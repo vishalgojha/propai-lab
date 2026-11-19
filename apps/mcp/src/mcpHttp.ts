@@ -12,7 +12,8 @@ export type McpSession = {
 
 export type McpHandlerDeps = {
   sessions: Map<string, McpSession>;
-  createServer: (context: { user?: Request["user"]; publicOnly: boolean }) => ReturnType<typeof createMcpServer>;
+  /** May be async (the raw broker route resolves the reader's property cross-search grant before building the toolset). Awaiting a sync factory is a no-op. */
+  createServer: (context: { user?: Request["user"]; publicOnly: boolean }) => ReturnType<typeof createMcpServer> | Promise<ReturnType<typeof createMcpServer>>;
   challenge: (req: Request, res: Response) => void;
   records: {
     create: (input: { sessionId: string; userId?: string | null; userAgent?: string | null }) => Promise<unknown>;
@@ -41,7 +42,7 @@ export function createMcpHandler(deps: McpHandlerDeps) {
 
     if (!session) {
       const owner = sessionOwnerFor(req);
-      const server = deps.createServer({ user: req.user, publicOnly: req.publicOnly === true });
+      const server = await deps.createServer({ user: req.user, publicOnly: req.publicOnly === true });
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => crypto.randomUUID(),
         onsessioninitialized: async (newSessionId) => {

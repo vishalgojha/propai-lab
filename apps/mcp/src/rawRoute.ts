@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createAuthMiddleware, type AccessDeps } from "./mcpAccess.ts";
 import { createMcpHandler, type McpSession } from "./mcpHttp.ts";
-import { createRawBrokerMcpServer } from "./rawBrokerServer.ts";
+import { createRawBrokerMcpServerWithMarket } from "./rawBrokerServer.ts";
 
 export const RAW_MCP_PATH = "/raw-mcp";
 export const RAW_MCP_METADATA_PATH = "/.well-known/oauth-protected-resource/raw-mcp";
@@ -20,7 +20,7 @@ export function mountRawBrokerRoute(app: Express, deps: {
   const challenge = (req: Request, res: Response) => deps.challenge(req, res, RAW_MCP_METADATA_PATH);
   const handler = createMcpHandler({
     sessions,
-    createServer: (ctx) => createRawBrokerMcpServer({ user: ctx.user } as never) as never,
+    createServer: (ctx) => createRawBrokerMcpServerWithMarket({ user: ctx.user } as never) as never,
     challenge,
     records: deps.records,
   });
