@@ -11,6 +11,7 @@ import QRCode from "qrcode";
 import { PairingCodeFlow } from "@/components/PairingCodeFlow";
 import { pairingResume } from "@/lib/pairingResume";
 import { connectionHealth, connectionMetric } from "@/lib/connectionHealth";
+import { createInFlightGate, nextPollDelay } from "@/lib/inFlight";
 
 type HealthStatus = "healthy" | "warning" | "error" | "checking";
 
@@ -1995,10 +1996,22 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
     if (cached.recentlyProcessed1h != null) setRecentlyProcessed1h(cached.recentlyProcessed1h);
   }, [user?.id]);
 
+  // In-flight gates: a refresh trigger that arrives while the previous run is
+  // still waiting on the API is dropped instead of stacking a duplicate
+  // request onto the shared backend pool (see src/lib/inFlight.ts).
+  const refreshGateRef = useRef(createInFlightGate());
+  const statsGateRef = useRef(createInFlightGate());
+
   const refreshData = useCallback(() => {
-    void fetchPhones();
-    void fetchLiveStatus();
+    void refreshGateRef.current(() =>
+      Promise.all([fetchPhones(), fetchLiveStatus()]).then(() => undefined),
+    );
   }, [fetchPhones, fetchLiveStatus]);
+
+  const fetchStatsGuarded = useCallback(
+    () => statsGateRef.current(() => fetchStats()),
+    [fetchStats],
+  );
 
   const handlePhoneDeleted = useCallback((phoneId: number) => {
     setPhones((current) => {
@@ -2013,15 +2026,23 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
   useEffect(() => {
       if (!authLoading && user) {
         refreshData();
-      const interval = setInterval(() => {
-        refreshData();
-      }, 15000);
+      // Self-scheduling poll: the next run is only queued after the previous
+      // one resolved (via the in-flight gate a slow run can never overlap),
+      // with small jitter so multiple open tabs do not fire in lockstep.
+      let pollTimer: number | undefined;
+      const schedulePoll = () => {
+        pollTimer = window.setTimeout(() => {
+          refreshData();
+          schedulePoll();
+        }, nextPollDelay(15000, 5000));
+      };
+      schedulePoll();
       const onStatusUpdate = () => {
         void refreshData();
       };
       window.addEventListener("propai_whatsapp_status_updated", onStatusUpdate);
       return () => {
-        clearInterval(interval);
+        if (pollTimer !== undefined) window.clearTimeout(pollTimer);
         window.removeEventListener("propai_whatsapp_status_updated", onStatusUpdate);
       };
     }
@@ -2029,13 +2050,23 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
 
   useEffect(() => {
     if (authLoading || !user) return;
-    void fetchStats();
+    void fetchStatsGuarded();
     // The worker polls every few seconds, but exact progress is deliberately
     // cached server-side. Refreshing this dashboard every 30 seconds keeps
     // the panel current without making every open admin tab scan the queue.
-    const interval = setInterval(() => void fetchStats(), 30000);
-    return () => clearInterval(interval);
-  }, [authLoading, user, fetchStats]);
+    // Self-scheduled (never overlapping) with small jitter; see refresh poll.
+    let pollTimer: number | undefined;
+    const schedulePoll = () => {
+      pollTimer = window.setTimeout(() => {
+        void fetchStatsGuarded();
+        schedulePoll();
+      }, nextPollDelay(30000, 5000));
+    };
+    schedulePoll();
+    return () => {
+      if (pollTimer !== undefined) window.clearTimeout(pollTimer);
+    };
+  }, [authLoading, user, fetchStatsGuarded]);
 
   if (authLoading || !user) return null;
 
