@@ -696,12 +696,21 @@ async def delete_phone(
     broker_id = phone.get("broker_id", "")
     if broker_id:
         _, cleanup_response = await _first_ingestor_response(
-            "POST", "/delete-session", timeout=10, headers=_ingestor_broker_headers(broker_id)
+            "POST", "/delete-session", timeout=25, headers=_ingestor_broker_headers(broker_id)
         )
-        if cleanup_response is not None and cleanup_response.status_code == 404:
-            await _first_ingestor_response(
-                "POST", "/disconnect", timeout=10, headers=_ingestor_broker_headers(broker_id)
-            )
+        try:
+            cleanup = cleanup_response.json() if cleanup_response is not None else {}
+        except Exception:
+            cleanup = {}
+        if (
+            cleanup_response is None
+            or cleanup_response.status_code != 200
+            or not isinstance(cleanup, dict)
+            or cleanup.get("credentials_deleted") is not True
+            or cleanup.get("mapping_deleted") is not True
+            or not cleanup.get("reset_at")
+        ):
+            raise HTTPException(502, "WhatsApp session cleanup is not confirmed. The phone was not removed. Contact support; do not repeat removal.")
     ok = await asyncio.to_thread(storage.remove_org_whatsapp_connection, phone_id)
     if not ok:
         raise HTTPException(500, "Phone could not be removed from the workspace")
