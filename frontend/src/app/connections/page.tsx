@@ -8,6 +8,8 @@ import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartp
 import { useAuth } from "@/lib/AuthProvider";
 import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, optOutOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry } from "@/lib/api";
 import QRCode from "qrcode";
+import { PairingCodeFlow } from "@/components/PairingCodeFlow";
+import { pairingResume } from "@/lib/pairingResume";
 import { connectionHealth, connectionMetric } from "@/lib/connectionHealth";
 
 type HealthStatus = "healthy" | "warning" | "error" | "checking";
@@ -319,6 +321,10 @@ function PhoneCard({
   const [pairingSucceeded, setPairingSucceeded] = useState(false);
   const [pairErrorCode, setPairErrorCode] = useState<string | null>(null);
   const [pairCodeCopied, setPairCodeCopied] = useState(false);
+  const [pairRetryAllowed, setPairRetryAllowed] = useState(false);
+  const pairStartInFlight = useRef(false);
+  const pairStartGeneration = useRef(0);
+  const pairStartedAt = useRef(0);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -349,6 +355,25 @@ function PhoneCard({
     });
     return () => { cancelled = true; };
   }, [pairQrValue]);
+
+  // Reopening after a refresh joins an active server operation, never POSTs again.
+  useEffect(() => {
+    if (!showPairCodeDialog) return;
+    let cancelled = false;
+    const generation = pairStartGeneration.current;
+    void getPairCodePhoneStatus(phone.id).then((result) => {
+      if (cancelled || pairStartInFlight.current || generation !== pairStartGeneration.current) return;
+      const resume = pairingResume(result);
+      if (resume.kind === "connected") { setPairingSucceeded(true); return; }
+      if (resume.kind === "pending") { pairStartedAt.current = resume.startedAt; setPairCodePending(true); }
+      if (resume.kind === "code") {
+        pairStartedAt.current = resume.startedAt;
+        setPairCodeResult(resume.code); setPairCodeExpiresAt(resume.expiresAt);
+        setPairCodeSecondsRemaining(pairingSecondsUntil(resume.expiresAt));
+      }
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [showPairCodeDialog, phone.id]);
 
   const handleAction = async (action: string) => {
     setActionLoading(action);
@@ -410,7 +435,12 @@ function PhoneCard({
   };
 
   const handlePairCodeSubmit = async () => {
-    if (pairCodeInput.length < 10) return;
+    if (pairCodeInput.length < 10 || pairStartInFlight.current || pairCodePending || pairCodeResult) return;
+    pairStartGeneration.current++;
+    setPairRetryAllowed(false);
+    pairStartInFlight.current = true;
+    pairStartedAt.current = Date.now();
+    setPairCodePending(true);
     setActionLoading("pair-code");
     setActionError(null);
     setPairErrorCode(null);
@@ -436,12 +466,15 @@ function PhoneCard({
       // mismatch, or a database timeout behind an incorrect "backend down"
       // message.
       setActionError(msg);
+      setPairCodePending(false);
     } finally {
+      pairStartInFlight.current = false;
       setActionLoading(null);
     }
   };
 
   const handlePairQrStart = async () => {
+    pairStartGeneration.current++;
     setActionLoading("pair-qr");
     setActionError(null);
     setPairCodeResult(null);
@@ -474,7 +507,7 @@ function PhoneCard({
         const result = await getPhone(phone.id);
         if (cancelled) return;
         const state = String(result.connection_state || "").toLowerCase();
-        if (result.connected || ["open", "connected"].includes(state)) {
+        if (result.connected === true && ["open", "connected"].includes(state)) {
           setPairQrPending(false);
           setPairingSucceeded(true);
           setActionError(null);
@@ -532,14 +565,14 @@ function PhoneCard({
   useEffect(() => {
     if ((!pairCodePending && !pairCodeResult) || !showPairCodeDialog || pairingSucceeded) return;
     let cancelled = false;
-    const startedAt = Date.now();
+    const startedAt = pairStartedAt.current || Date.now();
     const poll = async () => {
       try {
         const result = await getPairCodePhoneStatus(phone.id);
         const code = result.pairing_code || result.code || result.status?.pairing_code;
         if (cancelled) return;
         const state = String(result.state || result.connection_state || result.status?.connection_state || "").toLowerCase();
-        const connected = Boolean(result.connected || result.status?.connected || ["open", "connected"].includes(state));
+        const connected = (result.connected === true || result.status?.connected === true) && ["open", "connected"].includes(state);
         if (connected) {
           setPairCodeResult(null);
           setPairCodeExpiresAt(null);
@@ -550,18 +583,20 @@ function PhoneCard({
           await onRefresh();
           return;
         }
+        const pairingError = String(result.pairing_error || result.status?.pairing_error || "").trim();
+        if (pairingError || ["error", "pairing_error"].includes(String(result.state || ""))) {
+          setPairErrorCode(String(result.pairing_error_code || result.status?.pairing_error_code || "") || null);
+          setActionError(pairingError || "WhatsApp did not start pairing. Wait a minute, then request one new code.");
+          setPairCodeResult(null);
+          setPairCodeExpiresAt(null);
+          setPairCodePending(false);
+          return;
+        }
         if (code) {
           const expiresAt = pairCodeExpiresAt || pairingWindowExpiry(result);
           setPairCodeResult(code);
           setPairCodeExpiresAt(expiresAt);
           setPairCodeSecondsRemaining(pairingSecondsUntil(expiresAt));
-          setPairCodePending(false);
-          return;
-        }
-        const pairingError = String(result.pairing_error || result.status?.pairing_error || "").trim();
-        if (pairingError || ["error", "pairing_error", "not_started"].includes(String(result.state || ""))) {
-          setPairErrorCode(String(result.pairing_error_code || result.status?.pairing_error_code || "") || null);
-          setActionError(pairingError || "WhatsApp did not start pairing. Wait a minute, then request one new code.");
           setPairCodePending(false);
           return;
         }
@@ -594,7 +629,8 @@ function PhoneCard({
       if (remaining === 0) {
         setPairCodeResult(null);
         setPairCodeExpiresAt(null);
-        setActionError("The pairing session closed. Request one new code to try again.");
+        setPairRetryAllowed(true);
+        setActionError("The pairing session closed. You can request one new code.");
       }
     };
     updateCountdown();
@@ -602,17 +638,6 @@ function PhoneCard({
     return () => window.clearInterval(interval);
   }, [pairCodeResult, pairCodeExpiresAt, showPairCodeDialog]);
 
-  useEffect(() => {
-    if (!pairingSucceeded) return;
-    const timeout = window.setTimeout(() => {
-      setShowPairCodeDialog(false);
-      setPairingSucceeded(false);
-      setPairCodeInput("");
-      setResetReceipt(null);
-      setResetWarning(null);
-    }, 1_800);
-    return () => window.clearTimeout(timeout);
-  }, [pairingSucceeded]);
 
   const handleResetAndRepair = async () => {
     setActionLoading("reset");
@@ -894,6 +919,7 @@ function PhoneCard({
             Check status
           </button>
         )}
+        <details className="relative w-full lg:w-auto"><summary className="flex min-h-11 cursor-pointer items-center justify-center rounded-lg border border-white/10 px-4 text-xs text-zinc-400">Advanced options</summary><div className="mt-2 flex flex-wrap gap-2">
         <button
           type="button"
           onClick={() => setShowResetDialog(true)}
@@ -914,6 +940,7 @@ function PhoneCard({
           <Trash2 className="h-4 w-4" />
           Remove
         </button>
+        </div></details>
       </div>
 
       {/* Row 3: Stat chips inline */}
@@ -938,8 +965,8 @@ function PhoneCard({
       </div>
 
       <div className="whatsapp-connection-recovery mt-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[11px] leading-5 text-zinc-400">
-        <span className="font-semibold text-zinc-300">Recovery guide:</span>{" "}
-        use <span className="font-semibold text-zinc-200">Reconnect WhatsApp</span> for a normal offline connection. Use <span className="font-semibold text-amber-200">Reset &amp; re-pair</span> only if reconnect fails or you see “active on another ingestor”—it clears the saved session and requires pairing again.
+        <span className="font-semibold text-zinc-300">Connection help:</span>{" "}
+        Keep the linking-code window open until WhatsApp confirms the link. If PropAI reports a service problem, do not reset again. Reset and removal are under Advanced options and do not fix database or service errors.
       </div>
 
       {/* Action feedback */}
@@ -965,7 +992,7 @@ function PhoneCard({
                   <li>Enter the code shown by PropAI before it expires.</li>
                 </ol>
               </div>
-              <p className="text-amber-200">Use reset only when reconnecting does not work or the app says the session is active on another ingestor. For a normal offline connection, use Reconnect WhatsApp first.</p>
+              <p className="text-amber-200">Use reset only to deliberately clear a saved session. It will not repair a PropAI database or service issue. For a normal offline connection, try Reconnect WhatsApp first.</p>
             </div>
             <div className="flex justify-end gap-2 border-t border-white/10 px-5 py-3">
               <button onClick={() => setShowResetDialog(false)} disabled={actionLoading === "reset"} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white disabled:opacity-50">Cancel</button>
@@ -1007,15 +1034,14 @@ function PhoneCard({
       {showPairCodeDialog && (
         <div className="workspace-modal-backdrop fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm p-4" onClick={closePairCodeDialog}>
           <div className="w-full max-w-sm rounded-xl bg-zinc-900 border border-white/10 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            {pairingSucceeded ? (
-              <div className="px-5 py-8 text-center">
-                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full border border-emerald-400/30 bg-emerald-500/10">
-                  <Check className="h-6 w-6 text-emerald-400" />
-                </div>
-                <div className="mt-3 text-sm font-semibold text-white">WhatsApp paired successfully</div>
-                <p className="mt-1 text-xs text-zinc-400">The connection is active. This window will close automatically.</p>
-              </div>
-            ) : (pairQrPending || pairQrStartedAt || pairQrValue) ? (
+            {!(pairQrPending || pairQrStartedAt || pairQrValue) || pairingSucceeded ? (
+              <PairingCodeFlow number={pairCodeInput} editable={pairingPhoneEditable} code={pairCodeResult}
+                pending={pairCodePending || actionLoading === "pair-code"} connected={pairingSucceeded}
+                error={actionError} warning={resetWarning} secondsRemaining={pairCodeSecondsRemaining} copied={pairCodeCopied}
+                busy={actionLoading !== null} retryAllowed={pairRetryAllowed} onCopyError={() => { if (actionError && navigator.clipboard) void navigator.clipboard.writeText(`PropAI WhatsApp connection ${phone.id}: ${actionError}`).catch(() => undefined); }} onNumberChange={(value) => { if (pairingPhoneEditable) setPairCodeInput(value); }}
+                onStart={() => void handlePairCodeSubmit()} onQR={() => void handlePairQrStart()} onClose={closePairCodeDialog}
+                onCopy={() => { if (pairCodeResult && navigator.clipboard) void navigator.clipboard.writeText(pairCodeResult).then(() => setPairCodeCopied(true)).catch(() => setPairCodeCopied(false)); }} />
+            ) : (
               <>
                 <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
                   {pairQrPending && !pairQrValue ? <RefreshCw className="h-5 w-5 animate-spin text-emerald-400" /> : <Smartphone className="h-5 w-5 text-emerald-400" />}
@@ -1036,7 +1062,7 @@ function PhoneCard({
                     <div>WhatsApp → Settings → Linked devices → Link a device, then scan the QR currently shown here.</div>
                   </div>
                   <p className="mt-2 text-[11px] leading-5 text-zinc-500">Use only one method at a time. Scan the latest QR before this session expires in <span className="font-mono text-zinc-300">{formatPairingCountdown(pairQrSecondsRemaining)}</span>. Do not click Reconnect WhatsApp while pairing.</p>
-                  <p className="mt-2 text-[11px] leading-5 text-zinc-500">If linking fails, remove an old linked device from WhatsApp and try one fresh QR code.</p>
+                  <p className="mt-2 text-[11px] leading-5 text-zinc-500">If linking fails, preserve the error for support. Do not reset or remove linked devices repeatedly.</p>
                   {actionError && <p className="mt-3 text-xs text-red-400">{actionError}</p>}
                 </div>
                 <div className="flex justify-between gap-2 px-5 py-3 border-t border-white/10">
@@ -1044,132 +1070,7 @@ function PhoneCard({
                   <button onClick={closePairCodeDialog} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
                 </div>
               </>
-            ) : !pairCodeResult && !pairCodePending ? (
-              <>
-                <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
-                  <Hash className="h-5 w-5 text-zinc-400" />
-                  <div>
-                    <div className="text-sm font-semibold text-white">{resetReceipt ? "Session cleared — pair again" : "Connect WhatsApp"}</div>
-                    <div className="mt-0.5 text-[11px] text-zinc-500">Link this phone number to PropAI</div>
-                  </div>
-                  <button onClick={closePairCodeDialog} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close pairing dialog"><X className="h-4 w-4" /></button>
-                </div>
-                <div className="px-5 py-4 space-y-3">
-                  {resetReceipt && (
-                    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs leading-5 text-emerald-200">
-                      <div className="font-semibold">Reset confirmed</div>
-                      <div>Saved credentials and device mapping were deleted at {formatTime(resetReceipt)}. This phone now needs to be paired again.</div>
-                    </div>
-                  )}
-                  {resetWarning && (
-                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-100">
-                      <div className="font-semibold">Manual check needed</div>
-                      <div>{resetWarning}</div>
-                    </div>
-                  )}
-                  {actionError && classifyPairingFailure(pairErrorCode) !== "other" ? (
-                    <div role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-100">
-                      <div className="font-semibold">
-                        {classifyPairingFailure(pairErrorCode) === "retry" ? "Almost ready" : "Pairing can't start right now"}
-                      </div>
-                      <div>{actionError}</div>
-                      <div className="mt-1 text-amber-200/80">
-                        {classifyPairingFailure(pairErrorCode) === "retry"
-                          ? "Tap Get linking code once more."
-                          : "This is a PropAI service problem. Don't reset again; that won't fix it."}
-                      </div>
-                    </div>
-                  ) : actionError ? (
-                    <p className="text-xs text-red-400">{actionError}</p>
-                  ) : null}
-                  <p className="text-xs text-zinc-400">
-                    {pairingPhoneEditable
-                      ? "Enter the WhatsApp number to pair, including country code (for India, start with 91):"
-                      : "Pairing this connection’s WhatsApp number:"}
-                  </p>
-                  <input
-                    type="tel"
-                    value={pairCodeInput}
-                    onChange={(e) => {
-                      if (pairingPhoneEditable) {
-                        setPairCodeInput(e.target.value.replace(/[^0-9]/g, ""));
-                      }
-                    }}
-                    readOnly={!pairingPhoneEditable}
-                    aria-label="WhatsApp number being paired"
-                    placeholder={pairingPhoneEditable ? "e.g. 919820056180" : undefined}
-                    autoFocus={pairingPhoneEditable}
-                    className={`w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 ${pairingPhoneEditable ? "focus:border-emerald-500/50 focus:outline-none" : "cursor-default"}`}
-                    onKeyDown={(e) => { if (e.key === "Enter" && pairCodeInput.length >= 10) handlePairCodeSubmit(); }}
-                  />
-                  <p className="text-[11px] text-zinc-500">
-                    {pairingPhoneEditable
-                      ? "After selecting Get linking code, open WhatsApp → Settings → Linked devices → Link a device → Link with phone number instead."
-                      : "To pair a different number, add it as a new phone first."}
-                  </p>
-                  <button type="button" onClick={() => void handlePairQrStart()} disabled={actionLoading !== null} className="text-xs text-emerald-300 underline underline-offset-2 hover:text-emerald-200 disabled:opacity-50">Prefer QR? Scan a code instead</button>
-                </div>
-                <div className="flex justify-end gap-2 px-5 py-3 border-t border-white/10">
-                  <button onClick={closePairCodeDialog} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
-                  <button
-                    onClick={handlePairCodeSubmit}
-                    disabled={pairCodeInput.length < 10 || actionLoading === "pair-code"}
-                    className="px-4 py-1.5 text-xs font-medium rounded-lg bg-emerald-500 text-white hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {actionLoading === "pair-code" ? "Preparing…" : "Get linking code"}
-                  </button>
-                </div>
-              </>
-            ) : pairCodePending ? (
-              <>
-                <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
-                  <RefreshCw className="h-5 w-5 animate-spin text-emerald-400" />
-                  <div className="text-sm font-semibold text-white">Generating pairing code</div>
-                </div>
-                <div className="px-5 py-6 text-center text-xs leading-5 text-zinc-400">
-                  WhatsApp is preparing the code. This usually takes a few seconds; this window will update automatically. Do not reset or request another code while this is running.
-                </div>
-                <div className="flex justify-end px-5 py-3 border-t border-white/10">
-                  <button onClick={closePairCodeDialog} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
-                  <Check className="h-5 w-5 text-emerald-400" />
-                  <div className="text-sm font-semibold text-white">Pairing Code</div>
-                  <button onClick={closePairCodeDialog} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close pairing code"><X className="h-4 w-4" /></button>
-                </div>
-                <div className="px-5 py-4 text-center space-y-3">
-                  <div className="rounded-lg border border-emerald-400/20 bg-emerald-500/[0.06] px-3 py-2.5 text-left text-xs leading-5 text-emerald-100">
-                    <span className="font-semibold text-white">On your phone:</span> WhatsApp → Settings → Linked devices → Link a device → <span className="font-semibold text-white">Link with phone number instead</span>.
-                  </div>
-                  <p className="text-[11px] leading-5 text-zinc-500">Enter this latest one-time code in WhatsApp before the countdown ends. Use only this method—do not click Reconnect WhatsApp or request another code while this one is active.</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!pairCodeResult) return;
-                      if (!navigator.clipboard) return;
-                      void navigator.clipboard.writeText(pairCodeResult).then(() => {
-                        setPairCodeCopied(true);
-                        window.setTimeout(() => setPairCodeCopied(false), 1800);
-                      }).catch(() => undefined);
-                    }}
-                    className="w-full rounded-lg border border-white/10 bg-white/[0.03] py-3 text-2xl font-mono font-bold tracking-[0.3em] text-white hover:bg-white/[0.07]"
-                    title="Copy linking code"
-                  >
-                    {pairCodeResult}
-                  </button>
-                  <div className="text-[11px] text-emerald-300">{pairCodeCopied ? "Code copied" : "Tap the code to copy"}</div>
-                  <p className="text-[11px] text-zinc-500" aria-live="polite">
-                    Pairing session closes in <span className="font-mono text-zinc-300">{formatPairingCountdown(pairCodeSecondsRemaining)}</span>
-                  </p>
-                  <p className="text-[11px] leading-5 text-zinc-500">If it fails, remove an old linked device from WhatsApp, close this window, and request one fresh code.</p>
-                </div>
-                <div className="flex justify-end px-5 py-3 border-t border-white/10">
-                  <button onClick={closePairCodeDialog} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Done</button>
-                </div>
-              </>
+
             )}
           </div>
         </div>
