@@ -318,6 +318,8 @@ app.include_router(self_chat_router)
 
 from routers.external_agent import router as external_agent_router
 app.include_router(external_agent_router)
+from routers.broker_market import router as broker_market_router
+app.include_router(broker_market_router)
 
 # Account-free public read-only surface for client-side agents (Instinct, MCP
 # connectors). Serves only the SQL-gated public market view; no tenant data.

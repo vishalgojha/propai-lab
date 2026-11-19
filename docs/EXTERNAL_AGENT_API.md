@@ -249,3 +249,60 @@ without including the API key.
 - A workspace owner can enable/disable only photos on a selected API key via `PUT /keys/{key_id}/photo-access` with `{ "enabled": true }` using normal owner login, or the MCP page's Enable private photos only control. This adds no broad CRM writes. Existing write access controls do not implicitly grant photo access.
 - Upload fails closed unless the live private-crm bucket is non-public. No photos are published or copied into the shared listing-media path.
 - Save the user-provided callback details on the chosen CRM record, with confirmation for any record creation/change. Do not contact the broker.
+
+
+## Property cross-search, separately enabled
+
+The private `/messages/*` routes above stay workspace-only. They are not a
+cross-account search interface. The existing key can receive an explicit
+`broker_market:read` grant in Account > Integrations > Existing external API
+keys > Enable property cross-search. No token rotation is needed. This grants
+reader access only. It does not consent the broker's own groups for sharing,
+add DMs, or enable writes. The health response lists the current scopes.
+A 503 means this separately released feature is not enabled; do not work around
+it with private endpoints or unscoped database access.
+
+`POST /market/search` accepts property criteria, for example
+`{"building":"Lodha World One"}`, `{"locality":"Bandra","property_type":"office"}`,
+or `{"bedrooms":3,"transaction":"rent"}`. Building-only or locality-only
+searches are supported. Criteria are literal matches against property-related
+message text, not extracted fields. Source text stays in its owner's account.
+Only future messages in sources with explicit current cross-search confirmation
+are eligible. A matching message can include discussion; this is not a guarantee
+that every line is a property listing. Never use it to find personal chats,
+people, contacts or group archives. No general query, sender or phone lookup.
+
+`days` defaults to 30 and is capped at 90; `limit` defaults to 10 and is capped
+at 20. Continue only with `next_cursor`, retaining the same property criteria.
+No extraction, model call, copied source archive or embedding job is triggered.
+The agent interprets prices, availability and property relevance from original
+unverified messages. A missing match does not prove no property exists.
+
+Each result has a signed, expiring `option` reference and contact-masked text.
+`POST /market/option` with `{"option":"<returned reference>"}` rechecks source
+consent and the original message. No adjacent conversation is available.
+Untick or revoked consent denies future search/get/contact access, including
+references returned earlier. It cannot retract text an agent already received.
+
+Only after the broker says a particular option interests them, call
+`POST /market/contact` with that ONE option, `broker_confirmed_this_option:true`
+and `broker_interest_quote` containing the broker's actual words. Never invent
+those words or reveal contacts up front. The server validates the reader,
+reference, source and rate limits, but a model-supplied quote is not technical
+proof of human authorship. If several contacts appear, ask the broker which
+labelled contact to use, then pass its one-based `number_index`. A sender is not
+necessarily the broker or owner of the property. Contacts are free, limited
+per option and rate-limited to reduce bulk exposure, not placed behind a paywall.
+
+The stateless `/market/mcp` adapter exposes these same three operations under
+the same API-key scope. It is a separate optional connection, not an automatic
+upgrade to an existing `mcp.propai.live` OAuth connection. Do not ask an existing
+reader to reconfigure unless that separate route is deliberately chosen.
+
+Existing signed-in broker `/raw-mcp` connections can receive property tools
+without a new connection URL after the owner explicitly enables their own
+MCP property cross-search reader permission in Account > Integrations.
+Refresh that connection's tool list. This reader grant is separate from the
+REST key toggle, source-group sharing confirmation and existing private tools.
+Anonymous public MCP is never upgraded by either switch. Existing legacy
+`/mcp` is not the broker raw endpoint; do not claim this changes its DM access.
