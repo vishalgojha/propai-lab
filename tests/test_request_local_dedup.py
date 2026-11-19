@@ -141,10 +141,10 @@ def test_provisioning_write_invalidates_memo(monkeypatch):
 
     result = _simulate_request(user)
 
-    # Provisioning read the (empty) lists, wrote the signup phone, invalidated,
+    # Provisioning pre-read, rechecked fresh under lock, wrote and invalidated,
     # and list_phones re-queried and saw the new row in the same request.
-    assert fake.counts["list_org_whatsapp_connections"] == 2
-    assert fake.counts["list_org_whatsapp_phone_directory"] == 2
+    assert fake.counts["list_org_whatsapp_connections"] == 3
+    assert fake.counts["list_org_whatsapp_phone_directory"] == 3
     assert fake.counts["get_user_organizations"] == 1
     numbers = {row.get("phone_number") for row in result["phones"]}
     assert "919876543210" in numbers

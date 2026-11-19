@@ -17,6 +17,7 @@ from routers.common import (
     get_tenant_context,
     _resolve_active_organization_id,
     _require_org_permission,
+    _memoized_read,
 )
 
 router = APIRouter(tags=["auth"])
@@ -163,7 +164,10 @@ async def auth_me(
     if not user:
         return {"authenticated": False}
     try:
-        orgs = await asyncio.to_thread(storage.get_user_organizations, user["id"])
+        orgs = await asyncio.to_thread(
+            _memoized_read, ("get_user_organizations", str(user["id"])),
+            lambda: storage.get_user_organizations(user["id"]),
+        )
     except Exception as exc:
         logger.error("Could not load organizations for auth/me user %s: %s", user.get("id"), exc)
         orgs = []

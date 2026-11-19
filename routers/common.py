@@ -307,7 +307,7 @@ async def get_current_user(
     if credentials is None:
         print("[auth] No Bearer token in request", flush=True)
         return None
-    payload = verify_supabase_token(credentials.credentials)
+    payload = await asyncio.to_thread(verify_supabase_token, credentials.credentials)
     if payload is None:
         print(f"[auth] Token rejected (len={len(credentials.credentials)})", flush=True)
         return None
@@ -681,13 +681,38 @@ _signup_phone_locks_guard = threading.Lock()
 
 
 def _ensure_signup_whatsapp_phone(user: dict, org_id: str) -> None:
-    # Concurrent login requests used to each pass the "no unpaired card yet"
-    # check and each insert one, leaving duplicate "New Phone" cards. Serialize
-    # per org inside this process so check-then-insert is atomic here.
+    # Existing workspaces need no write lock. Only a possible create enters
+    # the serialized path, which discards pre-lock snapshots and checks fresh.
+    try:
+        connections = _list_whatsapp_connections_memo(org_id)
+        directory = _list_whatsapp_directory_memo(org_id)
+        if not _signup_phone_needed(user, connections, directory):
+            return
+    except Exception as exc:
+        logger.warning("Signup WhatsApp phone provisioning failed for %s: %s", org_id, exc)
+        return
     with _signup_phone_locks_guard:
         lock = _signup_phone_locks.setdefault(org_id, threading.Lock())
     with lock:
+        # Another request can have provisioned while this request waited.
+        # Never re-use its empty memo from before acquiring this lock.
+        _invalidate_whatsapp_lists(org_id)
         _ensure_signup_whatsapp_phone_locked(user, org_id)
+
+
+def _signup_phone_needed(user: dict, connections: list, directory: list) -> bool:
+    metadata = user.get("user_metadata") or {}
+    phone = _normalize_real_phone((user.get("phone") or "") or metadata.get("phone") or "")
+    if phone:
+        if any(_normalize_real_phone(row.get("phone_number")) == phone for row in connections + directory):
+            return False
+    elif any(
+        not str(row.get("phone_number") or "").strip()
+        or str(row.get("phone_number") or "").startswith("Unpaired:")
+        for row in connections
+    ):
+        return False
+    return len(directory) < 3 and len(connections) < 3
 
 
 def _ensure_signup_whatsapp_phone_locked(user: dict, org_id: str) -> None:
@@ -702,17 +727,7 @@ def _ensure_signup_whatsapp_phone_locked(user: dict, org_id: str) -> None:
     try:
         connections = _list_whatsapp_connections_memo(org_id)
         directory = _list_whatsapp_directory_memo(org_id)
-        if phone:
-            known = connections + directory
-            if any(_normalize_real_phone(row.get("phone_number")) == phone for row in known):
-                return
-        elif any(
-            not str(row.get("phone_number") or "").strip()
-            or str(row.get("phone_number") or "").startswith("Unpaired:")
-            for row in connections
-        ):
-            return
-        if len(directory) >= 3 or len(connections) >= 3:
+        if not _signup_phone_needed(user, connections, directory):
             return
         broker_id = f"phone-{uuid.uuid4().hex[:12]}"
         # A user may have completed email signup without a phone claim in the
