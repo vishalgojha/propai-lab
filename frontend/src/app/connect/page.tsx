@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, KeyRound, Loader2, ShieldCheck, XCircle } from "lucide-react";
 import { getSession } from "@/lib/auth";
@@ -12,15 +12,25 @@ type ConnectPreview = {
   label: string;
   write_access: boolean;
   scopes: string[];
+  status?: "pending" | "approving" | "approved" | "connected" | "denied" | "expired" | "revoked";
+  return_url?: string;
 };
 
-type PageStatus = "checking" | "ready" | "deciding" | "approved" | "denied" | "error";
+type PageStatus = "checking" | "ready" | "deciding" | "approved" | "connected" | "denied" | "expired" | "revoked" | "error";
 
 export default function ConnectAgentPage() {
   const [status, setStatus] = useState<PageStatus>("checking");
   const [code, setCode] = useState("");
   const [preview, setPreview] = useState<ConnectPreview | null>(null);
   const [message, setMessage] = useState("");
+  const handoffAttempted = useRef(false);
+  const returnUrl = preview?.return_url === "https://wa.me/16508702892" ? preview.return_url : null;
+
+  function returnToChat(url: string | null) {
+    if (!url || handoffAttempted.current) return;
+    handoffAttempted.current = true;
+    try { window.location.assign(url); } catch { /* Keep the visible return button if the browser blocks handoff. */ }
+  }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -39,7 +49,15 @@ export default function ConnectAgentPage() {
       fetchJSON<ConnectPreview>(`/external/v1/connect/sessions/by-code/${encodeURIComponent(next)}`)
         .then((result) => {
           setPreview(result);
-          setStatus("ready");
+          const nextStatus = result.status;
+          if (nextStatus === "approving") {
+            setStatus("checking");
+            setMessage("Approval is being recorded. Return to your assistant shortly.");
+          } else if (nextStatus && nextStatus !== "pending") {
+            setStatus(nextStatus);
+          } else {
+            setStatus("ready");
+          }
         })
         .catch((error) => {
           setStatus("error");
@@ -56,6 +74,7 @@ export default function ConnectAgentPage() {
         method: "POST",
       });
       setStatus(approve ? "approved" : "denied");
+      if (approve) returnToChat(returnUrl);
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "Could not record your decision. Ask your assistant to start a new connection.");
@@ -99,7 +118,7 @@ export default function ConnectAgentPage() {
         {status === "checking" && (
           <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-zinc-900 p-4 text-sm text-zinc-300">
             <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-            Checking your PropAI session...
+            {message || "Checking your PropAI session..."}
           </div>
         )}
 
@@ -146,15 +165,21 @@ export default function ConnectAgentPage() {
           </div>
         )}
 
-        {status === "approved" && (
+        {(status === "approved" || status === "connected") && (
           <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-300">
             <div className="mb-1 flex items-center gap-2 font-semibold text-white">
               <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-              Approved
+              {status === "connected" ? "Connected" : "Approved"}
             </div>
-            Your assistant is collecting the connection now and will confirm in your chat when
-            it is active. You can close this page. If it does not confirm within a few minutes,
-            revoke the new key in Account → MCP.
+            {status === "connected"
+              ? "This connection was already approved and collected by your assistant."
+              : "Your assistant is collecting the connection and will confirm in your chat when it is active."}
+            {returnUrl ? (
+              <a href={returnUrl} className="mt-4 flex min-h-12 items-center justify-center rounded-lg bg-emerald-400 px-4 py-3 font-bold text-black">
+                Return to Instinct in WhatsApp
+              </a>
+            ) : <p className="mt-3">Return to your assistant's chat. You can close this page.</p>}
+            {returnUrl && <p className="mt-3 text-xs">If WhatsApp did not open automatically, tap the button. No message is sent.</p>}
           </div>
         )}
 
@@ -168,6 +193,13 @@ export default function ConnectAgentPage() {
           </div>
         )}
 
+        {(status === "expired" || status === "revoked") && (
+          <div className="rounded-xl border border-white/10 bg-zinc-900 p-4 text-sm text-zinc-300">
+            <div className="mb-1 font-semibold text-white">{status === "revoked" ? "Access revoked" : "Connection link expired"}</div>
+            {status === "revoked" ? "This connection was revoked. Ask your assistant for a new connection only if you want to reconnect." : "This link is no longer active. Ask your assistant for a new connection link."}
+          </div>
+        )}
+
         {status === "error" && (
           <div className="rounded-xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-300">
             <div className="mb-1 flex items-center gap-2 font-semibold text-white">
@@ -178,11 +210,11 @@ export default function ConnectAgentPage() {
           </div>
         )}
 
-        <div className="mt-6 text-center text-xs text-zinc-500">
+        {status !== "approved" && status !== "connected" && <div className="mt-6 text-center text-xs text-zinc-500">
           <Link href="/inbox" className="text-emerald-400 hover:text-emerald-300">
             Back to PropAI
           </Link>
-        </div>
+        </div>}
       </section>
     </main>
   );
