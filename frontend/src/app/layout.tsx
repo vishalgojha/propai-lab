@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import "./globals.css";
 import "./zone-contract.css";
-import { getPhones, getAuthMe, getBusinessApiConfig, BusinessApiConfig, getProfile, getWhatsAppStatus, fetchJSON, isLiveWhatsAppConnection, getSoundPreferences as getSavedSoundPreferences, saveSoundPreferences, type Phone, type WhatsAppStatus } from "@/lib/api";
+import { getPhones, getAuthMe, getBusinessApiConfig, BusinessApiConfig, getProfile, getWhatsAppStatus, fetchJSON, getSoundPreferences as getSavedSoundPreferences, saveSoundPreferences, type Phone, type WhatsAppStatus } from "@/lib/api";
 import {
   MessageSquare,
   MessageSquareText,
@@ -35,6 +35,7 @@ import {
   PanelLeftOpen,
   ChevronDown,
 } from "lucide-react";
+import { workspaceConnection, identityOnlyPhones } from "@/lib/workspaceConnection";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
 import { useEventStream } from "@/lib/useEventStream";
@@ -119,6 +120,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab, tabs, saveTabScroll } = useLayout();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [phones, setPhones] = useState<Phone[]>([]);
+  const [statusChecked, setStatusChecked] = useState(false);
+  const [statusOwner, setStatusOwner] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
   const [wabaConfig, setWabaConfig] = useState<BusinessApiConfig | null>(null);
@@ -239,30 +242,15 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   // Cached phone rows are useful for identity, but must never be treated as
   // proof of a live WhatsApp session when the live probe was unavailable.
-  const livePhone = phones.find((phone) => phone.live_status_available === true && isLiveWhatsAppConnection(phone)) || null;
-  const displayPhone = livePhone || phones[0] || (liveStatus?.phone ? ({ phone_number_live: liveStatus.phone } as Phone) : null);
-  const hasConfiguredWhatsApp = phones.length > 0;
-  const hasPerPhoneLiveStatus = phones.some((phone) => phone.live_status_available === true);
-  // The workspace status probe is the freshest source for the active
-  // connection. A per-phone response can briefly carry a stale disconnected
-  // row while the ingestor has already reconnected; do not let that stale
-  // row trigger a false global disconnect banner.
-  const waConnected = livePhone
-    ? true
-    : liveStatus
-      ? isLiveWhatsAppConnection(liveStatus)
-      : hasPerPhoneLiveStatus
-        ? false
-        : null;
-  const waStale = Boolean(liveStatus?.status_stale || livePhone?.status_stale);
+  const scopedPhones = statusOwner === user?.id ? phones : [];
+  const scopedStatus = statusOwner === user?.id ? liveStatus : null;
+  const livePhone = scopedPhones.find((phone) => phone.live_status_available === true && workspaceConnection([phone], null) === true) || null;
+  const displayPhone = livePhone || scopedPhones[0] || (scopedStatus?.phone ? ({ phone_number_live: scopedStatus.phone } as Phone) : null);
+  const hasConfiguredWhatsApp = scopedPhones.length > 0;
+  const waConnected = workspaceConnection(scopedPhones, scopedStatus);
+  const waStale = Boolean(scopedStatus?.status_stale || livePhone?.status_stale);
   const waPhone = displayPhone?.phone_number_live || displayPhone?.phone_number || "";
-  const captureConnected = livePhone
-    ? true
-    : liveStatus && !liveStatus.status_stale
-      ? isLiveWhatsAppConnection(liveStatus)
-      : hasPerPhoneLiveStatus
-        ? false
-        : null;
+  const captureConnected = waConnected;
   const captureHealth: "checking" | "healthy" | "error" = captureConnected === null
     ? "checking"
     : captureConnected
@@ -286,14 +274,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const captureLabel = !hasConfiguredWhatsApp
     ? "No WhatsApp number"
     : captureHealth === "checking"
-      ? "Checking raw capture"
+      ? statusChecked ? "Raw capture status unavailable" : "Checking raw capture"
       : captureHealth === "healthy"
         ? "Raw capture active"
         : "Raw capture disconnected";
   const whatsappLabel = !hasConfiguredWhatsApp
     ? "Add WhatsApp number"
     : waConnected === null
-      ? "Checking WhatsApp"
+      ? statusChecked ? "WhatsApp status unavailable" : "Checking WhatsApp"
       : waConnected && waPhone
         ? "WhatsApp connected"
         : waConnected
@@ -349,7 +337,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    if (waConnected === null || !hasConfiguredWhatsApp) return;
+    if (waConnected === null || !hasConfiguredWhatsApp) {
+      setDisconnectNoticeOpen(false);
+      previousWhatsAppState.current = null;
+      return;
+    }
     const previous = previousWhatsAppState.current;
     if (waConnected === false) setDisconnectNoticeOpen(true);
     if (previous === false && waConnected === true) setDisconnectNoticeOpen(false);
@@ -442,12 +434,19 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (authLoading || !user) return;
+    let cancelled = false;
+    let latestLoad = 0;
+    setStatusOwner(user.id);
+    setStatusChecked(false);
+    setPhones([]);
+    setLiveStatus(null);
+    setDisconnectNoticeOpen(false);
     const phoneCacheKey = `propai_phones:${user.id}`;
     const wabaCacheKey = `propai_waba:${user.id}`;
     const hydrateTimer = window.setTimeout(() => {
       try {
         const cachedPhones = JSON.parse(localStorage.getItem(phoneCacheKey) || "[]") as Phone[];
-        if (cachedPhones.length > 0) setPhones(cachedPhones);
+        if (!cancelled && cachedPhones.length > 0) setPhones(identityOnlyPhones(cachedPhones));
         // WABA responses may contain admin-only previews. Never retain them in
         // browser storage across users, role changes, or workspace switches.
         localStorage.removeItem(wabaCacheKey);
@@ -457,6 +456,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       }
     }, 0);
     const load = async () => {
+      const loadId = ++latestLoad;
       const [phonesRes, status, extraction] = await Promise.all([
         getPhones(true, 15000).catch(() => null),
         // Focused workspaces do not use the dashboard status probe. Avoid
@@ -469,11 +469,15 @@ function AppShell({ children }: { children: React.ReactNode }) {
           recently_processed_1h?: number;
         }>("/extraction/progress", undefined, 8000).catch(() => null),
       ]);
+      if (cancelled || loadId !== latestLoad) return;
+      setStatusChecked(true);
       if (phonesRes) {
         setPhones(phonesRes.phones || []);
-        if (phonesRes.phones?.length) localStorage.setItem(phoneCacheKey, JSON.stringify(phonesRes.phones));
+        if (phonesRes.phones?.length) localStorage.setItem(phoneCacheKey, JSON.stringify(identityOnlyPhones(phonesRes.phones)));
+      } else {
+        setPhones(current => identityOnlyPhones(current));
       }
-      if (status) setLiveStatus(status);
+      setLiveStatus(status);
       if (extraction) {
         setExtractionHealth({
           // Held/suppressed group rows are intentionally not worker backlog.
@@ -484,6 +488,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       }
     };
     void getBusinessApiConfig(15000).then((config) => {
+      if (cancelled) return;
       setWabaConfig(config);
       // /auth/me and /business-api/config are both server-side role checks.
       // Keep the admin navigation visible if either trusted response confirms
@@ -498,6 +503,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("propai_whatsapp_status_updated", onStatusUpdate);
     return () => {
+      cancelled = true;
       window.clearTimeout(hydrateTimer);
       clearInterval(t);
       window.removeEventListener("propai_whatsapp_status_updated", onStatusUpdate);
@@ -644,7 +650,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <div className="h-full w-1/3 animate-[pulse_1.4s_ease-in-out_infinite] rounded-r-full bg-emerald-400" />
         </div>
       )}
-      {disconnectNoticeOpen && (
+      {disconnectNoticeOpen && waConnected === false && hasConfiguredWhatsApp && (
         <div className="fixed right-4 top-4 z-[1100] w-[min(380px,calc(100vw-2rem))] rounded-xl border border-red-400/30 bg-zinc-950 px-4 py-3 shadow-2xl shadow-black/50" role="alert">
           <div className="flex items-start gap-3">
             <WifiOff className="mt-0.5 h-5 w-5 shrink-0 text-red-300" />
@@ -894,7 +900,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   {!hasConfiguredWhatsApp
                   ? "Add WhatsApp number"
                   : waConnected === null
-                  ? "Checking WhatsApp"
+                  ? statusChecked ? "WhatsApp status unavailable" : "Checking WhatsApp"
                   : waStale
                     ? "WhatsApp status stale"
                     : waConnected

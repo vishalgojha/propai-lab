@@ -11,6 +11,7 @@ import QRCode from "qrcode";
 import { PairingCodeFlow } from "@/components/PairingCodeFlow";
 import { pairingResume } from "@/lib/pairingResume";
 import { connectionHealth, connectionMetric } from "@/lib/connectionHealth";
+import { confirmedConnection, workspaceConnection } from "@/lib/workspaceConnection";
 
 type HealthStatus = "healthy" | "warning" | "error" | "checking";
 
@@ -273,7 +274,7 @@ function whatsappGroupTopicHint(group: Pick<OnboardingGroup, "group_name">): str
 }
 
 function matchesLiveStatus(phone: Phone, status: WhatsAppStatus | null) {
-  if (!status || !isLiveWhatsAppConnection(status)) return false;
+  if (!status || confirmedConnection(status) !== true) return false;
   const liveDigits = normalizePhoneDigits(status.phone);
   if (!liveDigits) return false;
   const candidateDigits = [
@@ -285,6 +286,11 @@ function matchesLiveStatus(phone: Phone, status: WhatsAppStatus | null) {
     .map(normalizePhoneDigits)
     .filter(Boolean);
   return candidateDigits.includes(liveDigits);
+}
+
+function phoneConnectionState(phone: Phone, status: WhatsAppStatus | null): boolean | null {
+  if (matchesLiveStatus(phone, status)) return true;
+  return phone.live_status_available === true ? confirmedConnection(phone) : null;
 }
 
 function PhoneCard({
@@ -683,11 +689,12 @@ function PhoneCard({
     }
   };
 
-  const statusAvailable = phone.live_status_available !== false;
+  const phoneState = phoneConnectionState(phone, liveStatus);
+  const statusAvailable = phoneState !== null;
   // Keep the card's truth identical to the page summary. The API may have a
   // transiently unavailable status probe while the persisted connection state
   // (or the last live event) still confirms the linked session.
-  const isConnected = isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus);
+  const isConnected = phoneState === true;
   // An unpaired connection has no canonical WhatsApp account yet. Never use a
   // transient ingestor status value as its identity: that can belong to a
   // stale device/session and makes the card appear to have selected a random
@@ -1118,6 +1125,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
   const [activeControl, setActiveControl] = useState<"start" | "pause" | "stop" | null>(null);
   const [stopConfirmationOpen, setStopConfirmationOpen] = useState(false);
   const [selectionConfirmationOpen, setSelectionConfirmationOpen] = useState(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
   const [marketPolicy, setMarketPolicy] = useState<{enabled:boolean;consent_version:string;consent_text:string}|null>(null);
   const [marketConfirmed, setMarketConfirmed] = useState(false);
   useEffect(() => {
@@ -1221,6 +1229,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       return;
     }
     setSavingSelection(true);
+    setSelectionError(null);
     setError(null);
     setMessage(null);
     try {
@@ -1245,7 +1254,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       setSelectedGroups(new Set(result.selected_group_jids));
       await onRefresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save group selection.");
+      setSelectionError(err instanceof Error ? err.message : "Could not save group selection.");
     } finally {
       setSavingSelection(false);
     }
@@ -1411,7 +1420,8 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     selectedGroups.size !== persistedSelectedJids.size
     || Array.from(selectedGroups).some((jid) => !persistedSelectedJids.has(jid))
   );
-  const captureConnected = isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus);
+  const captureState = phoneConnectionState(phone, liveStatus);
+  const captureConnected = captureState === true;
 
   if (!hasPairingIdentity) {
     return (
@@ -1454,6 +1464,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
             : error}
         </div>
       )}
+      {selectionError && <div role="alert" className="mt-3 text-xs text-red-400">{selectionError}</div>}
       {message && <div className="mt-3 text-xs text-emerald-300">{message}</div>}
 
       <div className={`mt-4 rounded-lg border px-3 py-2.5 text-xs ${
@@ -1463,12 +1474,14 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       }`}>
         <div className="flex items-center gap-2 font-semibold">
           <MessageSquare className="h-3.5 w-3.5" />
-          Live WhatsApp capture · {captureConnected ? "Connected" : "Disconnected"}
+          Live WhatsApp capture · {captureConnected ? "Connected" : captureState === false ? "Disconnected" : "Status unavailable"}
         </div>
         <p className="mt-1 leading-5">
           {captureConnected
             ? "New messages from this phone’s groups and direct chats are saved as raw evidence for chat search."
-            : "Reconnect this phone to resume saving new group and direct messages for chat search."}
+            : captureState === false
+              ? "Reconnect this phone to resume saving new group and direct messages for chat search."
+              : "Live capture status could not be verified. This does not mean the phone is disconnected. No reconnect is needed based on this status alone."}
           {" "}The group choices below do not limit raw capture. Starting extraction does not import chat history.
         </p>
       </div>
@@ -2069,12 +2082,14 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
 
   if (authLoading || !user) return null;
 
-  const connectedCount = phones.filter((p) => isConnectedPhone(p) || matchesLiveStatus(p, liveStatus)).length;
+  const phoneStates = phones.map((phone) => phoneConnectionState(phone, liveStatus));
+  const connectedCount = phoneStates.filter((state) => state === true).length;
+  const connectionUnknown = workspaceConnection(phones, liveStatus) === null;
   // Connection status counters are not populated by the current WhatsMeow
   // path. The extraction progress endpoint is the live database-backed count.
   const phoneMessageTotal = phones.reduce((sum, p) => sum + (p.total_messages_received || 0), 0);
   const totalMessages = progressAvailable ? rawTotal : phoneMessageTotal || rawTotal;
-  const health = connectionHealth({ phonesLoading, liveStatusChecked, phonesError, liveStatusError, connectedCount });
+  const health = connectionHealth({ phonesLoading, liveStatusChecked, phonesError, liveStatusError: liveStatusError || connectionUnknown, connectedCount });
   const displayMetric = (value: number, live: boolean) => connectionMetric(value, live, statsLoading);
 
   return (

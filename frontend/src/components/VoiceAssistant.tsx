@@ -20,6 +20,7 @@ import {
   type Phone,
   type WhatsAppStatus,
 } from "@/lib/api";
+import { confirmedConnection } from "@/lib/workspaceConnection";
 import { useAuth } from "@/lib/AuthProvider";
 import { ConversationBar } from "@/components/ui/conversation-bar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -121,8 +122,9 @@ function describePhone(phone: Phone) {
 }
 
 function describeSetup(phones: Phone[], state: OnboardingGroupState | null, liveStatus: WhatsAppStatus | null) {
+  const verifiedConnection = confirmedConnection(liveStatus);
   const liveSummary = liveStatus
-    ? `${liveStatus.connected ? "connected" : liveStatus.state || "not connected"}${liveStatus.phone ? ` (${liveStatus.phone})` : ""}`
+    ? `${verifiedConnection === null ? "status unavailable" : verifiedConnection ? "connected" : "disconnected"}${liveStatus.phone ? ` (${liveStatus.phone})` : ""}`
     : null;
   if (!phones.length && !liveStatus) return "No WhatsApp number has been added yet. I can open the Connect screen, but you must add and authorize the number yourself.";
   const phoneSummary = liveSummary || (phones.length

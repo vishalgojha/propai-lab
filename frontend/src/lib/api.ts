@@ -498,7 +498,8 @@ export interface ConnectionState {
 }
 
 export interface WhatsAppStatus {
-  connected: boolean;
+  connected: boolean | null;
+  status_available?: boolean;
   phone: string;
   profile: string;
   instance: string;
