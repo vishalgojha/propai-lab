@@ -97,3 +97,24 @@ test("legacy /mcp is preserved: same tool list, public mode, and legacy contact 
     assert.match(l.text, /Get the phone number for a broker contact/, "legacy contact_call description unchanged");
     assert.match(l.text, /"phone"/, "legacy contact_call still accepts a phone/name lookup");
   }));
+
+
+test("broker background reaches real raw HTTP initialize only, never legacy initialization or public metadata", () =>
+  withApp(async (base) => {
+    const raw = await mcp(base, "/raw-mcp", { token: "tok-a", body: INIT });
+    assert.equal(raw.status, 200);
+    assert.ok(raw.text.includes("How broker Instincts read Mumbai listings"));
+    assert.ok(raw.text.includes("grants no access"));
+    assert.ok(raw.text.includes("Only after the broker says a specific message/option"));
+    const legacy = await mcp(base, "/mcp", { token: "tok-a", body: INIT });
+    assert.equal(legacy.status, 200);
+    assert.ok(!legacy.text.includes("How broker Instincts read Mumbai listings"));
+    const publicLegacy = await mcp(base, "/mcp", { body: INIT });
+    assert.equal(publicLegacy.status, 200);
+    assert.ok(!publicLegacy.text.includes("How broker Instincts read Mumbai listings"));
+    const denied = await mcp(base, "/raw-mcp", { body: INIT });
+    assert.equal(denied.status, 401);
+    assert.ok(!denied.text.includes("How broker Instincts read Mumbai listings"));
+    const metadata = await (await fetch(base + RAW_MCP_METADATA_PATH)).text();
+    assert.ok(!metadata.includes("How broker Instincts read Mumbai listings"));
+  }));
