@@ -147,7 +147,7 @@ def client(seeded,monkeypatch):
             if self.sort:query+=sql.SQL(' order by {}').format(sql.Identifier(self.sort))
             query+=sql.SQL(' limit %s')
             with db.cursor(cursor_factory=RealDictCursor) as q:q.execute(query,self.args+[self.n]);return SimpleNamespace(data=[dict(x) for x in q.fetchall()])
-    monkeypatch.setattr(market,'storage',SimpleNamespace(client=SimpleNamespace(rpc=lambda n,p:RPC(n,p),table=Table)))
+    monkeypatch.setattr(market,'storage',SimpleNamespace(client=SimpleNamespace(rpc=lambda n,p:RPC(n,p).execute().data,table=Table)))
     app=FastAPI();app.include_router(market.router)
     app.dependency_overrides[market.require_user]=lambda:{'id':u}
     app.dependency_overrides[market.require_tenant]=lambda:a

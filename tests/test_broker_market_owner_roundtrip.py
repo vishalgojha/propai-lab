@@ -61,7 +61,7 @@ def test_owner_consent_reader_search_untick_and_mcp_grant_round_trip(seeded,monk
         q.execute(Path('supabase/migrations/20261119100000_broker_market_mcp_reader_grants.sql').read_text())
     monkeypatch.setenv('BROKER_PROPERTY_CROSS_SEARCH_ENABLED','true');monkeypatch.setenv('BROKER_MARKET_SIGNING_SECRET','fixture-only')
     monkeypatch.setattr(market,'_record_assistant_trial_start',lambda _:None)
-    monkeypatch.setattr(market,'storage',SimpleNamespace(client=SimpleNamespace(table=lambda n:Table(c,n),rpc=lambda n,p:RPC(c,n,p))))
+    monkeypatch.setattr(market,'storage',SimpleNamespace(client=SimpleNamespace(table=lambda n:Table(c,n),rpc=lambda n,p:RPC(c,n,p).execute().data)))
     permissions=[]
     async def allow(u,t,p):
         assert u['id']==user and t==org and p=='manage_whatsapp';permissions.append(p)

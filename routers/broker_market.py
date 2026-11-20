@@ -43,7 +43,9 @@ def reader_of(key):
 
 async def rpc(name, params):
     def call():
-        return storage.client.rpc(name, params).execute().data
+        # The product REST adapter executes immediately and returns decoded JSON.
+        # Do not append supabase-py builder methods after the committed request.
+        return storage.client.rpc(name, params)
     try:
         return await asyncio.to_thread(call)
     except Exception as exc:

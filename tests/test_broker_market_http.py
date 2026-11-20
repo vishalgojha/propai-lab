@@ -32,7 +32,7 @@ def client(seeded,monkeypatch):
                         if hasattr(v,'isoformat'):row[k]=v.isoformat()
                 if self.name=='broker_market_take_rate':return SimpleNamespace(data=rows[0][self.name])
                 return SimpleNamespace(data=rows)
-    monkeypatch.setattr(market,'storage',SimpleNamespace(client=SimpleNamespace(rpc=lambda n,p:RPC(n,p))))
+    monkeypatch.setattr(market,'storage',SimpleNamespace(client=SimpleNamespace(rpc=lambda n,p:RPC(n,p).execute().data)))
     app=FastAPI();app.include_router(market.router)
     key={'id':'test-key','tenant_id':'reader-org','created_by':'reader-user','scopes':[market.SCOPE]}
     app.dependency_overrides[market.market_key]=lambda:key
