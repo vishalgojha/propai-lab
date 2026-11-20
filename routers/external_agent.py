@@ -28,6 +28,7 @@ KEY_PREFIX = "ppai_"
 logger = logging.getLogger(__name__)
 RAW_MESSAGE_COLUMNS = "id,group_name,sender,sender_jid,sender_phone,message,message_type,timestamp,source,is_group,processed"
 EXTERNAL_AGENT_DOCS = Path(__file__).resolve().parents[1] / "docs" / "EXTERNAL_AGENT_API.md"
+BROKER_AGENT_KNOWLEDGE = Path(__file__).resolve().parents[1] / "docs" / "BROKER_AGENT_KNOWLEDGE.md"
 WRITE_SCOPES = {"inventory:write", "requirements:write"}
 TOOL_READ_SCOPES = {
     "standing_searches:read", "automatch:read", "workspace:attention", "followups:read",
@@ -150,7 +151,12 @@ async def external_agent_docs():
 @router.get("/knowledge", response_class=PlainTextResponse)
 async def external_agent_knowledge():
     """Product vocabulary only. No workspace records, credentials or prompt."""
-    return PlainTextResponse(build_ai_domain_context(), headers={"Cache-Control": "public, max-age=300"})
+    try:
+        background = BROKER_AGENT_KNOWLEDGE.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise HTTPException(503, "Broker background knowledge is temporarily unavailable") from exc
+    return PlainTextResponse(build_ai_domain_context() + "\n\n" + background,
+                             headers={"Cache-Control": "public, max-age=300"})
 
 
 def _require_scope(key: dict, scope: str):

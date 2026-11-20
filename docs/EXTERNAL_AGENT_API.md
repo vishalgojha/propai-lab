@@ -12,6 +12,12 @@ GET https://api.propai.live/api/external/v1/docs
 ```
 
 This guide is public and does not contain a workspace key or workspace data.
+At connection setup and each new search session, read the account-free broker
+background at `GET https://api.propai.live/api/external/v1/knowledge`.
+It is source vocabulary and search background, not broker consent or new access.
+Quick meanings: (+1) means not direct, without proving chain length; postings may
+name only a locality or landmark, so keep broad-area and pocket searches distinct.
+Do not widen a specific pocket silently. Use only sources already authorized.
 The machine-readable API schema is at
 `https://api.propai.live/openapi.json`.
 
@@ -93,8 +99,8 @@ Read endpoints:
 
 ## Shared realtor knowledge and search scope
 
-`GET /knowledge` returns the existing PropAI Indian real-estate glossary,
-not an agent prompt or workspace data. It is account-free product vocabulary:
+`GET /knowledge` returns the PropAI Indian real-estate glossary plus generic
+broker search background, not private preferences or workspace data. It is account-free product vocabulary:
 INR/lakh/crore, RK versus BHK, demand versus listings, rent/sale/pre-leased,
 and furnishing/fit-out meanings. Preserve explicit source wording and unknowns.
 
