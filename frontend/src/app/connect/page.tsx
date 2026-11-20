@@ -1,221 +1,101 @@
 "use client";
 
 export const dynamic = "force-dynamic";
-
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, KeyRound, Loader2, ShieldCheck, XCircle } from "lucide-react";
 import { getSession } from "@/lib/auth";
-import { fetchJSON } from "@/lib/api";
+import { fetchJSON, getCurrentOrg } from "@/lib/api";
 
-type ConnectPreview = {
-  label: string;
-  write_access: boolean;
-  scopes: string[];
-  status?: "pending" | "approving" | "approved" | "connected" | "denied" | "expired" | "revoked";
-  return_url?: string;
-};
+type Preview = { label: string; write_access: boolean; scopes: string[]; workspace_id?: string; status?: string; return_url?: string };
+type Stage = "checking" | "ready" | "deciding" | "approved" | "collected" | "denied" | "expired" | "revoked" | "error";
 
-type PageStatus = "checking" | "ready" | "deciding" | "approved" | "connected" | "denied" | "expired" | "revoked" | "error";
+// Collection is not a read test or durable assistant storage. Legacy servers
+// may call it connected; this client deliberately does not repeat that claim.
+function stageFor(raw?: string): Stage {
+  if (raw === "connected" || raw === "consumed" || raw === "collected") return "collected";
+  if (raw === "approved" || raw === "approving") return "approved";
+  if (raw === "denied" || raw === "expired" || raw === "revoked") return raw;
+  if (!raw || raw === "pending") return "ready";
+  return "error";
+}
 
 export default function ConnectAgentPage() {
-  const [status, setStatus] = useState<PageStatus>("checking");
+  const [stage, setStage] = useState<Stage>("checking");
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [workspace, setWorkspace] = useState<{id: string; name?: string} | null>(null);
   const [code, setCode] = useState("");
-  const [preview, setPreview] = useState<ConnectPreview | null>(null);
   const [message, setMessage] = useState("");
-  const handoffAttempted = useRef(false);
+  const busy = useRef(false);
   const returnUrl = preview?.return_url === "https://wa.me/16508702892" ? preview.return_url : null;
 
-  function returnToChat(url: string | null) {
-    if (!url || handoffAttempted.current) return;
-    handoffAttempted.current = true;
-    try { window.location.assign(url); } catch { /* Keep the visible return button if the browser blocks handoff. */ }
-  }
-
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const next = (params.get("code") || "").trim().toUpperCase();
-    setCode(next);
-    if (!next) {
-      setStatus("error");
-      setMessage("Missing connection code. Start the connection again from your assistant.");
-      return;
+    let active = true;
+    const value = (new URLSearchParams(window.location.search).get("code") || "").trim().toUpperCase();
+    setCode(value);
+    if (!/^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(value)) {
+      setStage("error"); setMessage("This approval link is incomplete. Return to your assistant for a new link."); return;
     }
-    getSession().then((session) => {
-      if (!session?.access_token) {
-        window.location.href = `/auth/login?next=${encodeURIComponent(`/connect?code=${next}`)}`;
-        return;
-      }
-      fetchJSON<ConnectPreview>(`/external/v1/connect/sessions/by-code/${encodeURIComponent(next)}`)
-        .then((result) => {
-          setPreview(result);
-          const nextStatus = result.status;
-          if (nextStatus === "approving") {
-            setStatus("checking");
-            setMessage("Approval is being recorded. Return to your assistant shortly.");
-          } else if (nextStatus && nextStatus !== "pending") {
-            setStatus(nextStatus);
-          } else {
-            setStatus("ready");
-          }
-        })
-        .catch((error) => {
-          setStatus("error");
-          setMessage(error instanceof Error ? error.message : "This connection link is invalid or has expired.");
-        });
-    });
+    void (async () => {
+      try {
+        const session = await getSession();
+        if (!session?.access_token) { window.location.href = `/auth/login?next=${encodeURIComponent(`/connect?code=${value}`)}`; return; }
+        const [result, org] = await Promise.all([
+          fetchJSON<Preview>(`/external/v1/connect/sessions/by-code/${encodeURIComponent(value)}`), getCurrentOrg(),
+        ]);
+        if (!active) return;
+        if (!result.workspace_id || result.workspace_id !== org.id) throw new Error("We could not confirm which account you are allowing. Reopen the approval link.");
+        setPreview(result); setWorkspace(org); setStage(stageFor(result.status));
+      } catch { if (active) {setStage("error");setMessage("We could not check this approval link and account. Nothing new has been allowed here. Return to your assistant for help.");} }
+    })();
+    return () => { active = false; };
   }, []);
 
-  async function decide(approve: boolean) {
-    if (!code) return;
-    setStatus("deciding");
+  async function decide(allow: boolean) {
+    if (!code || !workspace || !preview || busy.current) return;
+    busy.current = true; setStage("deciding");
     try {
-      await fetchJSON(`/external/v1/connect/sessions/by-code/${encodeURIComponent(code)}/${approve ? "approve" : "deny"}`, {
-        method: "POST",
+      await fetchJSON(`/external/v1/connect/sessions/by-code/${encodeURIComponent(code)}/${allow ? "approve" : "deny"}`, {
+        method: "POST", body: JSON.stringify({workspace_id: workspace.id}),
       });
-      setStatus(approve ? "approved" : "denied");
-      if (approve) returnToChat(returnUrl);
-    } catch (error) {
-      setStatus("error");
-      setMessage(error instanceof Error ? error.message : "Could not record your decision. Ask your assistant to start a new connection.");
-    }
+      setStage(allow ? "approved" : "denied");
+    } catch {setStage("error");setMessage("We could not confirm the result. Do not approve again yet. Return to your assistant to check what happened.");}
+    finally {busy.current = false;}
   }
 
-  return (
-    <main className="min-h-screen bg-black text-white flex items-center justify-center px-4 py-12">
-      <section className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-950 p-6 shadow-2xl">
-        <div className="mb-6 flex items-center gap-3">
-          <img
-            src="/propai-logo.svg"
-            alt="PropAI"
-            className="h-12 w-12 rounded-xl border border-emerald-400/20"
-          />
-          <div>
-            <div className="text-lg font-bold">PropAI</div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Broker OS</div>
-          </div>
+  return <main className="min-h-screen bg-black px-4 py-10 text-white flex items-center justify-center">
+    <section aria-label="Assistant connection" className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-950 p-6">
+      <p className="mb-6 text-lg font-bold">PropAI</p>
+      <h1 className="text-2xl font-semibold">{stage === "ready" ? "Allow your assistant?" : "Connect my assistant"}</h1>
+      {stage === "checking" && <p role="status" className="mt-5 text-sm text-zinc-300">Checking your sign-in and account...</p>}
+      {stage === "ready" && preview && workspace && <>
+        <p className="mt-3 text-sm text-zinc-300"><strong>{preview.label}</strong> is asking to read information from your PropAI account.</p>
+        <div className="mt-5 rounded-xl border border-white/10 p-4 text-sm">
+          <p className="text-zinc-400">Account you are allowing</p><p className="mt-1 font-semibold">{workspace.name || "Your PropAI workspace"}</p>
+          <p className="mt-3 break-all text-xs text-zinc-400">Account reference: {workspace.id}</p>
         </div>
-
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold">Connect an assistant</h1>
-          <p className="mt-2 text-sm text-zinc-400">
-            {preview?.label
-              ? `${preview.label} is asking for access to your PropAI workspace.`
-              : "An assistant is asking for access to your PropAI workspace."}
-          </p>
-        </div>
-
-        {code && (
-          <div className="mb-6 rounded-xl border border-white/10 bg-zinc-900/70 p-5">
-            <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-              <KeyRound className="h-4 w-4" />
-              Connection code
-            </div>
-            <div className="break-all font-mono text-2xl font-black tracking-[0.14em] text-white">{code}</div>
-          </div>
-        )}
-
-        {status === "checking" && (
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-zinc-900 p-4 text-sm text-zinc-300">
-            <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-            {message || "Checking your PropAI session..."}
-          </div>
-        )}
-
-        {status === "ready" && preview && (
-          <>
-            <div className="mb-4 rounded-xl border border-white/10 bg-zinc-900/70 p-4 text-sm leading-6 text-zinc-300">
-              <div className="mb-1 font-semibold text-white">Read access</div>
-              Listings, requirements, matches, and captured WhatsApp messages in your workspace.
-              {preview.write_access && (
-                <>
-                  <div className="mb-1 mt-3 font-semibold text-white">Private CRM writes</div>
-                  This connection can also save inventory, requirements, standing searches, and
-                  follow-ups into your private CRM. Anything with contact or budget details still
-                  needs your approval in Account → MCP before it is saved.
-                </>
-              )}
-              <div className="mt-3 text-xs text-zinc-500">
-                Approving creates a new access key for this assistant. You can revoke it any time
-                in Account → MCP.
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => decide(true)}
-                className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-400 px-4 py-3 text-sm font-bold text-black transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <ShieldCheck className="h-4 w-4" />
-                Approve access
-              </button>
-              <button
-                onClick={() => decide(false)}
-                className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-white/15 px-4 py-3 text-sm font-bold text-zinc-200 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Decline
-              </button>
-            </div>
-          </>
-        )}
-
-        {status === "deciding" && (
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-zinc-900 p-4 text-sm text-zinc-300">
-            <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-            Recording your decision...
-          </div>
-        )}
-
-        {(status === "approved" || status === "connected") && (
-          <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-300">
-            <div className="mb-1 flex items-center gap-2 font-semibold text-white">
-              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-              {status === "connected" ? "Connected" : "Approved"}
-            </div>
-            {status === "connected"
-              ? "This connection was already approved and collected by your assistant."
-              : "Your assistant is collecting the connection and will confirm in your chat when it is active."}
-            {returnUrl ? (
-              <a href={returnUrl} className="mt-4 flex min-h-12 items-center justify-center rounded-lg bg-emerald-400 px-4 py-3 font-bold text-black">
-                Return to Instinct in WhatsApp
-              </a>
-            ) : <p className="mt-3">Return to your assistant's chat. You can close this page.</p>}
-            {returnUrl && <p className="mt-3 text-xs">If WhatsApp did not open automatically, tap the button. No message is sent.</p>}
-          </div>
-        )}
-
-        {status === "denied" && (
-          <div className="rounded-xl border border-white/10 bg-zinc-900 p-4 text-sm text-zinc-300">
-            <div className="mb-1 flex items-center gap-2 font-semibold text-white">
-              <XCircle className="h-4 w-4 text-zinc-400" />
-              Declined
-            </div>
-            No access was granted. You can close this page.
-          </div>
-        )}
-
-        {(status === "expired" || status === "revoked") && (
-          <div className="rounded-xl border border-white/10 bg-zinc-900 p-4 text-sm text-zinc-300">
-            <div className="mb-1 font-semibold text-white">{status === "revoked" ? "Access revoked" : "Connection link expired"}</div>
-            {status === "revoked" ? "This connection was revoked. Ask your assistant for a new connection only if you want to reconnect." : "This link is no longer active. Ask your assistant for a new connection link."}
-          </div>
-        )}
-
-        {status === "error" && (
-          <div className="rounded-xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-300">
-            <div className="mb-1 flex items-center gap-2 font-semibold text-white">
-              <XCircle className="h-4 w-4 text-red-400" />
-              Connection failed
-            </div>
-            {message}
-          </div>
-        )}
-
-        {status !== "approved" && status !== "connected" && <div className="mt-6 text-center text-xs text-zinc-500">
-          <Link href="/inbox" className="text-emerald-400 hover:text-emerald-300">
-            Back to PropAI
-          </Link>
-        </div>}
-      </section>
-    </main>
-  );
+        <ul className="mt-5 space-y-3 text-sm text-zinc-300">
+          <li>Read captured group messages, listings, requirements and matches in this account.</li>
+          <li>Read your saved searches, follow-ups and account attention items.</li>
+          <li>Private direct messages are not included in this new connection.</li>
+          <li>{preview.write_access ? "Also requested: save private inventory, requirements, searches and follow-ups. Sensitive saves still need separate approval." : "Cannot change your saved records or send messages."}</li>
+          <li>Does not share your groups or add access to other brokers' data.</li>
+        </ul>
+        <p className="mt-5 text-xs text-zinc-400">Only allow this if you asked this assistant to connect. Compare this approval code with your chat: <strong className="text-white">{code}</strong>.</p>
+        <p className="mt-3 text-xs text-zinc-400">You can remove this assistant's access in PropAI's connection settings.</p>
+        <div className="mt-6 flex gap-3"><button onClick={() => decide(true)} className="min-h-12 flex-1 rounded-lg bg-emerald-400 px-4 py-3 font-semibold text-black">Allow</button><button onClick={() => decide(false)} className="min-h-12 rounded-lg border border-white/20 px-4 py-3">Not now</button></div>
+      </>}
+      {stage === "deciding" && <p role="status" className="mt-5 text-sm">Saving your choice...</p>}
+      {(stage === "approved" || stage === "collected") && <div role="status" className="mt-5 rounded-xl border border-white/10 p-4 text-sm text-zinc-300">
+        <h2 className="font-semibold text-white">Access allowed. Finish in your chat.</h2>
+        <p className="mt-3">{stage === "collected" ? "Your assistant has collected the connection details. That alone does not confirm it can read your account." : "Your assistant still needs to collect and check the connection."}</p>
+        <p className="mt-3">Return to your assistant and ask it to finish connecting. Wait for its read check before relying on the connection.</p>
+        {returnUrl && <a href={returnUrl} style={{color: "#001b13"}} className="mt-5 block min-h-12 rounded-lg bg-emerald-400 px-4 py-3 text-center font-semibold text-black">Return to Instinct</a>}
+        <p className="mt-3 text-xs">If the assistant cannot finish, keep this as unfinished. Do not enter another password or repeatedly allow new connections.</p>
+      </div>}
+      {stage === "denied" && <p role="status" className="mt-5 text-sm">Not allowed. No access was granted by this request.</p>}
+      {(stage === "expired" || stage === "revoked") && <p role="status" className="mt-5 text-sm">{stage === "revoked" ? "This assistant's access was removed." : "This approval link has expired."} Return to your assistant if you want a new connection.</p>}
+      {stage === "error" && <p role="alert" className="mt-5 rounded-xl border border-red-400/30 p-4 text-sm text-red-200">{message || "This connection could not be checked. Return to your assistant."}</p>}
+      <Link href="/workspace/instinct" className="mt-6 inline-block min-h-11 py-3 text-sm text-emerald-300">Back to assistant setup</Link>
+    </section>
+  </main>;
 }

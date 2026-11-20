@@ -1032,7 +1032,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
   const isLanding = pathname === "/" || pathname === "/how-it-works";
   const isAuth = pathname.startsWith("/auth");
-  const isMcpAuthorize = pathname === "/mcp-authorize";
+  const isMcpAuthorize = pathname === "/mcp-authorize" || pathname === "/connect";
   const isPublicShare = pathname.startsWith("/share/");
   const isLegal = pathname === "/privacy-policy" || pathname === "/terms-of-service";
   const isStandalone = isLanding || isAuth || isMcpAuthorize || isPublicShare || isLegal || pathname === "/design-system";
