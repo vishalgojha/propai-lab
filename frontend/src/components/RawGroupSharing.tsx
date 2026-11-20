@@ -86,6 +86,15 @@ export function RawGroupSharing({ connectionId }: { connectionId: number }) {
   return <section aria-label="Raw group sharing" className="mt-4 rounded-xl border border-cyan-400/25 bg-cyan-500/[0.03] p-4 text-xs text-zinc-200">
     <h3 className="text-sm font-semibold text-white">Raw-message sharing with other PropAI brokers</h3>
     <p className="mt-2 leading-5">Choose these groups separately. This does not start extraction, select extraction groups, publish typed listings, or expose DMs. Directory ticks elsewhere are not sharing permission.</p>
+    <details className="mt-3 rounded-lg border border-cyan-400/20 p-3 text-zinc-300">
+      <summary className="cursor-pointer font-medium text-cyan-100">Which groups should I share?</summary>
+      <div className="mt-2 space-y-2 leading-5">
+        <p>Consider property broker networks, rental or sale requirements, and locality or project groups. A name is only a clue, not proof of permission.</p>
+        <p>Leave personal, family, health, sensitive and unrelated groups unchecked. If a group is unclear or mixed-purpose, leave it unchecked and confirm its purpose first.</p>
+        <p>Sharing includes other members&apos; messages. Respect the group rules and members&apos; expectations, and choose only groups you have authority to share. Contact masking reduces exposure, but is not a guarantee that text has no identifying or sensitive details.</p>
+        <p>You choose the exact named groups and confirm them. No new groups are selected by default or added automatically later. Only eligible new messages are shared, not earlier chats or DMs. This does not start extraction or grant another broker reader access.</p>
+      </div>
+    </details>
     <p className="mt-2 text-zinc-400">{data?.active_sources.length ?? 0} groups currently shared. Contact numbers stay hidden until a broker chooses a specific option.</p>
     {error && !open && <p role="alert" className="mt-3 rounded border border-red-400/30 p-2 text-red-200">{error}</p>}
     {notice && <p role="status" className="mt-3 text-emerald-200">{notice}</p>}
