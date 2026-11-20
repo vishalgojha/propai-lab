@@ -12,7 +12,8 @@ from psycopg2 import sql
 from psycopg2.extras import RealDictCursor
 from fastapi import FastAPI,HTTPException
 from fastapi.testclient import TestClient
-from tests.test_broker_market_realpg import db,seeded
+from tests.test_independent_raw_sharing import db,seeded,message
+from broker_market_policy import CONSENT_VERSION
 from routers import broker_market as market
 
 
@@ -26,6 +27,7 @@ class Table:
     def is_(self,k,v):self.where.append(sql.SQL('{} is null').format(sql.Identifier(k)));return self
     def in_(self,k,v):self.where.append(sql.SQL('{}=ANY(%s)').format(sql.Identifier(k)));self.args.append(v);return self
     def limit(self,n):return self
+    def order(self,n):return self
     def upsert(self,values,on_conflict):self.values=values;self.conflict=on_conflict;return self
     def execute(self):
         with self.c.cursor(cursor_factory=RealDictCursor) as q:
@@ -50,16 +52,13 @@ class RPC:
             try:q.execute(query,[json.dumps(v) if k=='p_terms' else v for k,v in self.p.items()])
             except Exception as exc:print('LOCAL_RPC_ERROR',self.n,str(exc));raise
             rows=encoded(q.fetchall())
-            return SimpleNamespace(data=rows[0][self.n] if self.n=='broker_market_take_rate' else rows)
+            return SimpleNamespace(data=rows[0][self.n] if self.n in ['broker_market_take_rate','broker_market_set_raw_sources'] else rows)
 
 
 def test_owner_consent_reader_search_untick_and_mcp_grant_round_trip(seeded,monkeypatch):
-    c,_=seeded
+    c,org,other_org,user,other_user=seeded
     with c.cursor() as q:
         q.execute(Path('supabase/migrations/20261119100000_broker_market_mcp_reader_grants.sql').read_text())
-        q.execute('select id from auth.users limit 1');user=str(q.fetchone()[0])
-        q.execute('select organization_id from organization_group_connections where id=11');org=str(q.fetchone()[0])
-        q.execute('delete from broker_market_source_consents')
     monkeypatch.setenv('BROKER_PROPERTY_CROSS_SEARCH_ENABLED','true');monkeypatch.setenv('BROKER_MARKET_SIGNING_SECRET','fixture-only')
     monkeypatch.setattr(market,'_record_assistant_trial_start',lambda _:None)
     monkeypatch.setattr(market,'storage',SimpleNamespace(client=SimpleNamespace(table=lambda n:Table(c,n),rpc=lambda n,p:RPC(c,n,p))))
@@ -73,11 +72,11 @@ def test_owner_consent_reader_search_untick_and_mcp_grant_round_trip(seeded,monk
     app.dependency_overrides[market.market_key]=lambda:{'id':'reader-key','tenant_id':'different-source-reader','scopes':[market.SCOPE]}
     with TestClient(app) as http:
         assert http.post('/api/external/v1/market/search',json={'building':'Lodha'}).json()['results']==[]
-        response=http.put('/api/external/v1/market/source-consent',json={'whatsapp_connection_id':1,'group_jids':['123@g.us'],'consent_version':'broker-property-cross-search-v1','confirmed':True})
+        response=http.put('/api/external/v1/market/raw-sources',json={'whatsapp_connection_id':1,'group_jids':['123@g.us'],'consent_version':CONSENT_VERSION,'confirmed':True,'enabled':True})
         assert response.status_code==200,response.text
         # Existing pre-consent rows remain private; simulate one new captured row.
         assert http.post('/api/external/v1/market/search',json={'building':'Lodha'}).json()['results']==[]
-        with c.cursor() as q:q.execute("update raw_messages set timestamp=now(),synced_at=now() where id=1")
+        message(seeded)
         result=http.post('/api/external/v1/market/search',json={'building':'Lodha'}).json()
         assert len(result['results'])==1
         option=result['results'][0]['option']
@@ -90,9 +89,9 @@ def test_owner_consent_reader_search_untick_and_mcp_grant_round_trip(seeded,monk
                 q.execute('select user_id,granted_by,revoked_at from broker_market_mcp_reader_grants where organization_id=%s',(org,));row=q.fetchone()
                 assert str(row[0])==str(row[1])==user
                 assert (row[2] is None) is enable
-        with c.cursor() as q:q.execute('update organization_group_connections set opted_out=true where id=11')
+        response=http.put('/api/external/v1/market/raw-sources',json={'whatsapp_connection_id':1,'group_jids':['123@g.us'],'consent_version':CONSENT_VERSION,'confirmed':False,'enabled':False});assert response.status_code==200,response.text
         assert http.post('/api/external/v1/market/option',json={'option':option}).status_code==404
         assert http.post('/api/external/v1/market/search',json={'building':'Lodha'}).json()['results']==[]
-        with c.cursor() as q:q.execute('update organization_group_connections set opted_out=false where id=11')
+        with c.cursor() as q:q.execute("select extraction_status from org_whatsapp_connections where id=1");assert q.fetchone()[0]=='stopped'
         assert http.post('/api/external/v1/market/search',json={'building':'Lodha'}).json()['results']==[]
-    assert len(permissions)==3
+    assert len(permissions)==4

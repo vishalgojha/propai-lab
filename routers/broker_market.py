@@ -144,35 +144,68 @@ class ConsentRequest(BaseModel):
 
 
 @router.put("/source-consent")
-async def confirm_sources(body: ConsentRequest, user: dict = Depends(require_user),
+async def legacy_confirm_sources(body: ConsentRequest, user: dict = Depends(require_user),
+                                 tenant_id: str = Depends(require_tenant)):
+    # Do not let a cached preselected extraction client grant independent consent.
+    raise HTTPException(410, "Use the separate raw-group sharing controls and choose exact groups again")
+
+
+class RawSourceRequest(ConsentRequest):
+    group_jids: list[str] = Field(max_length=200)
+    enabled: bool
+
+
+@router.get("/raw-sources")
+async def raw_sources(whatsapp_connection_id: int, user: dict = Depends(require_user),
+                      tenant_id: str = Depends(require_tenant)):
+    enabled()
+    await _require_org_permission(user, tenant_id, "manage_whatsapp")
+    def read():
+        connections = storage.client.table("org_whatsapp_connections").select("id,broker_id").eq(
+            "organization_id", tenant_id).eq("id", whatsapp_connection_id).eq("is_active", True).limit(1).execute().data or []
+        if not connections:
+            raise HTTPException(404, "Active workspace connection not found")
+        broker = connections[0]["broker_id"]
+        directory = storage.client.table("whatsapp_conversations").select("conversation_jid,display_name").eq(
+            "tenant_id", tenant_id).eq("broker_id", broker).eq("conversation_type", "group").order(
+            "display_name").limit(1001).execute().data or []
+        if len(directory) > 1000:
+            raise HTTPException(409, "Group directory is too large for this view; no groups were changed")
+        consent = storage.client.table("broker_market_raw_source_consents").select(
+            "group_jid,group_name,confirmed_at").eq("organization_id", tenant_id).eq(
+            "whatsapp_connection_id", whatsapp_connection_id).eq("broker_id", broker).eq(
+            "version", CONSENT_VERSION).is_("revoked_at", "null").execute().data or []
+        import re
+        groups = {g["conversation_jid"]: {"group_jid": g["conversation_jid"],
+                    "group_name": g.get("display_name") or g["conversation_jid"]}
+                  for g in directory if re.fullmatch(r"[0-9-]+@g\.us", str(g.get("conversation_jid") or ""))}
+        return {"groups": list(groups.values()), "active_sources": consent,
+                "consent_version": CONSENT_VERSION, "consent_text": CONSENT_TEXT}
+    return await asyncio.to_thread(read)
+
+
+@router.put("/raw-sources")
+async def set_raw_sources(body: RawSourceRequest, user: dict = Depends(require_user),
                           tenant_id: str = Depends(require_tenant)):
     enabled()
     await _require_org_permission(user, tenant_id, "manage_whatsapp")
-    if not body.confirmed or body.consent_version != CONSENT_VERSION:
-        raise HTTPException(400, "Current cross-search sharing confirmation is required")
-    wanted = sorted(set(body.group_jids))
-    if not wanted:
-        return {"confirmed": 0}
-    def update():
-        connection = storage.client.table("org_whatsapp_connections").select("id").eq(
-            "organization_id", tenant_id).eq("id", body.whatsapp_connection_id).eq("is_active", True).limit(1).execute().data
-        if not connection:
-            raise HTTPException(404, "Active workspace connection not found")
-        groups = storage.client.table("organization_group_connections").select("id,group_jid,updated_at").eq(
-            "organization_id", tenant_id).eq("whatsapp_connection_id", body.whatsapp_connection_id).eq(
-            "is_active", True).eq("opted_out", False).eq("public_market_source", True).in_("group_jid", wanted).execute().data or []
-        if sorted(g["group_jid"] for g in groups) != wanted:
-            raise HTTPException(409, "Group selection changed; review and confirm again")
-        now = datetime.now(timezone.utc).isoformat()
-        saved = storage.client.table("broker_market_source_consents").upsert([
-            {"group_connection_id": g["id"], "version": CONSENT_VERSION, "confirmed_by": user["id"],
-             "confirmed_at": now, "source_updated_at": g["updated_at"], "revoked_at": None}
-            for g in groups
-        ], on_conflict="group_connection_id").execute().data
-        if len(saved or []) != len(groups):
-            raise HTTPException(503, "Sharing confirmation could not be verified")
-        return {"confirmed": len(groups), "consent_version": CONSENT_VERSION, "forward_only": True}
-    return await asyncio.to_thread(update)
+    if body.consent_version != CONSENT_VERSION or (body.enabled and not body.confirmed):
+        raise HTTPException(400, "Current explicit raw-group sharing confirmation is required")
+    import re
+    groups = sorted(set(body.group_jids))
+    if not groups or any(not re.fullmatch(r"[0-9-]+@g\.us", jid) for jid in groups):
+        raise HTTPException(400, "Choose exact WhatsApp groups")
+    changed = await rpc("broker_market_set_raw_sources", {
+        "p_tenant": tenant_id, "p_connection": body.whatsapp_connection_id,
+        "p_groups": groups, "p_actor": str(user["id"]),
+        "p_version": CONSENT_VERSION, "p_enabled": body.enabled,
+    })
+    # A successful RPC commits all requested grants or none. Revoking an already
+    # removed group is harmless; do not manufacture new consent on retry.
+    if not isinstance(changed, int) or isinstance(changed, bool) or (body.enabled and changed != len(groups)):
+        raise HTTPException(503, "Raw sharing result could not be verified; reload its current state")
+    return {"enabled": body.enabled, "changed": changed, "forward_only": True,
+            "extraction_changed": False, "typed_publication_changed": False}
 
 
 class KeyAccessRequest(BaseModel):

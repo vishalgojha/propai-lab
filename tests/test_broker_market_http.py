@@ -88,24 +88,14 @@ def test_no_auth_no_market_and_unknown_queries_rejected(monkeypatch):
     with pytest.raises(Exception):market.enabled()
 
 
-def test_consent_requires_current_words_permission_and_selected_source(client,monkeypatch):
+def test_legacy_combined_consent_is_retired(client,monkeypatch):
     c,db,key=client
-    app=c.app
-    app.dependency_overrides[market.require_user]=lambda:{'id':'00000000-0000-4000-8000-000000000001'}
-    app.dependency_overrides[market.require_tenant]=lambda:'owner-org'
-    permission=[]
-    async def deny(*args):
-        permission.append(args)
-        from fastapi import HTTPException
-        raise HTTPException(403,'not allowed')
-    monkeypatch.setattr(market,'_require_org_permission',deny)
+    c.app.dependency_overrides[market.require_user]=lambda:{'id':'00000000-0000-4000-8000-000000000001'}
+    c.app.dependency_overrides[market.require_tenant]=lambda:'owner-org'
     payload={'whatsapp_connection_id':1,'group_jids':['123@g.us'],'consent_version':'broker-property-cross-search-v1','confirmed':True}
-    assert c.put('/api/external/v1/market/source-consent',json=payload).status_code==403
-    assert permission[0][1:] == ('owner-org','manage_whatsapp')
-    async def allow(*args):pass
-    monkeypatch.setattr(market,'_require_org_permission',allow)
-    for change in [{'confirmed':False},{'consent_version':'old-version'}]:
-        assert c.put('/api/external/v1/market/source-consent',json={**payload,**change}).status_code==400
+    assert c.put('/api/external/v1/market/source-consent',json=payload).status_code==410
+    # Current permission, version and independent-source behavior is exercised
+    # against actual new SQL+HTTP in test_independent_raw_sharing.py.
 
 
 def test_disabled_and_missing_reader_scope_not_automatically_upgraded(monkeypatch):

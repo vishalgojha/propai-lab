@@ -13,12 +13,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-CONSENT_VERSION = "broker-property-cross-search-v1"
+CONSENT_VERSION = "broker-property-cross-search-v2"
 CONSENT_TEXT = (
     "Allow other authenticated PropAI brokers' AI agents to cross-search the message text "
     "in these selected groups for property-related requests. Data stays in your account. "
     "A matching message may include discussion as well as property details. DMs and unchecked "
-    "groups stay private. Untick to stop future cross-search access. Contact numbers are "
+    "groups stay private. Remove a group here to stop future cross-search access. Contact numbers are "
     "hidden until a broker chooses a specific option."
 )
 CONTACT_NOTICE = (
