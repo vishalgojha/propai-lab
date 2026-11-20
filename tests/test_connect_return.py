@@ -85,7 +85,7 @@ def test_actual_approval_collection_preview_flow_populates_owner_and_key(monkeyp
     monkeypatch.setattr(api,'_require_org_permission',allow)
     import os
     os.environ.setdefault('CONNECT_SESSION_SECRET','test-seal-key')
-    asyncio.run(api.approve_connect_session('ABCD-2345',user={'id':'u1'},tenant_id='t1'))
+    asyncio.run(api.approve_connect_session('ABCD-2345',user={'id':'u1'},tenant_id='t1',body=api.ConnectApproval(workspace_id='t1')))
     row=c.tables['external_agent_connect_sessions'][0]
     assert (row['approved_by'],row['tenant_id'],row['api_key_id'])==('u1','t1','minted-key')
     assert preview()['status']=='approved'

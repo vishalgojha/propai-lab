@@ -124,3 +124,12 @@ def test_transport_errors_never_propagate_private_details(phase):
         elif phase=='collect':a.collect_and_check()
         else:a.check_saved()
     assert 'fixture private' not in str(exc.value)
+
+
+@pytest.mark.parametrize('write',[False,True])
+def test_preview_discloses_exact_new_key_scope_builder(monkeypatch,write):
+    setup(monkeypatch,'pending',tenant_id=None,approved_by=None,write_access=write)
+    data=preview()
+    assert data['scopes']==api._new_key_scopes(write)
+    assert ('inventory:write' in data['scopes'])==write
+    assert 'raw_messages:dms' not in data['scopes']

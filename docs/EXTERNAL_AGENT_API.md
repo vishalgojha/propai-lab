@@ -333,3 +333,17 @@ If one-use collection succeeds but storage fails, treat setup as unfinished.
 Do not create a retry loop that accumulates working keys. Review and revoke the
 unfinished access in Advanced settings before restarting. Denied or expired
 requests stop; revoked access must not silently reconnect.
+
+
+### Required expected workspace (candidate compatibility change)
+
+Approval POST now requires `{"workspace_id":"<ID shown by the preview>"}`.
+Missing, empty or malformed payloads receive 422, before any grant. A valid
+but changed account receives 409. There is no legacy bypass: old approval
+clients must refresh to the matching new UI before allowing access. Roll out
+the new UI before the API change; during version skew, fail closed and ask
+for a refresh rather than silently approving another workspace. Denial remains
+available and no old credential is changed by this validation rule.
+The same scope builder drives the pending disclosure and newly minted key.
+Unknown or empty scope disclosure blocks Allow in the new UI.
+The normal start action stays disabled until fresh-assistant acceptance passes.

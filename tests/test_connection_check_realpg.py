@@ -111,3 +111,13 @@ def test_http_workspace_change_is_rejected_before_storage_or_mint(app_db,monkeyp
     monkeypatch.setattr(api,'_require_org_permission',allow)
     result=client.post('/api/external/v1/connect/sessions/by-code/ABCD-2345/approve',json={'workspace_id':'t1'})
     assert result.status_code==409 and not log
+
+@pytest.mark.parametrize('payload',[None,{}, {'workspace_id':''}])
+def test_http_legacy_or_empty_approval_body_fails_before_grant(app_db,monkeypatch,payload):
+    client,db,log=app_db
+    client.app.dependency_overrides[api.require_user]=lambda:{'id':'u1'}
+    client.app.dependency_overrides[api.require_tenant]=lambda:'t1'
+    async def allow(*args):pass
+    monkeypatch.setattr(api,'_require_org_permission',allow)
+    result=client.post('/api/external/v1/connect/sessions/by-code/ABCD-2345/approve',json=payload)
+    assert result.status_code==422 and not log

@@ -586,6 +586,11 @@ async def external_matches(q: str = "", limit: int = Query(20, ge=1, le=50), key
     return {"matches": [_public_listing(row) for row in rows], "count": len(rows), "query": q}
 
 
+def _new_key_scopes(write_access: bool) -> list[str]:
+    """One source for approval disclosure and the actual new credential grant."""
+    return sorted(DEFAULT_READ_SCOPES | (WRITE_SCOPES | TOOL_WRITE_SCOPES if write_access else set()))
+
+
 def _create_external_key(tenant_id: str, user_id: str, label: str, write_access: bool) -> tuple[dict, str]:
     """Mint one tenant-scoped external API key; returns (row, one-time token).
 
@@ -593,9 +598,7 @@ def _create_external_key(tenant_id: str, user_id: str, label: str, write_access:
     connect-session flow so both produce identical key material and scopes.
     """
     token = KEY_PREFIX + secrets.token_urlsafe(32)
-    scopes = sorted(DEFAULT_READ_SCOPES)
-    if write_access:
-        scopes.extend(sorted(WRITE_SCOPES | TOOL_WRITE_SCOPES))
+    scopes = _new_key_scopes(write_access)
     payload = {
         "tenant_id": tenant_id,
         "created_by": user_id,
@@ -1346,18 +1349,16 @@ async def preview_connect_session(user_code: str, user: dict = Depends(require_u
         return {**result, "status": state}
     if state != "pending":
         raise HTTPException(409, "Connect session is not available")
-    scopes = sorted(DEFAULT_READ_SCOPES)
-    if row.get("write_access"):
-        scopes.extend(sorted(WRITE_SCOPES | TOOL_WRITE_SCOPES))
+    scopes = _new_key_scopes(bool(row.get("write_access")))
     return {**result, "status": "pending", "scopes": scopes}
 
 
 class ConnectApproval(BaseModel):
-    workspace_id: str
+    workspace_id: str = Field(min_length=1)
 
 
 @router.post("/connect/sessions/by-code/{user_code}/approve")
-async def approve_connect_session(user_code: str, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant), body: ConnectApproval | None = None):
+async def approve_connect_session(user_code: str, body: ConnectApproval, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
     """Broker-facing: mint a key for the waiting agent.
 
     Uses the same org permission gate as key rotation, since approving grants
@@ -1365,7 +1366,7 @@ async def approve_connect_session(user_code: str, user: dict = Depends(require_u
     session row and returned to the agent exactly once via the device poll.
     """
     await _require_org_permission(user, tenant_id, "manage_whatsapp")
-    if body is not None and body.workspace_id != str(tenant_id):
+    if body.workspace_id != str(tenant_id):
         raise HTTPException(409, "Workspace changed. Review the connection again before allowing access.")
     row = _connect_session_by_user_code(user_code)
     if row.get("status") != "pending":
