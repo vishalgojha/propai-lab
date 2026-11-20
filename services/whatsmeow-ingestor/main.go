@@ -42,6 +42,7 @@ var (
 	instanceName         = getEnv("PROPAI_INSTANCE_NAME", "propai-whatsmeow")
 	sendPort             = getEnv("PROPAI_SEND_PORT", "3001")
 	statusClient         = &http.Client{Timeout: 5 * time.Second}
+	newSessionClient     = whatsmeow.NewClient
 )
 
 // ── Status ──────────────────────────────────────────────────────────────────
@@ -293,7 +294,7 @@ func (s *BrokerSession) clearDevice() error {
 	if s.client != nil && s.client.Store.ID != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
-		if err := s.client.Store.Delete(ctx); err != nil {
+		if err := s.client.Store.Delete(explicitDeviceDeletion(ctx, s.client.Store)); err != nil {
 			log.Printf("[broker %s] error deleting device: %v", s.brokerID, err)
 			return err
 		}
@@ -309,7 +310,7 @@ func (s *BrokerSession) unlinkAndClearDevice() (bool, error) {
 	if s.client != nil && s.client.Store.ID != nil && s.client.IsConnected() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		if err := s.client.Logout(ctx); err != nil {
+		if err := s.client.Logout(explicitDeviceDeletion(ctx, s.client.Store)); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -661,6 +662,11 @@ func (sm *SessionManager) startOrGet(
 		}
 	}
 
+	if device == nil && deviceJID != "" {
+		failure = "Stored WhatsApp identity is unavailable. No new identity was created; deliberate account repair is required."
+		releaseBrokerLockConn(lockConn, brokerID)
+		return nil
+	}
 	if device == nil {
 		device = sm.container.NewDevice()
 		log.Printf("[broker %s] created new unpaired device", brokerID)
@@ -935,12 +941,14 @@ sessionLoop:
 		s.disconnected = disconnected
 		s.disconnectOnce = sync.OnceValue(func() struct{} { close(disconnected); return struct{}{} })
 
-		s.client = whatsmeow.NewClient(s.device, waLog.Noop)
+		protectDevice(s.device)
+		s.client = newSessionClient(s.device, waLog.Noop)
 		// The pinned WhatsMeow release enables this by default, but set it
 		// explicitly: transient socket failures should be retried by the
 		// library while our outer loop continues to handle session lifecycle
 		// events and credential-preserving wipe policy.
 		s.client.EnableAutoReconnect = true
+
 		s.client.QRClientType = whatsmeow.PairClientChrome
 		s.client.AddEventHandler(func(evt interface{}) {
 			client := s.client
@@ -1247,12 +1255,12 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 		s.setStatus(Status{Connected: false, ConnectionState: "scanning"})
 
 	case *events.LoggedOut:
-		log.Printf("[broker %s] SESSION_WIPED reason=logged_out timestamp=%s reconnectFailures=%d reconnectCount=%d",
-			s.brokerID, time.Now().UTC().Format(time.RFC3339), s.reconnectFailures, s.reconnectCount)
+		// Rejected remote credentials are not made valid by retaining them.
+		// Preserve local evidence, halt this identity and require explicit repair.
 		s.setStatus(Status{Connected: false, ConnectionState: "logged_out", DisconnectReason: 401})
-		_ = s.clearDevice()
-		sm.deleteDeviceMapping(context.Background(), s.brokerID, "logged_out")
-		s.device = nil
+		if s.cancel != nil {
+			s.cancel()
+		}
 		if s.disconnectOnce != nil {
 			s.disconnectOnce()
 		}
@@ -3769,26 +3777,12 @@ func main() {
 	db.SetMaxOpenConns(5)
 	db.SetMaxIdleConns(2)
 
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS broker_whatsapp_devices (
-		whatsapp_connection_key TEXT PRIMARY KEY,
-		device_jid TEXT NOT NULL,
-		created_at TIMESTAMPTZ DEFAULT NOW(),
-		updated_at TIMESTAMPTZ DEFAULT NOW()
-	)`); err != nil {
-		log.Fatalf("error creating mapping table: %v", err)
+	selectedBrokers, err := startupBrokerSelection(os.Getenv("PROPAI_STARTUP_BROKER_IDS"))
+	if err != nil {
+		log.Fatal(err)
 	}
-
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS broker_whatsapp_device_history (
-		id SERIAL PRIMARY KEY,
-		whatsapp_connection_key TEXT NOT NULL,
-		device_jid TEXT NOT NULL,
-		wiped_at TIMESTAMPTZ DEFAULT NOW(),
-		reason TEXT NOT NULL
-	)`); err != nil {
-		log.Fatalf("error creating history table: %v", err)
-	}
-	if err := ensureGroupMembersTable(db); err != nil {
-		log.Fatalf("error creating group members table: %v", err)
+	if err = verifyExistingSessionSchema(context.Background(), db); err != nil {
+		log.Fatalf("session schema preflight failed: %v", err)
 	}
 
 	// Whatsmeow persists Signal sessions and identity keys while encrypting and
@@ -3808,9 +3802,6 @@ func main() {
 
 	ctx := context.Background()
 	container := sqlstore.NewWithDB(containerDB, "postgres", waLog.Noop)
-	if err := container.Upgrade(ctx); err != nil {
-		log.Fatalf("error creating store container: %v", err)
-	}
 
 	// One pinned session backend holds singleton and legacy broker keys.
 	// No overlapping deployment. A lost backend exits, it is never replaced.
@@ -3840,17 +3831,26 @@ func main() {
 	// Load existing broker sessions from stored device mappings
 	rows, err := db.Query("SELECT whatsapp_connection_key, device_jid FROM broker_whatsapp_devices")
 	if err != nil {
-		log.Printf("error loading existing sessions: %v", err)
+		log.Fatalf("error loading existing sessions: %v", err)
 	} else {
+		seenStartup := map[string]bool{}
+		var startupSessions []*BrokerSession
 		for rows.Next() {
 			var brokerID, deviceJID string
 			if err := rows.Scan(&brokerID, &deviceJID); err != nil {
 				log.Printf("error scanning row: %v", err)
 				continue
 			}
+			if !selectStartupBroker(brokerID, selectedBrokers) {
+				continue
+			}
+			seenStartup[brokerID] = true
 			jid, parseErr := types.ParseJID(deviceJID)
 			if parseErr != nil {
-				log.Printf("[broker %s] invalid JID %q: %v", brokerID, deviceJID, parseErr)
+				log.Printf("stored identity is malformed; mapping preserved")
+				if len(selectedBrokers) > 0 {
+					log.Fatal("selected stored identity cannot be restored")
+				}
 				continue
 			}
 			// Keep legacy keys as a handover guard, including before store cleanup.
@@ -3864,24 +3864,35 @@ func main() {
 				log.Fatalf("[broker %s] restore could not verify device: %v", brokerID, getErr)
 			}
 			if device == nil {
-				log.Printf("[broker %s] stored device absent, removing stale mapping", brokerID)
-				if _, err := db.Exec("DELETE FROM broker_whatsapp_devices WHERE whatsapp_connection_key=$1", brokerID); err != nil {
-					releaseBrokerLockConn(lockConn, brokerID)
-					log.Fatalf("[broker %s] could not clear verified stale mapping: %v", brokerID, err)
-				}
 				releaseBrokerLockConn(lockConn, brokerID)
+				log.Printf("stored device absent; mapping preserved; explicit account repair required")
+				if len(selectedBrokers) > 0 {
+					log.Fatal("selected stored identity cannot be restored")
+				}
 				continue
 			}
+
 			session := sm.newSession(brokerID, device)
 			session.lockConn = lockConn
 			sm.mu.Lock()
 			sm.sessions[brokerID] = session
 			sm.mu.Unlock()
-			sm.sessionWg.Add(1)
-			go sm.runSession(session)
+			startupSessions = append(startupSessions, session)
 			log.Printf("[broker %s] session restored from device %q", brokerID, deviceJID)
 		}
+		if err := rows.Err(); err != nil {
+			log.Fatalf("session mapping scan failed: %v", err)
+		}
 		rows.Close()
+		for _, wanted := range selectedBrokers {
+			if !seenStartup[wanted] {
+				log.Fatal("startup selector names no existing mapping; no new identity created")
+			}
+		}
+		for _, session := range startupSessions {
+			sm.sessionWg.Add(1)
+			go sm.runSession(session)
+		}
 	}
 
 	// HTTP server
