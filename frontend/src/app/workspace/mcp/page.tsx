@@ -235,7 +235,7 @@ export default function McpWorkspacePage() {
     <section id="how-to-connect" className="mx-auto max-w-4xl px-4 pb-12 lg:px-6">
       <div className="mb-6 rounded-2xl border border-white/10 p-6">
         <h1 className="text-2xl font-semibold text-white">Your assistant connection</h1>
-        <p className="mt-3 text-sm leading-6 text-zinc-300">Start with the simple approval flow. You do not need to create or copy connection details yourself.</p>
+        <p className="mt-3 text-sm leading-6 text-zinc-300">Simple connection setup is not available yet. Existing access can still be reviewed or removed below.</p>
         <Link href="/workspace/instinct" className="mt-5 inline-flex min-h-12 items-center rounded-lg bg-emerald-400 px-5 py-3 font-semibold text-black">Connect my assistant</Link>
       </div>
       <details className="rounded-xl border border-white/10 p-4">

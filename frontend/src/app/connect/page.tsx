@@ -7,6 +7,23 @@ import { getSession } from "@/lib/auth";
 import { fetchJSON, getCurrentOrg } from "@/lib/api";
 
 type Preview = { label: string; write_access: boolean; scopes: string[]; workspace_id?: string; status?: string; return_url?: string };
+
+const SCOPE_LABELS: Record<string, string> = {
+  "raw_messages:read": "Read captured group messages in this account.",
+  "raw_messages:dms": "Read private direct messages, subject to this account's separate DM permission.",
+  "inventory:read": "Read listings in this account.",
+  "requirements:read": "Read buyer requirements in this account.",
+  "matches:read": "Read matches in this account.",
+  "standing_searches:read": "Read saved searches.",
+  "automatch:read": "Read automatic matches.",
+  "workspace:attention": "Read account attention items.",
+  "followups:read": "Read follow-ups.",
+  "inventory:write": "Save private inventory. Sensitive saves still need separate approval.",
+  "requirements:write": "Save private requirements. Sensitive saves still need separate approval.",
+  "standing_searches:write": "Save searches.",
+  "followups:write": "Save follow-ups.",
+};
+
 type Stage = "checking" | "ready" | "deciding" | "approved" | "collected" | "denied" | "expired" | "revoked" | "error";
 
 // Collection is not a read test or durable assistant storage. Legacy servers
@@ -26,6 +43,8 @@ export default function ConnectAgentPage() {
   const [code, setCode] = useState("");
   const [message, setMessage] = useState("");
   const busy = useRef(false);
+  const scopes = [...new Set(preview?.scopes || [])];
+  const scopeReviewBlocked = scopes.length === 0 || scopes.some(scope => !SCOPE_LABELS[scope]);
   const returnUrl = preview?.return_url === "https://wa.me/16508702892" ? preview.return_url : null;
 
   useEffect(() => {
@@ -51,7 +70,7 @@ export default function ConnectAgentPage() {
   }, []);
 
   async function decide(allow: boolean) {
-    if (!code || !workspace || !preview || busy.current) return;
+    if (!code || !workspace || !preview || busy.current || (allow && scopeReviewBlocked)) return;
     busy.current = true; setStage("deciding");
     try {
       await fetchJSON(`/external/v1/connect/sessions/by-code/${encodeURIComponent(code)}/${allow ? "approve" : "deny"}`, {
@@ -74,15 +93,15 @@ export default function ConnectAgentPage() {
           <p className="mt-3 break-all text-xs text-zinc-400">Account reference: {workspace.id}</p>
         </div>
         <ul className="mt-5 space-y-3 text-sm text-zinc-300">
-          <li>Read captured group messages, listings, requirements and matches in this account.</li>
-          <li>Read your saved searches, follow-ups and account attention items.</li>
-          <li>Private direct messages are not included in this new connection.</li>
-          <li>{preview.write_access ? "Also requested: save private inventory, requirements, searches and follow-ups. Sensitive saves still need separate approval." : "Cannot change your saved records or send messages."}</li>
-          <li>Does not share your groups or add access to other brokers' data.</li>
+          {scopes.map(scope => <li key={scope}>{SCOPE_LABELS[scope] || `Unrecognized access: ${scope}`}</li>)}
+          {!scopes.includes("raw_messages:dms") && <li>Private direct messages are not included in this new connection.</li>}
+          {!scopes.some(scope => scope.endsWith(":write")) && <li>Cannot change your saved records.</li>}
+          <li>Cannot send messages. Does not share your groups or add access to other brokers' data.</li>
         </ul>
-        <p className="mt-5 text-xs text-zinc-400">Only allow this if you asked this assistant to connect. Compare this approval code with your chat: <strong className="text-white">{code}</strong>.</p>
+        {scopeReviewBlocked && <p role="alert" className="mt-4 text-sm text-red-200">We could not fully describe the requested access. Do not allow this request. Return to your assistant for help.</p>}
+        <p className="mt-5 text-xs text-zinc-400">Only allow this if you asked this assistant to connect.</p>
         <p className="mt-3 text-xs text-zinc-400">You can remove this assistant's access in PropAI's connection settings.</p>
-        <div className="mt-6 flex gap-3"><button onClick={() => decide(true)} className="min-h-12 flex-1 rounded-lg bg-emerald-400 px-4 py-3 font-semibold text-black">Allow</button><button onClick={() => decide(false)} className="min-h-12 rounded-lg border border-white/20 px-4 py-3">Not now</button></div>
+        <div className="mt-6 flex gap-3"><button disabled={scopeReviewBlocked} style={{opacity: scopeReviewBlocked ? 0.4 : 1}} onClick={() => decide(true)} className="min-h-12 flex-1 rounded-lg bg-emerald-400 px-4 py-3 font-semibold text-black">Allow</button><button onClick={() => decide(false)} className="min-h-12 rounded-lg border border-white/20 px-4 py-3">Not now</button></div>
       </>}
       {stage === "deciding" && <p role="status" className="mt-5 text-sm">Saving your choice...</p>}
       {(stage === "approved" || stage === "collected") && <div role="status" className="mt-5 rounded-xl border border-white/10 p-4 text-sm text-zinc-300">
