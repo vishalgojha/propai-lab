@@ -744,8 +744,9 @@ async def dashboard_whatsapp_status(
         print(f"[dashboard] whatsapp-status filter failed: {exc}", flush=True)
         org_id = ""
         phones = []
-    details: dict = {}
+    details: dict = {"connection_state": "unavailable", "connected": None}
     if phones:
+        details = {}
         statuses_map, ingestor_reachable, ingestor_error = await _merged_ingestor_list(timeout=2)
         statuses: list[dict] = list(statuses_map.values())
         now = time.time()
@@ -757,11 +758,12 @@ async def dashboard_whatsapp_status(
         details = _select_workspace_whatsapp_status(phones, statuses)
         if not details and ingestor_reachable:
             details = {"connection_state": "stopped", "connected": False}
-        elif not details and ingestor_error:
-            details = {"connection_state": "unavailable", "connected": False}
+        elif not details:
+            details = {"connection_state": "unavailable", "connected": None}
     phone = details.get("phone_number") or ""
     return {
-        "connected": details.get("connected", False),
+        "connected": details.get("connected"),
+        "status_available": details.get("connected") is not None and not details.get("status_stale", False),
         "instance": details.get("instance_name", "propai-whatsmeow"),
         "phone": phone,
         "profile": details.get("display_name") or "",
