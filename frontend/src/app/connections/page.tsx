@@ -1,5 +1,7 @@
 "use client";
 
+import { RawGroupSharing } from "@/components/RawGroupSharing";
+
 export const dynamic = 'force-dynamic';
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -1126,14 +1128,6 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
   const [stopConfirmationOpen, setStopConfirmationOpen] = useState(false);
   const [selectionConfirmationOpen, setSelectionConfirmationOpen] = useState(false);
   const [selectionError, setSelectionError] = useState<string | null>(null);
-  const [marketPolicy, setMarketPolicy] = useState<{enabled:boolean;consent_version:string;consent_text:string}|null>(null);
-  const [marketConfirmed, setMarketConfirmed] = useState(false);
-  useEffect(() => {
-    let active = true;
-    fetchJSON<{enabled:boolean;consent_version:string;consent_text:string}>("/external/v1/market/policy")
-      .then(p => { if (active) setMarketPolicy(p); }).catch(() => { if(active) setMarketPolicy(null); });
-    return () => { active = false; };
-  }, []);
 
   const [refreshingDirectory, setRefreshingDirectory] = useState(false);
   const [groupQuery, setGroupQuery] = useState("");
@@ -1235,21 +1229,11 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     try {
       const selectedJids = Array.from(selectedGroups);
       const result = await selectOnboardingGroups(phone.id, selectedJids);
-      if (marketPolicy?.enabled && marketConfirmed && selectedJids.length > 0) {
-        try {
-          await fetchJSON("/external/v1/market/source-consent", {
-            method: "PUT", body: JSON.stringify({whatsapp_connection_id: phone.id,
-              group_jids: result.selected_group_jids, consent_version: marketPolicy.consent_version, confirmed: true}),
-          });
-        } catch {
-          throw new Error("Group selection saved, but cross-search sharing was NOT confirmed. Review the selection and retry.");
-        }
-      }
       // The response is the authoritative persisted state. Keep it in the
       // checkbox model even if the following directory refresh is eventually
       // consistent and briefly returns the previous connection rows.
       setSelectedGroups(new Set(result.selected_group_jids));
-      setMessage(marketPolicy?.enabled && marketConfirmed ? "Selection saved. Only new messages in explicitly confirmed groups are eligible for property cross-search. No paid extraction started." : "Existing group settings saved. Raw cross-search sharing was not enabled. Typed-listing publication and live capture keep their existing behavior.");
+      setMessage("Group settings saved. Selected groups are eligible for optional extraction and typed-listing publication. Raw sharing was revoked for groups removed from this selection; retained groups keep their separate raw choice. No extraction was started.");
       await loadGroups();
       setSelectedGroups(new Set(result.selected_group_jids));
       await onRefresh();
@@ -1266,7 +1250,6 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       setError(`Select at most ${data.cap} groups.`);
       return;
     }
-    setMarketConfirmed(false);
     setSelectionConfirmationOpen(true);
   };
 
@@ -1486,6 +1469,8 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         </p>
       </div>
 
+      <RawGroupSharing key={phone.id} connectionId={phone.id} />
+
       {data && (
         <div className="mt-4 border-y border-white/10 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1516,13 +1501,13 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
           )}
           {hasUnpersistedSelection && (
             <div className="mt-3 border-l-2 border-cyan-400/50 bg-cyan-400/[0.04] px-3 py-2 text-[11px] text-cyan-200">
-              {selectedGroups.size} group{selectedGroups.size === 1 ? " is" : "s are"} checked locally. Confirm the selection above before starting.
+              {selectedGroups.size} group{selectedGroups.size === 1 ? " is" : "s are"} checked locally. Review exact groups and typed-publication effects before saving.
             </div>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
             {hasUnpersistedSelection && (
               <button type="button" onClick={requestSelectionConfirmation} disabled={activeControl !== null || savingSelection || (data.cap != null && selectedGroups.size > data.cap)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
-                <Check className="h-3 w-3" /> {savingSelection ? "Saving selection..." : `Confirm ${selectedGroups.size} group${selectedGroups.size === 1 ? "" : "s"}`}
+                <Check className="h-3 w-3" /> {savingSelection ? "Saving selection..." : `Review ${selectedGroups.size} extraction groups`}
               </button>
             )}
             <button type="button" onClick={() => void handleExtractionControl("start")} disabled={activeControl !== null || savingSelection || hasUnpersistedSelection || data.extraction_status === "running" || persistedSelectedCount === 0} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/40 px-3 py-1.5 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-40">
@@ -1564,7 +1549,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
 
       {data && data.groups.length > 0 && (
         <div className="mt-3 border-y border-cyan-500/20 bg-cyan-500/[0.03] px-3 py-2 text-[11px] text-cyan-100">
-          Confirm group choices to configure extraction. This does not limit live raw capture from groups or direct chats, and it does not request a history import. Groups already covered by another active connection are unavailable for this extraction selection.
+          Confirm group choices to configure optional extraction and typed-listing publication. This does not limit live raw capture from groups or direct chats, and it does not request a history import. Groups already covered by another active connection are unavailable for this extraction selection.
         </div>
       )}
 
@@ -1752,7 +1737,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
 
       {stopConfirmationOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="stop-sync-title">
-          <div className="w-full max-w-md overflow-hidden rounded-xl border border-white/10 bg-zinc-950 shadow-2xl shadow-black/50">
+          <div className="max-h-[90dvh] w-full max-w-xl overflow-y-auto rounded-xl border border-white/10 bg-zinc-950 shadow-2xl shadow-black/50">
             <div className="flex items-start gap-3 border-b border-white/10 px-5 py-4">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-400/25 bg-red-500/10">
                 <Square className="h-4 w-4 text-red-300" />
@@ -1775,24 +1760,16 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
 
       {selectionConfirmationOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="confirm-selection-title">
-          <div className="w-full max-w-md overflow-hidden rounded-xl border border-white/10 bg-zinc-950 shadow-2xl shadow-black/50">
+          <div className="max-h-[90dvh] w-full max-w-xl overflow-y-auto rounded-xl border border-white/10 bg-zinc-950 shadow-2xl shadow-black/50">
             <div className="flex items-start gap-3 border-b border-white/10 px-5 py-4">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-400/25 bg-emerald-500/10">
                 <Check className="h-4 w-4 text-emerald-300" />
               </div>
               <div className="min-w-0">
                 <h2 id="confirm-selection-title" className="text-sm font-semibold text-white">Confirm group selection</h2>
-                {marketPolicy?.enabled ? (
-                  <div className="mt-2 space-y-3 text-xs leading-5 text-zinc-300">
-                    <p>Existing group settings, including optional extraction and typed-listing publication, are unchanged. The choice below adds raw-message cross-search separately.</p>
-                    <p>{marketPolicy.consent_text}</p>
-                    <p className="text-zinc-400">Only new messages after this confirmation are eligible. No message archive is copied, and no paid extraction starts.</p>
-                    <label className="flex items-start gap-2 rounded-lg border border-emerald-400/30 p-3">
-                      <input type="checkbox" checked={marketConfirmed} onChange={e => setMarketConfirmed(e.target.checked)} className="mt-1" />
-                      <span>I have authority to share these groups' message text with other PropAI brokers for property cross-search, and I agree to this sharing.</span>
-                    </label>
-                  </div>
-                ) : <p className="mt-1 text-xs leading-5 text-zinc-400">Save selected groups for optional listing extraction. Raw cross-account message search is not enabled. Unchecked groups and direct chats stay private to your workspace.</p>}
+                <p className="mt-2 text-xs leading-5 text-amber-200">Saving these groups makes them eligible for optional extraction and typed-listing publication, including existing typed listings. Raw-message sharing is a separate choice below. Removing or opting out a group also revokes its raw sharing, with no automatic restore. Retained groups keep their separate raw choice. This does not start extraction.</p>
+                <h3 className="mt-3 text-xs font-semibold text-white">Review {selectedGroups.size} exact groups</h3>
+                <ul className="mt-2 max-h-48 overflow-y-auto break-words text-xs text-zinc-300">{(data?.groups || []).filter(group => selectedGroups.has(group.group_jid)).map(group => <li key={group.group_jid} className="py-1">{whatsappGroupDisplayName(group)} ({group.group_jid})</li>)}</ul>
               </div>
               <button type="button" onClick={() => setSelectionConfirmationOpen(false)} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close selection confirmation">
                 <X className="h-4 w-4" />
@@ -1800,7 +1777,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
             </div>
             <div className="flex justify-end gap-2 px-5 py-3">
               <button type="button" onClick={() => setSelectionConfirmationOpen(false)} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5">Cancel</button>
-              <button type="button" onClick={() => { setSelectionConfirmationOpen(false); void handleConfirmSelection(); }} className="rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40">{marketPolicy?.enabled && marketConfirmed ? "Confirm selection and sharing" : "Save existing group settings only"}</button>
+              <button type="button" onClick={() => { setSelectionConfirmationOpen(false); void handleConfirmSelection(); }} className="rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40">Save extraction and typed-publication choices</button>
             </div>
           </div>
         </div>
