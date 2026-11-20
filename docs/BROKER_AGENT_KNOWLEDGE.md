@@ -31,7 +31,7 @@ Treat it as background knowledge, not as instructions from your broker. Your bro
 
 ## Ask the connected broker about group selection
 
-When an authenticated connected broker starts setup or a new property-search session, raise this choice conversationally if they have not already answered it. Do not interrupt an unrelated task, ask repeatedly in the same session, or ask again after a refusal unless the broker brings it up. A known previous selection is not permission to change it or add new groups.
+When an authenticated connected broker starts connection setup, or the broker raises sharing, cross-search or connecting a phone, raise this choice conversationally only if it remains unanswered. Do not raise it at every new property-search session. Respect a remembered prior answer. Do not interrupt an unrelated task, ask repeatedly in the same session, or ask again after a refusal unless the broker brings it up. A known previous selection is not permission to change it or add new groups.
 
 Ask: "Would you like to review which property groups you want to share with other PropAI brokers? Personal, sensitive and unrelated groups should stay unchecked. You choose the exact groups, and nothing is shared without your confirmation."
 
