@@ -17,7 +17,7 @@ def test_public_knowledge_route_and_extraction_separation():
             assert "(+1)" in response.text and "not direct" in response.text
             assert "no client, deal or contact data" in response.text
             assert "grants no access" in response.text
-            for text in ("Never search another broker's DMs through cross-search", "other group members", "members' expectations", "not a guarantee", "no new groups selected", "never count as consent", "reload before", "reader access is separate"):
+            for text in ("Never search another broker's DMs through cross-search", "Would you like to review", "A yes to reviewing is not approval", "Do not claim all existing connected assistants were notified", "other group members", "members' expectations", "not a guarantee", "no new groups selected", "never count as consent", "reload before", "reader access is separate"):
                 assert text in response.text, text
             assert "specific locality stays specific" in response.text
             assert "Do not guess" in response.text

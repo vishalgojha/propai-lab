@@ -14,7 +14,7 @@ GET https://api.propai.live/api/external/v1/docs
 This guide is public and does not contain a workspace key or workspace data.
 At connection setup and each new search session, read the account-free broker
 background at `GET https://api.propai.live/api/external/v1/knowledge`.
-It is source vocabulary and search background, not broker consent or new access.
+It includes source vocabulary and a group-selection conversation prompt. At connected setup or a new property-search session, ask whether the broker wants to review their exact sharing choices if they have not already answered. Respect refusal and existing choices; guide them to the separate signed-in sharing controls, never change consent through this read-only connection. This is not broker consent or new access.
 Quick meanings: (+1) means not direct, without proving chain length; postings may
 name only a locality or landmark, so keep broad-area and pocket searches distinct.
 Do not widen a specific pocket silently. Use only sources already authorized.
