@@ -136,6 +136,21 @@ async def external_health(key: dict = Depends(external_auth)):
     return {"ok": True, "tenant_scoped": True, "scopes": key.get("scopes") or []}
 
 
+@router.get("/connection-check")
+async def external_connection_check(key: dict = Depends(external_auth)):
+    """Authenticated, scoped database read without content or a trial start.
+
+    This proves current backend access, not permanent assistant storage, fresh
+    capture, pool permission or DM consent. It never marks browser setup done.
+    """
+    _require_scope(key, "raw_messages:read")
+    await asyncio.to_thread(lambda: storage.client.table("raw_messages").select("id")
+                            .eq("tenant_id", str(key["tenant_id"])).eq("is_group", True).limit(1).execute())
+    return {"ok": True, "workspace_id": str(key["tenant_id"]), "groups_read_verified": True,
+            "checked_at": datetime.now(timezone.utc).isoformat(), "starts_trial": False,
+            "storage_verified": False, "dms_included": False, "pool_access_verified": False}
+
+
 @router.get("/docs", response_class=PlainTextResponse)
 async def external_agent_docs():
     """Public bootstrap guide; contains API instructions, never tenant data or credentials."""
@@ -1310,7 +1325,7 @@ async def preview_connect_session(user_code: str, user: dict = Depends(require_u
     # Terminal state belongs only to the person/workspace that decided it.
     if state != "pending" and (row.get("tenant_id") != tenant_id or row.get("approved_by") != user.get("id")):
         raise HTTPException(404, "Connect session not found")
-    result = {"label": row.get("label") or "Instinct", "write_access": bool(row.get("write_access")), "scopes": []}
+    result = {"label": row.get("label") or "Instinct", "write_access": bool(row.get("write_access")), "scopes": [], "workspace_id": str(tenant_id), "connection_verified": False}
     # Fixed known destination, never a caller-controlled redirect or a secret-bearing URL.
     if result["label"].strip().casefold() == "instinct":
         result["return_url"] = "https://wa.me/16508702892"
@@ -1324,7 +1339,7 @@ async def preview_connect_session(user_code: str, user: dict = Depends(require_u
             return {**result, "status": "expired"}
         # A collected key remains valid after its short approval link expires.
         if state == "consumed":
-            return {**result, "status": "connected"}
+            return {**result, "status": "collected", "connection_verified": False}
     if datetime.fromisoformat(str(row["expires_at"]).replace("Z", "+00:00")) <= datetime.now(timezone.utc):
         return {**result, "status": "expired"}
     if state in {"approved", "denied", "approving", "expired"}:
@@ -1337,8 +1352,12 @@ async def preview_connect_session(user_code: str, user: dict = Depends(require_u
     return {**result, "status": "pending", "scopes": scopes}
 
 
+class ConnectApproval(BaseModel):
+    workspace_id: str
+
+
 @router.post("/connect/sessions/by-code/{user_code}/approve")
-async def approve_connect_session(user_code: str, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+async def approve_connect_session(user_code: str, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant), body: ConnectApproval | None = None):
     """Broker-facing: mint a key for the waiting agent.
 
     Uses the same org permission gate as key rotation, since approving grants
@@ -1346,6 +1365,8 @@ async def approve_connect_session(user_code: str, user: dict = Depends(require_u
     session row and returned to the agent exactly once via the device poll.
     """
     await _require_org_permission(user, tenant_id, "manage_whatsapp")
+    if body is not None and body.workspace_id != str(tenant_id):
+        raise HTTPException(409, "Workspace changed. Review the connection again before allowing access.")
     row = _connect_session_by_user_code(user_code)
     if row.get("status") != "pending":
         raise HTTPException(409, "Connect session already decided")
