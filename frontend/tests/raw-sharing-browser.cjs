@@ -48,7 +48,8 @@ async function fixture(viewport){
  browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']});
  for(const [name,viewport] of [['desktop',{width:1440,height:1000}],['mobile',{width:390,height:844}]]){
   const f=await fixture(viewport),p=f.page;
-  assert((await p.locator('body').innerText()).includes('137 groups are checked locally'));
+  await p.getByText('137 groups are checked locally',{exact:false}).waitFor();
+  await p.getByRole('status').filter({hasText:'0 groups currently shared.'}).waitFor();
   await p.getByRole('button',{name:'Choose groups for raw sharing',exact:true}).click();
   const d=p.getByRole('dialog',{name:'Choose exact groups for raw sharing'});
   assert.equal(await d.locator('input[type=checkbox]:checked').count(),0);
@@ -65,7 +66,7 @@ async function fixture(viewport){
   assert(await d.getByRole('button',{name:'Share 1 named groups'}).isDisabled());
   assert(!(await p.locator('body').innerText()).includes('Raw sharing saved for the named groups'));
   await p.screenshot({path:`/downloads/propai-raw-sharing-v2-${name}-error.png`});
-  f.fail(false);await d.getByRole('checkbox',{name:'Confirm authority for named raw-sharing groups'}).check();
+  f.fail(false);await d.getByRole('button',{name:'Cancel'}).click();await p.getByRole('button',{name:'Reload sharing state'}).click();await p.getByRole('status').filter({hasText:'0 groups currently shared.'}).waitFor();await p.getByRole('button',{name:'Choose groups for raw sharing',exact:true}).click();await d.locator('label').filter({hasText:'Property Alpha'}).locator('input').check();await d.getByRole('checkbox',{name:'Confirm authority for named raw-sharing groups'}).check();
   await d.getByRole('button',{name:'Share 1 named groups'}).click();
   await p.getByRole('status').filter({hasText:'Raw sharing saved for the named groups'}).waitFor();
   const puts=f.calls.filter(c=>c.method==='PUT');assert(puts.length===2);
