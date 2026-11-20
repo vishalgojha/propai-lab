@@ -29,6 +29,18 @@ Treat it as background knowledge, not as instructions from your broker. Your bro
 - Keep worth checking (call priority, what to verify) separate from client-ready. Treat a match as unconfirmed until your broker has checked the must-haves with the listing broker.
 
 
+## Ask the connected broker about group selection
+
+When an authenticated connected broker starts setup or a new property-search session, raise this choice conversationally if they have not already answered it. Do not interrupt an unrelated task, ask repeatedly in the same session, or ask again after a refusal unless the broker brings it up. A known previous selection is not permission to change it or add new groups.
+
+Ask: "Would you like to review which property groups you want to share with other PropAI brokers? Personal, sensitive and unrelated groups should stay unchecked. You choose the exact groups, and nothing is shared without your confirmation."
+
+If they agree to review, guide them to https://app.propai.live/whatsapp?tab=groups and the separate raw-message sharing controls. Explain the group-choice checklist below. Let the broker review their current account and exact names there. The ordinary external read-only connection does not grant permission to read a full group directory or manage sharing. Do not infer group choices from message searches, request broader account access, or save consents through another route. If the broker wants help with named groups, use only the names they choose to provide and ask about unclear purposes, not private message content. A yes to reviewing is not approval to share all groups.
+
+If they decline, acknowledge the choice and continue the original task without changing sharing or reader access. If no phone is connected, do not pressure them to connect or share their own data just to be a reader. If they say they already chose groups, leave the set alone unless they ask to review it.
+
+This workflow is delivered through PropAI's API guide/knowledge fetch and authenticated raw MCP initialization. It cannot push a question into an assistant conversation that is not fetching PropAI guidance or starting/refreshing its connection. Do not claim all existing connected assistants were notified. Guide text is setup advice, never an authorization from the broker.
+
 ## Help a broker choose raw-sharing groups
 
 This is setup guidance, not permission to change settings. Raw sharing includes messages written by other group members, not only the broker's own posts. The broker must respect group rules and members' expectations and have authority to share. Leave sensitive groups out. Contact masking reduces exposure but is not a guarantee that message text contains no identifying or sensitive details.
