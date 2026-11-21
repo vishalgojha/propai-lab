@@ -134,6 +134,13 @@ def _saved_dm_contact_name(tenant_id: str, sender_jid: str, sender_phone: str, c
         for value in (sender_jid, jid_digits):
             if value:
                 queries.append(("their_jid", value))
+        if phone_digits and phone_digits != jid_digits:
+            # WhatsApp now reports many DM senders as "<lid>@lid" while the
+            # device contact store keys the saved name under the phone-number
+            # JID. Without these forms an @lid sender never reaches its saved
+            # name row (observed in production after the device-suffix fix).
+            queries.append(("their_jid", f"{phone_digits}@s.whatsapp.net"))
+            queries.append(("their_jid", phone_digits))
         for value in (phone_digits, jid_digits):
             if value:
                 queries.append(("redacted_phone", value))

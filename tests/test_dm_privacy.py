@@ -257,6 +257,28 @@ def test_suffix_match_does_not_accept_longer_numbers(monkeypatch):
     assert _saved_dm_contact_name("t1", "9198@s.whatsapp.net", "", {}, {}) == UNNAMED_DM_CONTACT
 
 
+def test_lid_sender_resolves_saved_name_via_phone_jid(monkeypatch):
+    # Production form: sender_jid is a LID, the saved name lives on the
+    # phone-number JID row of the owner's suffixed device; the nameless LID
+    # row must be skipped, not stop the lookup.
+    _contacts(monkeypatch, [
+        {"their_jid": "2046139@lid", "our_jid": "919999900001:3@s.whatsapp.net", "full_name": "", "first_name": "", "business_name": ""},
+        {"their_jid": "919819900000@s.whatsapp.net", "our_jid": "919999900001:65@s.whatsapp.net", "full_name": "Sheetal", "first_name": "", "business_name": ""},
+    ])
+    assert _saved_dm_contact_name("t1", "2046139@lid", "+91 98199 00000", {}, {}) == "Sheetal"
+
+
+def test_lid_sender_without_phone_stays_unnamed(monkeypatch):
+    _contacts(monkeypatch, [{"their_jid": "919819900000@s.whatsapp.net", "our_jid": "919999900001:65@s.whatsapp.net", "full_name": "Sheetal"}])
+    assert _saved_dm_contact_name("t1", "2046139@lid", "", {}, {}) == UNNAMED_DM_CONTACT
+
+
+def test_lid_phone_form_never_reads_other_tenants(monkeypatch):
+    # The phone-derived their_jid form stays bound to this workspace's devices.
+    _contacts(monkeypatch, [{"their_jid": "919819900000@s.whatsapp.net", "our_jid": "918888800002:52@s.whatsapp.net", "full_name": "Sheetal"}])
+    assert _saved_dm_contact_name("t1", "2046139@lid", "919819900000", {}, {}) == UNNAMED_DM_CONTACT
+
+
 # --- row masking --------------------------------------------------------------
 
 def _dm_row():
