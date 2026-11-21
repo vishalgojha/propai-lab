@@ -26,7 +26,7 @@ def preview(user='u1', tenant='t1'):
     return asyncio.run(api.preview_connect_session('ABCD-2345', user={'id': user}, tenant_id=tenant))
 
 
-@pytest.mark.parametrize('state,expected', [('approved','approved'), ('consumed','connected'), ('denied','denied'), ('approving','approving'), ('expired','expired')])
+@pytest.mark.parametrize('state,expected', [('approved','approved'), ('consumed','collected'), ('denied','denied'), ('approving','approving'), ('expired','expired')])
 def test_owner_terminal_status_is_truthful(monkeypatch, state, expected):
     setup(monkeypatch,state)
     data = preview()
@@ -51,7 +51,7 @@ def test_revoked_missing_expired_key_never_reports_connected(monkeypatch,key):
 
 def test_collected_key_outlives_approval_link(monkeypatch):
     setup(monkeypatch,expires_at=_past())
-    assert preview()['status']=='connected'
+    assert preview()['status']=='collected'
 
 
 def test_expired_uncollected_approval_never_reports_connected(monkeypatch):
@@ -81,14 +81,16 @@ def test_actual_approval_collection_preview_flow_populates_owner_and_key(monkeyp
         c.tables['external_agent_api_keys']=[{'id':'minted-key','tenant_id':tenant,'revoked_at':None,'expires_at':None}]
         return {'id':'minted-key'},'ppai_fixture_only'
     monkeypatch.setattr(api,'_create_external_key',mint)
+    async def allow(*args): return None
+    monkeypatch.setattr(api,'_require_org_permission',allow)
     import os
     os.environ.setdefault('CONNECT_SESSION_SECRET','test-seal-key')
-    asyncio.run(api.approve_connect_session('ABCD-2345',user={'id':'u1'},tenant_id='t1'))
+    asyncio.run(api.approve_connect_session('ABCD-2345',user={'id':'u1'},tenant_id='t1',body=api.ConnectApproval(workspace_id='t1')))
     row=c.tables['external_agent_connect_sessions'][0]
     assert (row['approved_by'],row['tenant_id'],row['api_key_id'])==('u1','t1','minted-key')
     assert preview()['status']=='approved'
     row['device_code_hash']=api._digest('fixture-device')
     result=asyncio.run(api.poll_connect_session('fixture-device'))
     assert result['status']=='approved' and 'token' in result
-    assert preview()['status']=='connected'
+    assert preview()['status']=='collected'
     assert c.tables['external_agent_connect_sessions'][0]['token'] is None

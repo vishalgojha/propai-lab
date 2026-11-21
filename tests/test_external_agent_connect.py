@@ -146,7 +146,7 @@ def test_approve_mints_key_and_completes_session(monkeypatch):
     monkeypatch.setattr(external_agent, "_require_org_permission", _allow)
     monkeypatch.setattr(external_agent, "_create_external_key", lambda tenant, user, label, write: ({"id": "k1"}, "ppai_new"))
 
-    result = asyncio.run(external_agent.approve_connect_session("abcd-2345", user={"id": "u1"}, tenant_id="t1"))
+    result = asyncio.run(external_agent.approve_connect_session("abcd-2345", user={"id": "u1"}, tenant_id="t1", body=external_agent.ConnectApproval(workspace_id="t1")))
     assert result["ok"] is True
     assert rows[0]["status"] == "approved"
     # The token is sealed at rest, never stored in plaintext.
@@ -156,7 +156,7 @@ def test_approve_mints_key_and_completes_session(monkeypatch):
 
     # A second approval is refused.
     with pytest.raises(HTTPException) as excinfo:
-        asyncio.run(external_agent.approve_connect_session("abcd-2345", user={"id": "u1"}, tenant_id="t1"))
+        asyncio.run(external_agent.approve_connect_session("abcd-2345", user={"id": "u1"}, tenant_id="t1", body=external_agent.ConnectApproval(workspace_id="t1")))
     assert excinfo.value.status_code == 409
 
 

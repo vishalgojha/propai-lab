@@ -23,27 +23,24 @@ The machine-readable API schema is at
 
 ## Authentication
 
-The workspace owner creates an API key in PropAI under Account → MCP. Keys are
-read-only unless the owner explicitly enables private CRM writes when creating
-the key. Write-enabled keys still cannot publish market inventory, send
-messages, activate ads, change budgets, or delete records.
-The owner stores the one-time value in Instinct Vault as `PROPAI_API_KEY`.
-Retrieve it from Vault when making a request and send it in the `X-API-Key`
-header:
+The normal broker path is sign in, review the account and requested access,
+and Allow. The broker should not create, copy, store or paste credentials.
+The assistant is responsible for secure collection and durable storage using
+its supported credential mechanism. A browser login is not an assistant
+connection. See the approval flow below.
 
-```http
-X-API-Key: <value retrieved from PROPAI_API_KEY>
-```
-
-Never ask the owner to paste the key into WhatsApp, include it in a message,
-display it, or save it outside Vault. PropAI derives the workspace from the key;
-there is no tenant parameter and it must not be guessed or added.
+Manual keys remain available under Advanced connection settings for technical
+integrations. Requests use `X-API-Key` or `Authorization: Bearer`. PropAI derives
+the workspace from that credential. Never add a guessed workspace parameter.
+Never display a persistent credential in chat or save one to an ordinary file.
 
 ## Connecting without copying a key
 
 The owner can approve access while signed in, with no copy-paste. The agent
 starts a session, the owner opens the short link and approves, and the agent
-receives the minted key directly:
+receives the minted key directly. This requires an assistant implementation
+that can create and poll a session, securely store a service-issued token,
+and reuse that saved token. A link to a chat does not implement these steps:
 
 ```http
 POST /api/external/v1/connect/sessions
@@ -60,8 +57,7 @@ GET /api/external/v1/connect/sessions/{device_code}
 ```
 
 - `202 {"status":"pending"}`: keep waiting; poll no faster than `interval`.
-- `200 {"status":"approved","token":...}`: save the token in Vault as
-  `PROPAI_API_KEY` immediately. It is returned exactly once and then cleared.
+- `200 {"status":"approved","token":...}`: save the token immediately through the assistant host's supported secure credential adapter. It is returned exactly once and then cleared.
 - `403`: the owner declined. Stop and report that no access was granted.
 - `410` / `404`: the session expired or is unknown; start a new session.
 
@@ -350,3 +346,42 @@ Refresh that connection's tool list. This reader grant is separate from the
 REST key toggle, source-group sharing confirmation and existing private tools.
 Anonymous public MCP is never upgraded by either switch. Existing legacy
 `/mcp` is not the broker raw endpoint; do not claim this changes its DM access.
+
+
+## Connection verification (local candidate, not yet released)
+
+`GET /api/external/v1/connection-check` requires `raw_messages:read`.
+It runs a tenant-bound, groups-only database query and returns no message
+content. It does not start the assistant trial, include private direct messages,
+verify pool access, prove recent capture, or prove the assistant saved anything.
+An empty groups result still verifies the query, not capture completeness.
+
+After secure storage succeeds, retrieve the credential from the durable store
+and run this check with that retrieved value. Only then report read access as
+verified. Repeat a read check when resuming after a failure or access change.
+Do not claim all product functions or data freshness from this small probe.
+`/health` by itself is insufficient.
+
+Browser states `approved` and `collected` mean approval and credential collection,
+respectively. Neither is a verified connection. Older servers may call collected
+`connected`; clients must not present that as read or secure-storage proof.
+A changed workspace during the new approval UI is rejected for review.
+
+If one-use collection succeeds but storage fails, treat setup as unfinished.
+Do not create a retry loop that accumulates working keys. Review and revoke the
+unfinished access in Advanced settings before restarting. Denied or expired
+requests stop; revoked access must not silently reconnect.
+
+
+### Required expected workspace (candidate compatibility change)
+
+Approval POST now requires `{"workspace_id":"<ID shown by the preview>"}`.
+Missing, empty or malformed payloads receive 422, before any grant. A valid
+but changed account receives 409. There is no legacy bypass: old approval
+clients must refresh to the matching new UI before allowing access. Roll out
+the new UI before the API change; during version skew, fail closed and ask
+for a refresh rather than silently approving another workspace. Denial remains
+available and no old credential is changed by this validation rule.
+The same scope builder drives the pending disclosure and newly minted key.
+Unknown or empty scope disclosure blocks Allow in the new UI.
+The normal start action stays disabled until fresh-assistant acceptance passes.
