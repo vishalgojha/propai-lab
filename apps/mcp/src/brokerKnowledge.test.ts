@@ -17,7 +17,7 @@ test("default raw session delivers generic background, unchanged tools and priva
     assert.ok(instructions.includes("Only after the broker says a specific message/option"));
     assert.ok(instructions.includes("not direct"));
     assert.ok(instructions.includes("grants no access"));
-    for (const text of ["Never search another broker's DMs through cross-search", "Do not raise it at every new property-search session", "Respect a remembered prior answer", "Would you like to review", "A yes to reviewing is not approval", "Do not claim all existing connected assistants were notified", "other group members", "members' expectations", "not a guarantee", "no new groups selected", "never count as consent", "reader access is separate"]) assert.ok(instructions.includes(text), text);
+    for (const text of ["Never search another broker's DMs through cross-search", "Do not raise it at every new property-search session", "Respect a remembered prior answer", "Would you like to review", "A yes to reviewing is not approval", "Do not claim all existing connected assistants were notified", "other group members", "members' expectations", "not a guarantee", "no new groups selected", "never count as consent", "reader access is separate", "make shared-group review the first step", "never recommend removal on activity alone", "no automatic uncheck", "currently shared groups only", "Broker approval before any uncheck"]) assert.ok(instructions.includes(text), text);
     const tools = (await client.listTools()).tools;
     assert.deepEqual(tools.map(t=>t.name).sort(), [...RAW_BROKER_TOOL_NAMES].sort());
     const search = tools.find(t=>t.name==="raw_message_search")!;
