@@ -44,6 +44,7 @@ import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { WorkspaceTabs } from "@/components/layout/WorkspaceTabs";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
 import { VoiceAssistant } from "@/components/VoiceAssistant";
+import { AssistantAccessWidget } from "@/components/AssistantAccessWidget";
 import { isMuted, toggleMute, playConnectionChange, playGroupConnected, playNewLead, playNewWhatsApp, getVolume, setVolume, isSoundEnabled, setSoundEnabled, getSoundPreferences, loadSoundPreferences, setSoundPreference, previewSound, SOUND_LIBRARY, type SoundEvent, type SoundId, type SoundPreferences } from "@/lib/sounds";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -1016,6 +1017,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Persistent, allowlisted WhatsApp setup pilot. */}
       <VoiceAssistant enabled={Boolean(user)} />
+
+      {/* Floating summary of what the linked assistant can access. */}
+      <AssistantAccessWidget enabled={Boolean(user)} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { KeyRound } from "lucide-react";
+import { ShowAssistantAccessButton } from "@/components/AssistantAccessWidget";
 
 export default function InstinctWorkspacePage() {
   return (
@@ -18,6 +19,7 @@ export default function InstinctWorkspacePage() {
         <div className="mt-3 grid gap-3 text-sm text-zinc-300 sm:grid-cols-3"><div><div className="font-semibold text-white">Base URL</div><code className="mt-1 block text-xs text-amber-200">https://api.propai.live</code></div><div><div className="font-semibold text-white">Inventory</div><code className="mt-1 block text-xs text-zinc-400">/api/external/v1/listings/search</code></div><div><div className="font-semibold text-white">Matches</div><code className="mt-1 block text-xs text-zinc-400">/api/external/v1/matches</code></div></div>
         <p className="mt-4 text-xs leading-5 text-zinc-400">Manual setup: save the one-time token in Instinct Vault as a password/secret named <code className="text-amber-200">PROPAI_API_KEY</code>. Use endpoint <code className="text-amber-200">https://api.propai.live/api/external/v1</code> and send it as <code className="text-amber-200">X-API-Key</code> or <code className="text-amber-200">Authorization: Bearer</code>.</p>
         <Link href="/workspace/mcp" className="mt-5 inline-flex items-center gap-2 rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10">Create a token manually on the Integrations page</Link>
+        <div><ShowAssistantAccessButton /></div>
       </div>
 
       <div className="mt-6 rounded-2xl border border-amber-300/20 bg-amber-300/[0.05] p-6">
