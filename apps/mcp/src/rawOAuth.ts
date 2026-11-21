@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import type { Express, Request, Response } from "express";
 import type { AuthenticatedUser } from "./types.ts";
+import { defaultMcpReaderGrantOnNewAuthorization } from "./brokerMarketData.ts";
 
 /**
  * Separate, limited sign-in for the /raw-mcp route.
@@ -179,6 +180,15 @@ export async function handleRawDeviceAuthorize(req: Request, res: Response) {
   if (!user?.id) { restore(); return err(res, 401, "invalid_token", "Invalid or expired PropAI session"); }
   const tenantId = await deps.resolveTenantId(user).catch(() => null);
   if (!tenantId) { restore(); return err(res, 403, "access_denied", "An active organization membership is required"); }
+  // New-authorization default: this completed sign-in grants cross-search
+  // read ONLY when the owner has no recorded choice yet (the approval screen
+  // says so). A recorded enable or explicit disable is never rewritten, and
+  // the sign-in itself never depends on this grant.
+  try {
+    await defaultMcpReaderGrantOnNewAuthorization(tenantId, user.id);
+  } catch (grantError) {
+    console.error("[OAuth] default market reader grant failed:", grantError instanceof Error ? grantError.message : grantError);
+  }
   if (codes.size >= CAPS.codes) { restore(); return err(res, 503, "temporarily_unavailable", "Too many pending sign-ins; try again later"); }
   const client = clients.get(rec.clientId);
   if (client) client.expires = now() + CLIENT_ACTIVE_TTL_MS;

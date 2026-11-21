@@ -10,9 +10,13 @@ import { supabase } from "./supabase.ts";
  *
  * Reader enablement is the owner-controlled broker_market_mcp_reader_grants
  * table (migration 20261119100000_broker_market_mcp_reader_grants.sql): a
- * workspace owner grants their own MCP sign-in (organization_id, user_id) the
- * cross-search reader role. There is no automatic upgrade for existing
- * connections and no fabricated REST key.
+ * recorded row with revoked_at null grants the signed-in (organization_id,
+ * user_id) pair the cross-search reader role. From
+ * 20261121100000_shared_read_default_and_review.sql, a NEW authorization
+ * (completed sign-in consent) inserts that grant by default with notice on
+ * the approval screen; existing connections are never upgraded silently, and
+ * the insert-if-absent rule never resurrects a recorded explicit disable.
+ * The reader is the actual signed-in tenant:user, never a fabricated key.
  */
 
 export type MarketRow = {
@@ -64,8 +68,9 @@ export async function marketTakeRate(reader: string, operation: "search" | "get"
 }
 
 /**
- * Live grant check, re-run on every call so an owner revoking access stops the
- * reader immediately (same immediacy as source untick). Fail closed on error.
+ * Live grant check, re-run on every call so an owner disabling access stops
+ * the reader immediately (same immediacy as source untick). Requires a
+ * recorded, unrevoked grant row. Fail closed on error.
  */
 export async function mcpReaderGrantActive(organizationId: string, userId: string): Promise<boolean> {
   const { data, error } = await supabase
@@ -78,4 +83,35 @@ export async function mcpReaderGrantActive(organizationId: string, userId: strin
     .maybeSingle();
   if (error) throw rpcError();
   return Boolean(data);
+}
+
+/**
+ * New-authorization default: grant cross-search read when this (tenant, user)
+ * has NO recorded row at all. A recorded enable is left alone and a recorded
+ * explicit disable is never resurrected; existing connections are unchanged.
+ */
+export async function defaultMcpReaderGrantOnNewAuthorization(organizationId: string, userId: string): Promise<void> {
+  const { error } = await supabase.rpc("broker_market_default_mcp_reader_grant", {
+    p_tenant: organizationId,
+    p_user: userId,
+    p_actor: userId,
+  });
+  if (error) throw rpcError();
+}
+
+export type SharedSourceRow = {
+  whatsapp_connection_id: number;
+  group_jid: string;
+  group_name: string;
+  confirmed_at: string;
+  message_count: number;
+  last_message_at: string | null;
+};
+
+/** The reader tenant's OWN current sharing state for review suggestions:
+ * identifiers, names, consent time and directory counters. Never content. */
+export async function marketSharedSources(tenantId: string): Promise<SharedSourceRow[]> {
+  const { data, error } = await supabase.rpc("broker_market_shared_sources", { p_tenant: tenantId });
+  if (error) throw rpcError();
+  return (data || []) as SharedSourceRow[];
 }
