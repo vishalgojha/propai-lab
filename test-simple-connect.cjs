@@ -30,9 +30,16 @@ const fs=require('node:fs');
    return r.continue();
   });
   async function snap(name){await page.screenshot({path:`/downloads/propai-simple-${name}-${width}.png`,fullPage:true});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),name+' horizontal overflow');}
-  await page.goto('http://localhost:3123/workspace/instinct');await page.getByRole('heading',{name:'Connection setup is not available yet'}).waitFor();
-  const main=page.locator('main');assert.equal(await page.getByRole('link',{name:'Open Instinct to connect'}).count(),0);assert(await page.getByRole('button',{name:'Connect my assistant, coming soon'}).isDisabled());
-  assert.equal(await page.getByText('PROPAI_API_KEY',{exact:false}).count(),0);await snap('start');await page.getByText('Advanced connection settings',{exact:true}).scrollIntoViewIfNeeded();await snap('start-lower');
+  // Merged-with-live expectation: the LIVE Instinct page (guidance, manual
+  // fallback, walkthrough video, assistant-access widget) is preserved. The
+  // candidate's gated coming-soon redesign is deferred pending the ungate
+  // decision, so this page asserts the live content, not the gate.
+  await page.goto('http://localhost:3123/workspace/instinct');await page.getByRole('heading',{name:'Connect Instinct'}).waitFor();
+  const main=page.locator('main');assert(await page.getByText('ask your assistant to connect to PropAI',{exact:false}).count()>=1);
+  assert(await page.getByText('PROPAI_API_KEY',{exact:false}).count()>=1);
+  await page.getByRole('link',{name:'Create a token manually on the Integrations page'}).waitFor();
+  await page.getByRole('button',{name:'Open assistant access'}).waitFor();
+  await snap('start');await page.getByRole('heading',{name:'Watch the connection walkthrough'}).scrollIntoViewIfNeeded();await snap('start-lower');
   await page.goto('http://localhost:3123/connect?code=ABCD-2345');try{await page.getByRole('button',{name:'Allow',exact:true}).waitFor({timeout:10000});}catch(e){await page.screenshot({path:'/downloads/propai-simple-debug.png',fullPage:true});console.log(await page.locator('body').innerText(),page.url());throw e;}await snap('allow');
   await page.getByRole('button',{name:'Allow',exact:true}).click();await page.getByRole('heading',{name:'Access allowed. Finish in your chat.'}).waitFor();await snap('approved');
   assert.equal(posts.length,1);assert.deepEqual(JSON.parse(posts[0].body),{workspace_id:'t1'});assert.equal(new URL(page.url()).pathname,'/connect');
