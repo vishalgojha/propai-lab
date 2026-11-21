@@ -94,6 +94,25 @@ def _tenant_device_jids(tenant_id: str, cache: dict) -> list:
     return jids
 
 
+def _device_jid_or_filter(device_jids: list) -> str:
+    """PostgREST or-filter binding a row to one of the workspace's own devices.
+
+    Real whatsmeow sessions store our_jid with a device suffix
+    ("9198...:14@s.whatsapp.net"), so an exact match on "{digits}@s.whatsapp.net"
+    silently misses every row. Accept both the plain JID and the suffixed form.
+    The like pattern is anchored at the string start and requires the colon right
+    after the device digits, so a longer number containing those digits cannot
+    match."""
+    parts = []
+    for jid in device_jids:
+        digits = re.sub(r"\D", "", str(jid).split("@")[0])
+        if not digits:
+            continue
+        parts.append(f"our_jid.eq.{digits}@s.whatsapp.net")
+        parts.append(f"our_jid.like.{digits}:%@s.whatsapp.net")
+    return ",".join(parts)
+
+
 def _saved_dm_contact_name(tenant_id: str, sender_jid: str, sender_phone: str, cache: dict, device_cache: dict) -> str:
     """The workspace owner's saved contact name for a DM peer.
 
@@ -118,11 +137,12 @@ def _saved_dm_contact_name(tenant_id: str, sender_jid: str, sender_phone: str, c
         for value in (phone_digits, jid_digits):
             if value:
                 queries.append(("redacted_phone", value))
+        device_filter = _device_jid_or_filter(device_jids)
         for column, value in queries:
             try:
                 result = storage.client.table("whatsmeow_contacts").select(
                     "full_name,first_name,business_name"
-                ).eq(column, value).in_("our_jid", device_jids).limit(1).execute()
+                ).eq(column, value).or_(device_filter).limit(1).execute()
             except Exception:
                 continue
             row = (result.data or [None])[0] if result else None

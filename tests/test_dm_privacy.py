@@ -3,6 +3,7 @@
 Fake-adapter unit tests over the real route functions. No live service.
 """
 import asyncio
+import re
 
 import pytest
 from fastapi import HTTPException
@@ -79,7 +80,7 @@ class _FakeTable:
 
     def or_(self, expression):
         _OR_LOG.append(expression)
-        return self._clone()
+        return self._clone(filters=self._filters + [("or", None, expression)])
 
     def gte(self, *_args):
         return self._clone()
@@ -98,6 +99,23 @@ class _FakeTable:
                 matched = [row for row in matched if row.get(column) in value]
             elif kind == "like":
                 matched = [row for row in matched if value in str(row.get(column) or "")]
+            elif kind == "or":
+                terms = str(value).split(",")
+
+                def _or_match(row):
+                    for term in terms:
+                        if ".eq." in term:
+                            col, val = term.split(".eq.", 1)
+                            if row.get(col) == val:
+                                return True
+                        elif ".like." in term:
+                            col, pattern = term.split(".like.", 1)
+                            regex = "^" + re.escape(pattern).replace("%", ".*") + "$"
+                            if re.match(regex, str(row.get(col) or "")):
+                                return True
+                    return False
+
+                matched = [row for row in matched if _or_match(row)]
         if self._update is not None:
             for row in matched:
                 row.update(self._update)
@@ -216,6 +234,26 @@ def test_saved_name_binds_to_own_device_only(monkeypatch):
 
 def test_saved_name_lookup_with_no_connected_device_is_unnamed(monkeypatch):
     _contacts(monkeypatch, [{"their_jid": "9198@s.whatsapp.net", "our_jid": DEVICE_JID, "full_name": "Sheetal"}], device_rows=[])
+    assert _saved_dm_contact_name("t1", "9198@s.whatsapp.net", "", {}, {}) == UNNAMED_DM_CONTACT
+
+
+def test_saved_name_matches_suffixed_device_jid(monkeypatch):
+    # Live whatsmeow rows store our_jid with a device suffix; the plain-JID
+    # exact match used to miss every real row (verified against production).
+    _contacts(monkeypatch, [{"their_jid": "9198@s.whatsapp.net", "our_jid": "919999900001:14@s.whatsapp.net", "full_name": "Sheetal"}])
+    assert _saved_dm_contact_name("t1", "9198@s.whatsapp.net", "", {}, {}) == "Sheetal"
+
+
+def test_suffixed_jid_does_not_broaden_to_other_tenants(monkeypatch):
+    # Another workspace's suffixed device must still never leak its saved name.
+    _contacts(monkeypatch, [{"their_jid": "9198@s.whatsapp.net", "our_jid": "918888800002:52@s.whatsapp.net", "full_name": "Sheetal"}])
+    assert _saved_dm_contact_name("t1", "9198@s.whatsapp.net", "", {}, {}) == UNNAMED_DM_CONTACT
+
+
+def test_suffix_match_does_not_accept_longer_numbers(monkeypatch):
+    # The colon must come right after the device digits: a longer number that
+    # merely starts with them is a different device.
+    _contacts(monkeypatch, [{"their_jid": "9198@s.whatsapp.net", "our_jid": "9199999000012:3@s.whatsapp.net", "full_name": "Sheetal"}])
     assert _saved_dm_contact_name("t1", "9198@s.whatsapp.net", "", {}, {}) == UNNAMED_DM_CONTACT
 
 
