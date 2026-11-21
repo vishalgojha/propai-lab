@@ -253,6 +253,15 @@ export default function McpWorkspacePage() {
 
   return (
     <section id="how-to-connect" className="mx-auto max-w-4xl px-4 pb-12 lg:px-6">
+      <div className="mb-6 rounded-2xl border border-white/10 p-6">
+        <h1 className="text-2xl font-semibold text-white">Your assistant connection</h1>
+        <p className="mt-3 text-sm leading-6 text-zinc-300">Simple connection setup is not available yet. Existing access can still be reviewed or removed below.</p>
+        <Link href="/workspace/instinct" className="mt-5 inline-flex min-h-12 items-center rounded-lg bg-emerald-400 px-5 py-3 font-semibold text-black">Connect my assistant</Link>
+      </div>
+      <details className="rounded-xl border border-white/10 p-4">
+        <summary className="min-h-12 cursor-pointer py-3 text-sm font-semibold text-white">Advanced settings and existing access</summary>
+        <p className="mb-5 text-sm text-zinc-400">Review or remove existing access below. Technical setup is optional and separate from the normal connection flow.</p>
+
       <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] p-6">
         <div className="flex items-start gap-4">
           <div className="rounded-xl border border-emerald-400/25 bg-emerald-400/10 p-3 text-emerald-300">
@@ -433,6 +442,7 @@ export default function McpWorkspacePage() {
         </div>
         {agentMessage && <p className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3 text-xs leading-5 text-zinc-300">{agentMessage}</p>}
       </div>
+      </details>
     </section>
   );
 }
