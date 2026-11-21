@@ -274,6 +274,33 @@ export default function McpWorkspacePage() {
         <p className="mt-3 text-sm leading-6 text-zinc-300">Simple connection setup is not available yet. Existing access can still be reviewed or removed below.</p>
         <Link href="/workspace/instinct" className="mt-5 inline-flex min-h-12 items-center rounded-lg bg-emerald-400 px-5 py-3 font-semibold text-black">Connect my assistant</Link>
       </div>
+      {marketEnabled && <div className="mb-6 rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] p-6">
+        <h2 className="text-lg font-semibold text-white">Property cross-search (shared broker groups)</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Reading the shared pool is on by default for new connections and can be turned off per connection below. This is read-only: it never shares your own groups, adds DMs, or enables writes. Choosing which of YOUR groups other brokers can search is a separate, always-explicit choice on the <Link href="/connections" className="font-semibold text-emerald-200 underline underline-offset-2">Connections page</Link>.</p>
+        <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
+          <h3 className="text-sm font-semibold text-white">Your broker MCP connection</h3>
+          <p className="mt-1 text-xs leading-5 text-zinc-500">Applies to your signed-in mcp.propai.live/raw-mcp connection. New MCP sign-ins get cross-search read when you approve them; existing connections change only here. Refresh the connection's tool list after a change.</p>
+          {mcpMarketAccess===null?<p className="mt-3 text-xs text-zinc-400">MCP permission could not be verified. Refresh before changing it.</p>:<button type="button" disabled={keyBusy} onClick={()=>void updateMcpMarketAccess()} className="mt-3 rounded-lg border border-emerald-400/30 px-3 py-2 text-xs font-semibold text-emerald-200 disabled:opacity-60">{mcpMarketAccess?"Disable MCP property cross-search":"Enable MCP property cross-search"}</button>}
+        </div>
+        <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
+          <h3 className="text-sm font-semibold text-white">External API keys</h3>
+          <p className="mt-1 text-xs leading-5 text-zinc-500">New keys can read the shared pool by default. Turn cross-search off per key here; other key permissions stay under Advanced settings below.</p>
+          <div className="mt-3 space-y-2">
+            {externalKeys.filter((key) => !key.revoked_at).map((key) => (
+              <div key={key.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 px-3 py-3">
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-white">{key.label}</div>
+                  <code className="mt-1 block text-[11px] text-zinc-500">{key.key_prefix}</code>
+                </div>
+                <button type="button" onClick={() => void updateKeyMarketAccess(key, !key.scopes.includes("broker_market:read"))} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-emerald-300/30 px-3 py-2 text-xs font-semibold text-emerald-200 disabled:opacity-60">{key.scopes.includes("broker_market:read") ? "Disable property cross-search" : "Enable property cross-search"}</button>
+              </div>
+            ))}
+            {keysLoading && <p role="status" className="text-xs text-zinc-400">Loading existing keys...</p>}
+            {keysError && <p role="alert" className="text-xs text-amber-200">Key permissions could not be loaded. Refresh to try again.</p>}
+            {!keysLoading && !keysError && !externalKeys.some((key) => !key.revoked_at) && <p className="rounded-lg border border-white/10 px-3 py-4 text-xs text-zinc-500">No active external API keys found.</p>}
+          </div>
+        </div>
+      </div>}
       <details open={advancedOpen} onToggle={(e) => setAdvancedOpen((e.target as HTMLDetailsElement).open)} className="rounded-xl border border-white/10 p-4">
         <summary className="min-h-12 cursor-pointer py-3 text-sm font-semibold text-white">Advanced settings and existing access</summary>
         <p className="mb-5 text-sm text-zinc-400">Review or remove existing access below. Technical setup is optional and separate from the normal connection flow.</p>
@@ -327,11 +354,6 @@ export default function McpWorkspacePage() {
         </label>
         <button type="button" onClick={() => void createExternalToken()} disabled={keyBusy} className="mt-5 inline-flex items-center gap-2 rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{keyBusy ? "Creating…" : "Create Instinct token"}</button>
         <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4">
-          {marketEnabled && <div className="mb-5 rounded-lg border border-emerald-400/30 p-4">
-            <h3 className="text-sm font-semibold text-white">Existing broker MCP connection</h3>
-            <p className="mt-2 text-xs leading-5 text-zinc-400">Enable property cross-search for your own signed-in mcp.propai.live/raw-mcp connection. This grants reader access only, not sharing of your own groups, DM access or writes. Refresh the existing connection's tool list after enabling. No replacement connection is required.</p>
-            {mcpMarketAccess===null?<p className="mt-3 text-xs text-zinc-400">MCP permission could not be verified. Refresh before changing it.</p>:<button type="button" disabled={keyBusy} onClick={()=>void updateMcpMarketAccess()} className="mt-3 rounded-lg border border-emerald-400/30 px-3 py-2 text-xs text-emerald-200">{mcpMarketAccess?"Disable MCP property cross-search":"Enable MCP property cross-search"}</button>}
-          </div>}
           <h3 id="key-access" className="scroll-mt-24 text-sm font-semibold text-white">Existing external API keys</h3>
           <p className="mt-1 text-xs leading-5 text-zinc-500">Enable private CRM writes or private DM read on one existing key without rotating its secret. Private DM read also needs the workspace consent switch below and changes no other key.</p>
           <div className="mt-3 space-y-2">
@@ -347,7 +369,6 @@ export default function McpWorkspacePage() {
                   <button type="button" onClick={() => void updateKeyWriteAccess(key, !hasWriteAccess)} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{keyScopeBusy === key.id ? "Updating…" : hasWriteAccess ? "Remove write access" : "Enable private CRM writes"}</button>
                   <button type="button" onClick={() => void updateKeyDmAccess(key, !key.scopes.includes("raw_messages:dms"))} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{key.scopes.includes("raw_messages:dms") ? "Remove private DM read" : "Enable private DM read"}</button>
                   <button type="button" onClick={() => void updateKeyPhotoAccess(key, !key.scopes.includes("photos:write"))} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-emerald-300/30 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-300/10 disabled:opacity-60">{key.scopes.includes("photos:write") ? "Disable private photos" : "Enable private photos only"}</button>
-                  {marketEnabled && <button type="button" onClick={() => void updateKeyMarketAccess(key, !key.scopes.includes("broker_market:read"))} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-emerald-300/30 px-3 py-2 text-xs font-semibold text-emerald-200 disabled:opacity-60">{key.scopes.includes("broker_market:read") ? "Disable property cross-search" : "Enable property cross-search"}</button>}
                   <button type="button" onClick={() => void rotateKey(key)} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5 disabled:opacity-60">Rotate token</button>
                 </div>
               </div>;

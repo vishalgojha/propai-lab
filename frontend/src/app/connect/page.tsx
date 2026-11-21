@@ -11,6 +11,7 @@ type Preview = { label: string; write_access: boolean; scopes: string[]; workspa
 const SCOPE_LABELS: Record<string, string> = {
   "raw_messages:read": "Read captured group messages in this account.",
   "raw_messages:dms": "Read private direct messages, subject to this account's separate DM permission.",
+  "broker_market:read": "Read the shared broker market pool (property-group messages other brokers explicitly chose to share). Read-only; never shares this account's own groups.",
   "inventory:read": "Read listings in this account.",
   "requirements:read": "Read buyer requirements in this account.",
   "matches:read": "Read matches in this account.",
@@ -96,7 +97,9 @@ export default function ConnectAgentPage() {
           {scopes.map(scope => <li key={scope}>{SCOPE_LABELS[scope] || `Unrecognized access: ${scope}`}</li>)}
           {!scopes.includes("raw_messages:dms") && <li>Private direct messages are not included in this new connection.</li>}
           {!scopes.some(scope => scope.endsWith(":write")) && <li>Cannot change your saved records.</li>}
-          <li>Cannot send messages. Does not share your groups or add access to other brokers' data.</li>
+          {scopes.includes("broker_market:read")
+            ? <li>Cannot send messages or share your groups. Reads only what other brokers explicitly shared to the market pool.</li>
+            : <li>Cannot send messages. Does not share your groups or add access to other brokers' data.</li>}
         </ul>
         {scopeReviewBlocked && <p role="alert" className="mt-4 text-sm text-red-200">We could not fully describe the requested access. Do not allow this request. Return to your assistant for help.</p>}
         <p className="mt-5 text-xs text-zinc-400">Only allow this if you asked this assistant to connect.</p>

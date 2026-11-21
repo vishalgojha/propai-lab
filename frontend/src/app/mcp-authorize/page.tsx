@@ -213,6 +213,11 @@ export default function McpAuthorizePage() {
           </div>
         )}
 
+        {isRawFlow && (status === "ready" || status === "authorizing") && (
+          <p className="mb-3 rounded-lg border border-white/10 bg-black/20 p-3 text-left text-xs leading-5 text-zinc-400">
+            Approving this new connection also turns on shared-pool property cross-search read for it: read-only search of groups other brokers explicitly shared. It never shares your own groups, adds DMs, or enables writes. Manage it anytime under Integrations.
+          </p>
+        )}
         {(status === "ready" || status === "authorizing") && (
           <button
             onClick={authorize}

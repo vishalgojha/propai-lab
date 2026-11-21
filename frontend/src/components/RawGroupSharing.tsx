@@ -4,7 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchJSON } from "@/lib/api";
 
 type Group = { group_jid: string; group_name: string };
-type Sources = { groups: Group[]; active_sources: (Group & { confirmed_at: string })[]; consent_version: string; consent_text: string };
+type Sources = { groups: Group[]; active_sources: (Group & { confirmed_at: string; message_count?: number; last_message_at?: string | null })[]; consent_version: string; consent_text: string };
+
+/** Review hints use activity counters only. They are NOT recommendations to
+ * uncheck: a quiet group can still be the right one to share. */
+const STALE_DAYS = 90;
+function reviewHint(g: { message_count?: number; last_message_at?: string | null }): string | null {
+  if (!g.last_message_at) return "No group activity recorded yet.";
+  const days = (Date.now() - new Date(g.last_message_at).getTime()) / 86400000;
+  if (days >= STALE_DAYS) return `Quiet for ${Math.floor(days)} days.`;
+  return null;
+}
 
 // No extraction selection, directory default, or typed-publication API is used here.
 export function RawGroupSharing({ connectionId }: { connectionId: number }) {
@@ -112,8 +122,9 @@ export function RawGroupSharing({ connectionId }: { connectionId: number }) {
     <p className="mt-1 text-zinc-400">Contact numbers stay hidden until a broker chooses a specific option.</p>
     {error && !open && <p role="alert" className="mt-3 rounded border border-red-400/30 p-2 text-red-200">{error}</p>}
     {notice && <p role="status" className="mt-3 text-emerald-200">{notice}</p>}
+    {!!scopedData?.active_sources.length && <p className="mt-2 text-[11px] text-zinc-500">Review hints use activity counters only; they are not recommendations to remove sharing.</p>}
     <ul className="mt-2 max-h-48 space-y-2 overflow-y-auto">
-      {scopedData?.active_sources.map(g => <li key={g.group_jid} className="flex items-center justify-between gap-3 rounded border border-white/10 p-2"><span className="min-w-0 break-words">{g.group_name}<span className="block text-[10px] text-zinc-500">{g.group_jid}</span></span><button type="button" disabled={busy || !fresh} onClick={() => void revoke(g)} className="shrink-0 rounded border border-red-400/30 px-2 py-1 text-red-200 disabled:opacity-40">Remove raw sharing</button></li>)}
+      {scopedData?.active_sources.map(g => { const hint = reviewHint(g); return <li key={g.group_jid} className="flex items-center justify-between gap-3 rounded border border-white/10 p-2"><span className="min-w-0 break-words">{g.group_name}<span className="block text-[10px] text-zinc-500">{g.group_jid}</span>{hint && <span className="mt-0.5 block text-[10px] text-amber-200/80">Review hint: {hint} Remove only if you judge the group not property-related.</span>}</span><button type="button" disabled={busy || !fresh} onClick={() => void revoke(g)} className="shrink-0 rounded border border-red-400/30 px-2 py-1 text-red-200 disabled:opacity-40">Remove raw sharing</button></li>; })}
     </ul>
     <button ref={openerRef} type="button" disabled={!fresh || busy} onClick={() => { resetChoice(); setError(null); setOpen(true); }} className="mt-3 rounded border border-cyan-400/40 px-3 py-2 text-cyan-100 disabled:opacity-40">Choose groups for raw sharing</button>
     <button type="button" disabled={busy || loading} onClick={() => { setError(null); void load().catch(() => setError("Could not reload raw sharing settings.")); }} className="ml-3 text-zinc-400">Reload sharing state</button>
