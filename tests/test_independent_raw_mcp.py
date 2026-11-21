@@ -1,4 +1,4 @@
-"""Exact already deployed MCP78eb, no new MCP production code."""
+"""Candidate MCP (default-on shared read) against real PG, exact wrapper path."""
 import os,json,subprocess,sys,shutil
 from pathlib import Path
 from tests.test_independent_raw_sharing import db,seeded,grant,message
@@ -8,11 +8,12 @@ def test_independent_raw_source_to_zero_phone_reader_through_actual_mcp(seeded):
  c,a,b,u,v=seeded
  with c.cursor() as q:
   q.execute(Path('supabase/migrations/20261119100000_broker_market_mcp_reader_grants.sql').read_text())
+  q.execute(Path('supabase/migrations/20261121100000_shared_read_default_and_review.sql').read_text())
   q.execute('delete from org_whatsapp_connections where id=2')
   q.execute('select count(*) from org_whatsapp_connections where organization_id=%s',(b,));assert q.fetchone()[0]==0
   q.execute('select count(*) from raw_messages where tenant_id=%s',(b,));assert q.fetchone()[0]==0
  grant(seeded);message(seeded)
- mcp=Path(os.environ['MARKET_MCP_DIR'])
+ mcp=Path(os.environ.get('MARKET_MCP_DIR','/tmp/propai-cand-mcp/apps/mcp'))
  shutil.copyfile('tests/independentRawMcp.run.mjs',mcp/'dist/independentRawMcp.run.mjs')
  env={**os.environ,'MARKET_PYTHON':sys.executable,'MARKET_SQL_BRIDGE':str(Path('tests/market_sql_bridge.py').resolve()),'MARKET_TEST_DSN':c.dsn,'MARKET_OWNER':json.dumps([b,v]),'MARKET_SOURCE':json.dumps([a,u])}
  result=subprocess.run(['node','--experimental-test-module-mocks','dist/independentRawMcp.run.mjs'],cwd=mcp,env=env,text=True,capture_output=True)

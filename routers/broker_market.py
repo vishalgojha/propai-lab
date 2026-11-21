@@ -168,7 +168,8 @@ async def raw_sources(whatsapp_connection_id: int, user: dict = Depends(require_
         if not connections:
             raise HTTPException(404, "Active workspace connection not found")
         broker = connections[0]["broker_id"]
-        directory = storage.client.table("whatsapp_conversations").select("conversation_jid,display_name").eq(
+        directory = storage.client.table("whatsapp_conversations").select(
+            "conversation_jid,display_name,message_count,last_message_at").eq(
             "tenant_id", tenant_id).eq("broker_id", broker).eq("conversation_type", "group").order(
             "display_name").limit(1001).execute().data or []
         if len(directory) > 1000:
@@ -181,7 +182,13 @@ async def raw_sources(whatsapp_connection_id: int, user: dict = Depends(require_
         groups = {g["conversation_jid"]: {"group_jid": g["conversation_jid"],
                     "group_name": g.get("display_name") or g["conversation_jid"]}
                   for g in directory if re.fullmatch(r"[0-9-]+@g\.us", str(g.get("conversation_jid") or ""))}
-        return {"groups": list(groups.values()), "active_sources": consent,
+        # Review metadata on shared groups only (counters, never content), so
+        # the owner can spot quiet groups they may want to uncheck.
+        activity = {g["conversation_jid"]: {"message_count": g.get("message_count") or 0,
+                        "last_message_at": g.get("last_message_at")} for g in directory}
+        sources = [dict(s, **activity.get(s["group_jid"], {"message_count": 0, "last_message_at": None}))
+                   for s in consent]
+        return {"groups": list(groups.values()), "active_sources": sources,
                 "consent_version": CONSENT_VERSION, "consent_text": CONSENT_TEXT}
     return await asyncio.to_thread(read)
 
@@ -224,6 +231,20 @@ async def key_access(key_id: str, body: KeyAccessRequest, user: dict = Depends(r
     if not rows:
         raise HTTPException(404, "Active workspace key not found")
     return {"id": key_id, "enabled": body.enabled, "scopes": rows[0]["scopes"]}
+
+
+@router.get("/shared-sources")
+async def shared_sources(key: dict = Depends(market_key)):
+    """The reader tenant's OWN current raw-group sharing state (group
+    identifiers, names, consent time, directory counters) so the broker's
+    assistant can review what is shared and suggest groups to uncheck.
+    Metadata only: no message content, no senders, no other tenants' rows.
+    Suggestions only: unchecking always requires the owner's explicit
+    confirmation in the product; this endpoint changes nothing."""
+    await rate(key, "get")
+    rows = await rpc("broker_market_shared_sources", {"p_tenant": str(key["tenant_id"])}) or []
+    return {"sources": rows, "consent_version": CONSENT_VERSION, "forward_only": True,
+            "note": "Review suggestions only; never uncheck a group without the owner's explicit choice."}
 
 
 def contact_choices(row):
@@ -327,7 +348,10 @@ class McpReaderAccessRequest(BaseModel):
 @router.get("/mcp-reader-access")
 async def mcp_reader_access_state(user: dict = Depends(require_user),
                                   tenant_id: str = Depends(require_tenant)):
-    """Current signed-in owner's MCP reader grant state for the toggle."""
+    """Current signed-in owner's MCP reader grant state for the toggle. A
+    recorded unrevoked row means enabled. New MCP authorizations create that
+    row by default (with notice on the approval screen); existing
+    connections keep their recorded state until the owner changes it."""
     enabled()
     def read():
         return storage.client.table("broker_market_mcp_reader_grants").select("granted_at").eq(

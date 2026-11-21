@@ -64,7 +64,12 @@ GET /api/external/v1/connect/sessions/{device_code}
 Sessions expire after 15 minutes; an approved token that is not collected in
 time is destroyed with the session (the owner can revoke the orphaned key in
 Account → MCP). Uncollected tokens are stored sealed with a server-side key,
-never in plaintext, and are cleared on first delivery. New sessions are
+never in plaintext, and are cleared on first delivery. Every minted key also includes `broker_market:read`: read-only access to
+the shared broker market pool (property-group messages other brokers
+explicitly chose to share) plus the key's own shared-source review
+metadata. It never shares this account's own groups, adds DMs, or
+enables writes, and the owner can remove it per key in Account > MCP
+at any time. New sessions are
 read-only by default: `write_access:true` must be requested explicitly by the
 agent and is shown to the owner on the approve page, and sensitive-field
 writes still need per-record owner approval. The minted key behaves exactly

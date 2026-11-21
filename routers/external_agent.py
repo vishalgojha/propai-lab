@@ -37,6 +37,10 @@ EXTRACTION_SCOPE = "raw_messages:extract"
 TOOL_WRITE_SCOPES = {"standing_searches:write", "followups:write"}
 DEFAULT_READ_SCOPES = {
     "inventory:read", "requirements:read", "matches:read", "raw_messages:read",
+    # New credentials can read the explicitly consented shared broker pool by
+    # default. Existing keys keep their minted scopes untouched; owners remove
+    # the scope per key at any time (Account -> Integrations).
+    "broker_market:read",
     *TOOL_READ_SCOPES,
 }
 SENSITIVE_INVENTORY_FIELDS = {"contact_number", "owner_name", "contact_name", "quote"}

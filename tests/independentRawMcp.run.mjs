@@ -12,11 +12,13 @@ process.env.BROKER_PROPERTY_CROSS_SEARCH_ENABLED='true';process.env.BROKER_MARKE
 const real=await import('./supabase.js');mock.module(new URL('./supabase.js',import.meta.url).href,{namedExports:{...real,supabase:fake,recordAssistantSearchSuccess:()=>{}}});
 const {createRawBrokerMcpServerWithMarket}=await import('./rawBrokerServer.js');
 async function connect(){const s=await createRawBrokerMcpServerWithMarket({user:reader});const[c,t]=InMemoryTransport.createLinkedPair();const client=new Client({name:'realpg-contract',version:'1'});await Promise.all([s.connect(t),client.connect(c)]);return{client,close:async()=>{await client.close();await s.close();}};}
-let session=await connect();assert(!(await session.client.listTools()).tools.some(x=>x.name==='property_cross_search'));await session.close();
-sql('select * from broker_market_set_mcp_reader_access(%s,%s,true,%s)',[org,user,user]);
-session=await connect();assert((await session.client.listTools()).tools.some(x=>x.name==='property_cross_search'));
+// No silent upgrade without a recorded grant; the new-authorization default inserts it.
+let session=await connect();assert(!(await session.client.listTools()).tools.some(x=>x.name==='property_cross_search'),'no grant, no tools');await session.close();
+sql('select * from broker_market_default_mcp_reader_grant(%s,%s,%s)',[org,user,user]);
+session=await connect();assert((await session.client.listTools()).tools.some(x=>x.name==='property_cross_search'),'default grant at new authorization');
 const result=await session.client.callTool({name:'property_cross_search',arguments:{building:'Lodha'}});assert(!result.isError,JSON.stringify(result));let data=result.structuredContent;assert(data.results.length===1,JSON.stringify(data));assert(!JSON.stringify(result).includes('9820056180'));const option=data.results[0].option;
 let get=await session.client.callTool({name:'property_option_get',arguments:{option}});assert(!get.isError);
 const [sourceOrg,sourceUser]=JSON.parse(process.env.MARKET_SOURCE);sql("select broker_market_set_raw_sources(%s,1,array['123@g.us'],%s,'broker-property-cross-search-v2',false)",[sourceOrg,sourceUser]);get=await session.client.callTool({name:'property_option_get',arguments:{option}});assert(get.isError,JSON.stringify(get));
+// Explicit reader disable stops the search immediately.
 sql('select * from broker_market_set_mcp_reader_access(%s,%s,false,%s)',[org,user,user]);const denied=await session.client.callTool({name:'property_cross_search',arguments:{building:'Lodha'}});assert(denied.isError);await session.close();
-console.log('PASS exact deployed MCP wrapper + SDK + independent raw SQL + zero-phone/data reader opt-in + masked search/reread + immediate raw revoke + reader revoke');
+console.log('PASS candidate MCP wrapper + SDK + independent raw SQL + zero-phone/data reader new-authorization default grant + masked search/reread + immediate raw revoke + explicit reader disable');

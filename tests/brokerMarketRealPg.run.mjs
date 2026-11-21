@@ -12,11 +12,20 @@ process.env.BROKER_PROPERTY_CROSS_SEARCH_ENABLED='true';process.env.BROKER_MARKE
 const real=await import('./supabase.js');mock.module(new URL('./supabase.js',import.meta.url).href,{namedExports:{...real,supabase:fake,recordAssistantSearchSuccess:()=>{}}});
 const {createRawBrokerMcpServerWithMarket}=await import('./rawBrokerServer.js');
 async function connect(){const s=await createRawBrokerMcpServerWithMarket({user:reader});const[c,t]=InMemoryTransport.createLinkedPair();const client=new Client({name:'realpg-contract',version:'1'});await Promise.all([s.connect(t),client.connect(c)]);return{client,close:async()=>{await client.close();await s.close();}};}
-let session=await connect();assert(!(await session.client.listTools()).tools.some(x=>x.name==='property_cross_search'));await session.close();
-sql('select * from broker_market_set_mcp_reader_access(%s,%s,true,%s)',[org,user,user]);
-session=await connect();assert((await session.client.listTools()).tools.some(x=>x.name==='property_cross_search'));
+// No silent upgrade: without a recorded grant the property tools are absent.
+let session=await connect();assert(!(await session.client.listTools()).tools.some(x=>x.name==='property_cross_search'),'no grant, no tools');await session.close();
+// The new-authorization default inserts the grant (sign-in consent path).
+sql('select * from broker_market_default_mcp_reader_grant(%s,%s,%s)',[org,user,user]);
+session=await connect();const tools=(await session.client.listTools()).tools.map(x=>x.name);assert(tools.includes('property_cross_search')&&tools.includes('property_shared_sources_list'),'default grant at new authorization: '+tools);
 const result=await session.client.callTool({name:'property_cross_search',arguments:{building:'Lodha'}});assert(!result.isError,JSON.stringify(result));let data=result.structuredContent;assert(data.results.length===1,JSON.stringify(data));assert(!JSON.stringify(result).includes('9820056180'));const option=data.results[0].option;
 let get=await session.client.callTool({name:'property_option_get',arguments:{option}});assert(!get.isError);
 sql('update organization_group_connections set opted_out=true where id=11');get=await session.client.callTool({name:'property_option_get',arguments:{option}});assert(get.isError,JSON.stringify(get));
+// Explicit disable persists a revoked row and stops a live session immediately.
 sql('select * from broker_market_set_mcp_reader_access(%s,%s,false,%s)',[org,user,user]);const denied=await session.client.callTool({name:'property_cross_search',arguments:{building:'Lodha'}});assert(denied.isError);await session.close();
-console.log('PASS real existing broker MCP wrapper + SDK tools + PostgreSQL source policy + explicit grant/revoke + masked output + live untick denial');
+session=await connect();assert(!(await session.client.listTools()).tools.some(x=>x.name==='property_cross_search'),'recorded disable removes tools');await session.close();
+// The recorded disable also blocks the new-authorization default grant.
+assert(sql('select * from broker_market_default_mcp_reader_grant(%s,%s,%s)',[org,user,user])[0]['broker_market_default_mcp_reader_grant']===false,'disable never resurrected');
+session=await connect();assert(!(await session.client.listTools()).tools.some(x=>x.name==='property_cross_search'),'still disabled after re-authorization');await session.close();
+// Re-enable clears the revoke.
+sql('select * from broker_market_set_mcp_reader_access(%s,%s,true,%s)',[org,user,user]);session=await connect();assert((await session.client.listTools()).tools.some(x=>x.name==='property_cross_search'),'re-enable restores tools');await session.close();
+console.log('PASS real existing broker MCP wrapper + SDK tools + PostgreSQL source policy + new-authorization default grant + disable persists across re-authorization + masked output + live untick denial');

@@ -38,7 +38,7 @@ def rig(monkeypatch):
         if path.endswith('/org_whatsapp_connections'):
             return httpx.Response(200, json=[{'id': 225, 'broker_id': 'phone-owner'}])
         if path.endswith('/whatsapp_conversations'):
-            return httpx.Response(200, json=[{'conversation_jid': '123@g.us', 'display_name': 'Property'}])
+            return httpx.Response(200, json=[{'conversation_jid': '123@g.us', 'display_name': 'Property', 'message_count': 5, 'last_message_at': '2026-11-20T12:00:00Z'}])
         if path.endswith('/broker_market_raw_source_consents'):
             return httpx.Response(200, json=state['active'])
         raise AssertionError(path)
@@ -81,7 +81,8 @@ def test_committed_scalar_grant_is_success_and_reload_is_truth(rig):
     assert response.json()['changed'] == 1 and state['writes'] == 1
     reload = c.get('/api/external/v1/market/raw-sources?whatsapp_connection_id=225')
     assert reload.status_code == 200
-    assert reload.json()['active_sources'] == state['active']
+    assert reload.json()['active_sources'] == [
+        {**s, 'message_count': 5, 'last_message_at': '2026-11-20T12:00:00Z'} for s in state['active']]
     assert state['writes'] == 1
 
 

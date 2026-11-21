@@ -59,6 +59,7 @@ def test_owner_consent_reader_search_untick_and_mcp_grant_round_trip(seeded,monk
     c,org,other_org,user,other_user=seeded
     with c.cursor() as q:
         q.execute(Path('supabase/migrations/20261119100000_broker_market_mcp_reader_grants.sql').read_text())
+        q.execute(Path('supabase/migrations/20261121100000_shared_read_default_and_review.sql').read_text())
     monkeypatch.setenv('BROKER_PROPERTY_CROSS_SEARCH_ENABLED','true');monkeypatch.setenv('BROKER_MARKET_SIGNING_SECRET','fixture-only')
     monkeypatch.setattr(market,'_record_assistant_trial_start',lambda _:None)
     monkeypatch.setattr(market,'storage',SimpleNamespace(client=SimpleNamespace(table=lambda n:Table(c,n),rpc=lambda n,p:RPC(c,n,p).execute().data)))
@@ -80,6 +81,7 @@ def test_owner_consent_reader_search_untick_and_mcp_grant_round_trip(seeded,monk
         result=http.post('/api/external/v1/market/search',json={'building':'Lodha'}).json()
         assert len(result['results'])==1
         option=result['results'][0]['option']
+        # No silent upgrade: without a recorded grant the toggle reads disabled.
         assert http.get('/api/external/v1/market/mcp-reader-access').json()['enabled'] is False
         for enable in (True,False):
             response=http.put('/api/external/v1/market/mcp-reader-access',json={'enabled':enable})
@@ -89,9 +91,19 @@ def test_owner_consent_reader_search_untick_and_mcp_grant_round_trip(seeded,monk
                 q.execute('select user_id,granted_by,revoked_at from broker_market_mcp_reader_grants where organization_id=%s',(org,));row=q.fetchone()
                 assert str(row[0])==str(row[1])==user
                 assert (row[2] is None) is enable
+        # An explicit disable with NO recorded row must persist a revoked row:
+        # only a recorded row blocks the new-authorization default grant, so a
+        # bare no-op update would lose the revocation on re-authorization.
+        with c.cursor() as q:q.execute('delete from broker_market_mcp_reader_grants where organization_id=%s',(org,))
+        response=http.put('/api/external/v1/market/mcp-reader-access',json={'enabled':False});assert response.status_code==200,response.text
+        assert http.get('/api/external/v1/market/mcp-reader-access').json()['enabled'] is False
+        with c.cursor() as q:
+            q.execute('select revoked_at from broker_market_mcp_reader_grants where organization_id=%s',(org,));assert q.fetchone()[0] is not None
+        response=http.put('/api/external/v1/market/mcp-reader-access',json={'enabled':True});assert response.status_code==200,response.text
+        assert http.get('/api/external/v1/market/mcp-reader-access').json()['enabled'] is True
         response=http.put('/api/external/v1/market/raw-sources',json={'whatsapp_connection_id':1,'group_jids':['123@g.us'],'consent_version':CONSENT_VERSION,'confirmed':False,'enabled':False});assert response.status_code==200,response.text
         assert http.post('/api/external/v1/market/option',json={'option':option}).status_code==404
         assert http.post('/api/external/v1/market/search',json={'building':'Lodha'}).json()['results']==[]
         with c.cursor() as q:q.execute("select extraction_status from org_whatsapp_connections where id=1");assert q.fetchone()[0]=='stopped'
         assert http.post('/api/external/v1/market/search',json={'building':'Lodha'}).json()['results']==[]
-    assert len(permissions)==4
+    assert len(permissions)==6

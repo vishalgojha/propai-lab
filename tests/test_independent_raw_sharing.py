@@ -31,7 +31,7 @@ def db():
         create table organization_group_connections(id bigint primary key,organization_id uuid,whatsapp_connection_id bigint,group_jid text,group_name text,is_active boolean,opted_out boolean,public_market_source boolean,updated_at timestamptz);
         create table external_agent_api_keys(id uuid primary key,tenant_id uuid,scopes text[],revoked_at timestamptz);
         create table raw_messages(id bigint primary key,tenant_id uuid,message text,timestamp timestamptz,sender_phone text,sender_jid text,is_group boolean,source text,pipeline_version text,raw_payload jsonb,event_id text,message_uid text,synced_at timestamptz);
-        create table whatsapp_conversations(tenant_id uuid,broker_id text,conversation_type text,conversation_jid text,display_name text);
+        create table whatsapp_conversations(tenant_id uuid,broker_id text,conversation_type text,conversation_jid text,display_name text,message_count integer default 0,last_message_at timestamptz);
         create table broker_whatsapp_devices(whatsapp_connection_key text primary key,device_jid text);
         create table typed_sentinel(id bigint,visibility text);
         ''')
@@ -49,7 +49,7 @@ def seeded(db):
         q.execute('truncate broker_whatsapp_devices,raw_messages,broker_market_raw_source_consents,broker_market_source_consents,organization_group_connections,org_whatsapp_connections,organizations,auth.users,whatsapp_conversations,typed_sentinel cascade')
         q.execute('insert into auth.users values(%s),(%s)',(u,v));q.execute('insert into organizations values(%s),(%s)',(a,b))
         q.execute("insert into org_whatsapp_connections(id,organization_id,broker_id,is_active) values(1,%s,'phone-a',true),(2,%s,'phone-b',true)",(a,b))
-        q.execute("insert into whatsapp_conversations values(%s,'phone-a','group','123@g.us','Property Alpha'),(%s,'phone-a','group','999@g.us','Social Beta'),(%s,'phone-b','group','123@g.us','Property Alpha')",(a,a,b))
+        q.execute("insert into whatsapp_conversations(tenant_id,broker_id,conversation_type,conversation_jid,display_name,message_count,last_message_at) values(%s,'phone-a','group','123@g.us','Property Alpha',42,now()),(%s,'phone-a','group','999@g.us','Social Beta',0,null),(%s,'phone-b','group','123@g.us','Property Alpha',7,now())",(a,a,b))
         q.execute("insert into typed_sentinel values(1,'workspace_private')")
     return db,a,b,u,v
 
@@ -246,7 +246,7 @@ def test_connection_deactivation_race_blocks_pending_grant(seeded):
 def test_all137_exact_grant_and_invalid_batch_remains_atomic(seeded):
     db,a,b,u,v=seeded
     jids=[f'{10000+i}@g.us' for i in range(137)]
-    with db.cursor() as q:q.executemany("insert into whatsapp_conversations values(%s,'phone-a','group',%s,'Real estate fixture')",[(a,g) for g in jids])
+    with db.cursor() as q:q.executemany("insert into whatsapp_conversations(tenant_id,broker_id,conversation_type,conversation_jid,display_name) values(%s,'phone-a','group',%s,'Real estate fixture')",[(a,g) for g in jids])
     with pytest.raises(psycopg2.Error):grant(seeded,jids+['999999@g.us'])
     with db.cursor() as q:q.execute('select count(*) from broker_market_raw_source_consents');assert q.fetchone()[0]==0
     assert grant(seeded,jids)==137
