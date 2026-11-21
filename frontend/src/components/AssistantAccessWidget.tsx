@@ -26,6 +26,8 @@ type ConnectionStatus = {
   dm_consent_enabled: boolean;
   connection: null | {
     label: string;
+    key_id: string;
+    key_prefix: string;
     key_revoked: boolean;
     can_read_groups: boolean;
     can_read_dms: boolean;
