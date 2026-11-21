@@ -23,11 +23,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
-import psycopg2
 import pytest
-from psycopg2 import sql
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
+
+psycopg2 = pytest.importorskip("psycopg2", reason="acceptance tests need psycopg2 for disposable PostgreSQL")
+from psycopg2 import sql  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -144,7 +145,10 @@ INSERT INTO raw_messages VALUES (1, 't1', true, 'owned group post'), (2, 't2', t
 @pytest.fixture
 def env(monkeypatch):
     monkeypatch.setenv("CONNECT_SESSION_SECRET", "acceptance-fixture-seal")
-    admin = psycopg2.connect(host="/tmp", dbname="postgres", user="postgres")
+    try:
+        admin = psycopg2.connect(host="/tmp", dbname="postgres", user="postgres", connect_timeout=3)
+    except psycopg2.OperationalError:
+        pytest.skip("disposable local PostgreSQL not available")
     admin.autocommit = True
     name = "accept_" + uuid.uuid4().hex[:10]
     with admin.cursor() as c:
@@ -245,12 +249,11 @@ def test_acceptance_full_roundtrip_and_resume(env, caplog):
     # Token is sealed at rest: the database never held the plaintext.
     assert sealed_at_rest != saved and sealed_at_rest is not None
 
-    # 6. One-use: a second poll never serves the token again. Observed
-    # server behavior is 410 for the consumed state (the route's 409 covers
-    # only the approved-but-token-already-cleared race); the security
-    # property asserted here is that the token is never returned twice.
+    # 6. One-use: a second poll never serves the token again and now says
+    # so truthfully ("already collected", 410) instead of the misleading
+    # "expired" wording the route previously used for the consumed state.
     code, body = transport("GET", "/connect/sessions/" + device_code, None, None)
-    assert code == 410 and "token" not in body
+    assert code == 410 and "token" not in body and "already collected" in body.get("detail", "")
 
     # 7. Resume with a fresh adapter process against the saved credential.
     resumed = AssistantConnection(transport, store)
@@ -277,7 +280,7 @@ def test_acceptance_one_use_collection_enforced(env):
     device_code = adapter.pending.device_code
     adapter.collect_and_check()
     code, body = make_transport(client)("GET", "/connect/sessions/" + device_code, None, None)
-    assert code == 410 and "token" not in body
+    assert code == 410 and "token" not in body and "already collected" in body.get("detail", "")
     with db.cursor() as c:
         c.execute("SELECT status, token FROM external_agent_connect_sessions")
         status, token = c.fetchone()

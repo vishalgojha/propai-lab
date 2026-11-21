@@ -1572,6 +1572,10 @@ async def poll_connect_session(device_code: str):
         if not consumed.data:
             raise HTTPException(409, "Connect session token already collected")
         return {"status": "approved", "token": _unseal_token(sealed), "warning": "Save this token now. It will not be shown again."}
+    if row.get("status") == "consumed":
+        # A successfully collected session is not expired; say so truthfully.
+        # The token itself is never served again either way.
+        raise HTTPException(410, "Connect session already collected; the token is never returned again")
     raise HTTPException(410, "Connect session expired; start a new connection")
 
 
