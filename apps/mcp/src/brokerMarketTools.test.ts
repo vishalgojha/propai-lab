@@ -27,24 +27,29 @@ const marketRows: any[] = [
 ];
 
 // Mutable test state
-const grants = new Set<string>(); // "org:user"
+const grants = new Set<string>(); // "org:user" with a recorded enable (revoked_at null)
+const revokes = new Set<string>(); // "org:user" with a recorded explicit disable
 let rateBehavior: Record<string, boolean> = {};
 const rateKeys: string[] = [];
+const sharedSourceRows: any[] = [
+  { whatsapp_connection_id: 2, group_jid: "123@g.us", group_name: "Property Alpha", confirmed_at: T, message_count: 7, last_message_at: T },
+];
 
 function builder(table: string): any {
   const eqs: Array<[string, unknown]> = [];
-  let isNull: [string] | null = null;
   const b: any = {
     select: () => b,
     eq: (c: string, v: unknown) => { eqs.push([c, v]); return b; },
-    is: (c: string, v: unknown) => { if (c === "revoked_at" && v === null) isNull = [c]; return b; },
+    is: () => b,
     limit: () => b,
     insert: () => Promise.resolve({ error: null }),
     maybeSingle: async () => {
       if (table === "broker_market_mcp_reader_grants") {
         const org = String(eqs.find(([c]) => c === "organization_id")?.[1] || "");
         const user = String(eqs.find(([c]) => c === "user_id")?.[1] || "");
-        return { data: isNull && grants.has(`${org}:${user}`) ? { user_id: user } : null, error: null };
+        // The live query filters revoked_at IS NULL: only a recorded,
+        // unrevoked grant row is returned.
+        return { data: grants.has(`${org}:${user}`) ? { user_id: user } : null, error: null };
       }
       return { data: null, error: null };
     },
@@ -63,6 +68,17 @@ const fake = {
       return { data: marketRows.slice(0, args.p_limit), error: null };
     }
     if (name === "broker_market_get") return { data: marketRows.filter((r) => r.raw_id === args.p_raw_id), error: null };
+    if (name === "broker_market_shared_sources") {
+      assert.equal(args.p_tenant, OWN, "review view is scoped to the reader tenant");
+      return { data: sharedSourceRows, error: null };
+    }
+    if (name === "broker_market_default_mcp_reader_grant") {
+      const key = `${args.p_tenant}:${args.p_user}`;
+      assert.equal(args.p_actor, args.p_user, "the signer records their own default grant");
+      if (grants.has(key) || revokes.has(key)) return { data: false, error: null }; // recorded row untouched
+      grants.add(key);
+      return { data: true, error: null };
+    }
     return { data: null, error: { message: `unexpected rpc ${name}` } };
   },
 };
@@ -83,17 +99,35 @@ const U = { id: USER, broker_id: OWN, tenant_id: OWN };
 const ask = { broker_interest_quote: "haan bhai this 2bhk interests me", broker_confirmed_this_option: true };
 const NUMS = /9811122233|98111 ?22233|9822233445/;
 
-test("ungranted reader: raw toolset unchanged, property tools absent (no auto-upgrade)", async () => {
+test("ungranted reader: raw toolset unchanged, property tools absent (no silent upgrade of existing connections)", async () => {
   const real = await import("./supabase.js");
   mock.module(new URL("./supabase.js", import.meta.url).href, { namedExports: { ...real, supabase: fake } });
-  grants.clear();
+  grants.clear(); revokes.clear();
   const s = await connectMarket(U);
   const names = (await s.client.listTools()).tools.map((t: any) => t.name).sort();
   assert.deepEqual(names, ["contact_reveal", "raw_message_context", "raw_message_get", "raw_message_search"]);
   let failed = false;
   try { const r: any = await s.client.callTool({ name: "property_cross_search", arguments: { building: "Sea View" } }); failed = !!r.isError; } catch { failed = true; }
-  assert.ok(failed, "property tool is not callable without the owner grant");
+  assert.ok(failed, "property tool is not callable without a recorded grant");
   await s.close();
+  // A recorded explicit disable is equally denied and never auto-resurrected.
+  revokes.add(`${OWN}:${USER}`);
+  const s2 = await connectMarket(U);
+  assert.deepEqual((await s2.client.listTools()).tools.map((t: any) => t.name).sort(), names);
+  await s2.close();
+  revokes.clear();
+});
+
+test("new authorization default grant: inserted only when no recorded choice exists", async () => {
+  // supabase.js is already mocked by the first test in this file.
+  const { defaultMcpReaderGrantOnNewAuthorization } = await import("./brokerMarketData.js");
+  grants.clear(); revokes.clear();
+  await defaultMcpReaderGrantOnNewAuthorization(OWN, USER); // first sign-in: granted
+  assert.ok(grants.has(`${OWN}:${USER}`));
+  grants.delete(`${OWN}:${USER}`); revokes.add(`${OWN}:${USER}`); // owner disabled explicitly
+  await defaultMcpReaderGrantOnNewAuthorization(OWN, USER); // re-authorization must not resurrect
+  assert.ok(!grants.has(`${OWN}:${USER}`) && revokes.has(`${OWN}:${USER}`));
+  revokes.clear();
 });
 
 test("granted reader: full search -> option -> contact flow with masked first responses", async () => {
@@ -143,13 +177,14 @@ test("references are reader-bound: another signed-in user cannot reuse an option
   assert.ok(rateKeys.length >= 2 && rateKeys.every((k) => k === OWN), `org-aggregated rate bucket (tenant id alone): ${rateKeys}`);
 });
 
-test("owner revoke stops a live session immediately (per-call grant check)", async () => {
-  grants.clear(); grants.add(`${OWN}:${USER}`); rateBehavior = {};
+test("owner disable stops a live session immediately (per-call grant check)", async () => {
+  grants.clear(); revokes.clear(); grants.add(`${OWN}:${USER}`); rateBehavior = {};
   const s = await connectMarket(U);
   assert.ok((await call(s.client, "property_cross_search", { building: "Sea View" })).includes("consented_property_group_message"));
-  grants.delete(`${OWN}:${USER}`); // owner disables the reader mid-session
+  grants.delete(`${OWN}:${USER}`); revokes.add(`${OWN}:${USER}`); // owner disables the reader mid-session
   const after = await call(s.client, "property_cross_search", { building: "Sea View" });
   assert.ok(after.includes("not enabled for this MCP connection") && !after.includes("consented_property_group_message"));
+  revokes.clear();
   await s.close();
 });
 
@@ -177,6 +212,22 @@ test("feature flag off: property tools absent for everyone", async () => {
   } finally {
     process.env.BROKER_PROPERTY_CROSS_SEARCH_ENABLED = "true";
   }
+});
+
+test("shared sources review: own tenant metadata only, no content, rate-limited as get", async () => {
+  grants.clear(); revokes.clear(); grants.add(`${OWN}:${USER}`); rateBehavior = {}; rateKeys.length = 0;
+  const s = await connectMarket(U);
+  const names = (await s.client.listTools()).tools.map((t: any) => t.name);
+  assert.ok(names.includes("property_shared_sources_list"));
+  const res = await call(s.client, "property_shared_sources_list", {});
+  assert.ok(res.includes("Property Alpha") && res.includes("123@g.us"));
+  assert.ok(res.includes("message_count") && res.includes("last_message_at"));
+  assert.ok(!NUMS.test(res) && !/sender_phone|sender_jid|raw_payload|\"body\"/.test(res), `no content or contacts in review view: ${res}`);
+  assert.ok(res.includes("owner's explicit confirmation"), "states that changes stay owner-only");
+  assert.ok(rateKeys.length >= 1 && rateKeys.every((k) => k === OWN), "org-aggregated rate bucket");
+  rateBehavior = { get: false };
+  assert.ok((await call(s.client, "property_shared_sources_list", {})).includes("limit reached"));
+  await s.close();
 });
 
 test("legacy public /mcp server never gains the property tools", async () => {

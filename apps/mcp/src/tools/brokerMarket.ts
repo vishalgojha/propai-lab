@@ -17,28 +17,36 @@ import {
   sourceHash,
   unseal,
 } from "../brokerMarketPolicy.ts";
-import { marketGet, marketSearch, marketTakeRate, mcpReaderGrantActive, type MarketRow } from "../brokerMarketData.ts";
+import { marketGet, marketSearch, marketSharedSources, marketTakeRate, mcpReaderGrantActive, type MarketRow } from "../brokerMarketData.ts";
 import { redactMcpResult } from "../contactPrivacy.ts";
 import type { ToolContext } from "../types.js";
 
 /**
  * Broker property cross-search tools for the EXISTING broker MCP (/raw-mcp).
  * Same three operations, source RPCs, consent/reference contract and rate
- * limits as the reviewed REST adapter (api/routers/broker_market.py). The
- * reader is the actual signed-in tenant:user (never a fabricated key), and the
- * owner-controlled grant (broker_market_mcp_reader_grants) is re-checked on
- * every call so revoke takes effect immediately. The anonymous/public /mcp
- * surface never gets these tools; the legacy authenticated toolset is
- * unchanged.
+ * limits as the reviewed REST adapter (api/routers/broker_market.py), plus a
+ * metadata-only review view of the reader's own shared groups. The reader is
+ * the actual signed-in tenant:user (never a fabricated key). Read requires a
+ * recorded, unrevoked grant (broker_market_mcp_reader_grants): new MCP
+ * authorizations create it by default with notice on the approval screen;
+ * the owner can disable it anytime and the per-call re-check makes a disable
+ * take effect immediately. The anonymous/public /mcp surface never gets
+ * these tools; the legacy authenticated toolset is unchanged.
  */
 
 export const PROPERTY_CROSS_SEARCH_TOOL = "property_cross_search";
 export const PROPERTY_OPTION_GET_TOOL = "property_option_get";
 export const PROPERTY_CONTACT_REVEAL_TOOL = "property_contact_reveal";
-export const PROPERTY_TOOL_NAMES = [PROPERTY_CROSS_SEARCH_TOOL, PROPERTY_OPTION_GET_TOOL, PROPERTY_CONTACT_REVEAL_TOOL];
+export const PROPERTY_SHARED_SOURCES_TOOL = "property_shared_sources_list";
+export const PROPERTY_TOOL_NAMES = [
+  PROPERTY_CROSS_SEARCH_TOOL,
+  PROPERTY_OPTION_GET_TOOL,
+  PROPERTY_CONTACT_REVEAL_TOOL,
+  PROPERTY_SHARED_SOURCES_TOOL,
+];
 
 const NOT_GRANTED =
-  "Property cross-search is not enabled for this MCP connection. The workspace owner can enable it in PropAI under Account → Integrations.";
+  "Property cross-search is not enabled for this MCP connection. It turns on by default when a NEW connection sign-in is approved; for an existing connection the workspace owner can enable it in PropAI under Account → Integrations.";
 
 function featureEnabled(): boolean {
   return String(process.env.BROKER_PROPERTY_CROSS_SEARCH_ENABLED || "").toLowerCase() === "true";
@@ -337,6 +345,34 @@ export function registerBrokerMarketTools(server: McpServer, context: ToolContex
             data,
           ),
         );
+      } catch (e) {
+        return errorResponse(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    PROPERTY_SHARED_SOURCES_TOOL,
+    {
+      description:
+        "List the groups THIS workspace currently shares into the property cross-search pool, with consent time and activity counters. Metadata only: no message content, no contacts, no other workspaces. Use it to review sharing and suggest groups the owner may want to uncheck (for example quiet or off-topic groups). Suggestions only: never uncheck or change sharing yourself; the owner decides in PropAI under Connections.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const { tenantId, rateBucket } = await assertMarketAccess(context);
+        await takeRate(rateBucket, "get");
+        await logToolCall(context.user?.broker_id || context.user?.id, PROPERTY_SHARED_SOURCES_TOOL, {}, tenantId);
+        const sources = await marketSharedSources(tenantId);
+        const data = {
+          sources,
+          forward_only: true,
+          note: "Review suggestions only. Sharing changes always require the owner's explicit confirmation in PropAI under Connections.",
+        };
+        const summary = sources.length
+          ? `${sources.length} group(s) currently shared from this workspace. Metadata only; the owner changes sharing in PropAI under Connections.`
+          : "No groups are currently shared from this workspace. Sharing is always the owner's explicit choice in PropAI under Connections.";
+        return textResponse(`${summary}\n\n${JSON.stringify(data, null, 2)}`, data);
       } catch (e) {
         return errorResponse(e);
       }
