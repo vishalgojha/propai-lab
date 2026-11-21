@@ -6,12 +6,13 @@ production Supabase/RLS, fresh-assistant storage, onboarding or live capture.
 import hashlib
 import uuid
 from types import SimpleNamespace
-import psycopg2
-from psycopg2 import sql
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-import routers.external_agent as api
+
+psycopg2 = pytest.importorskip("psycopg2", reason="realpg tests need psycopg2 for disposable PostgreSQL")
+from psycopg2 import sql  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+import routers.external_agent as api  # noqa: E402
 
 class Query:
     def __init__(self,conn,table,log):self.conn=conn;self.table=table;self.log=log;self.columns='*';self.filters=[];self.values=[];self.updates=None;self.n=100
@@ -36,7 +37,11 @@ class Query:
 
 @pytest.fixture
 def app_db(monkeypatch):
-    admin=psycopg2.connect(host='/tmp',dbname='postgres',user='postgres');admin.autocommit=True
+    try:
+        admin=psycopg2.connect(host='/tmp',dbname='postgres',user='postgres',connect_timeout=3)
+    except psycopg2.OperationalError:
+        pytest.skip('disposable local PostgreSQL not available')
+    admin.autocommit=True
     name='connect_test_'+uuid.uuid4().hex[:10]
     with admin.cursor() as c:c.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(name)))
     db=psycopg2.connect(host='/tmp',dbname=name,user='postgres');db.autocommit=True
