@@ -95,6 +95,7 @@ Read endpoints:
 | `GET /messages/search` | Search captured WhatsApp source messages | `q`, `scope`, `since`, `until`, `limit`, `offset` |
 | `GET /messages/{raw_message_id}` | Fetch one full source message | `raw_message_id` from search results |
 | `GET /messages/{raw_message_id}/conversation` | Fetch nearby messages from the same private DM chat | `raw_message_id`, `limit` |
+| `GET /connection-status` | Owner UI: workspace DM consent plus the bound assistant connection's actual scopes | owner app session |
 | `POST /messages/{raw_message_id}/extract` | Queue one selected WhatsApp group message for the existing extractor | `raw_messages:extract`; groups only |
 
 ## Shared realtor knowledge and search scope
@@ -176,6 +177,25 @@ standing-search and follow-up write scopes. The authenticated owner endpoint is
 write scopes. Other scopes, including `raw_messages:dms`, are preserved; DM
 reads still require the separate workspace consent switch.
 
+Private DM read is a deliberate per-key opt-in on top of workspace consent.
+The consent switch alone never adds DM read to a key, and a new connection
+never includes it automatically. To grant DM read to one existing key without
+rotating it, use `PUT /api/external/v1/keys/{key_id}/dm-access` with
+`{"enabled":true}`; it requires the workspace consent switch to be on and
+changes no other key. `{"enabled":false}` removes DM read from that key only.
+Turning the workspace switch off still removes DM read from every key.
+
+Private DM responses hide the other person's identifiers. On every DM row
+returned by `/messages/search`, `/messages/{raw_message_id}` and
+`/messages/{raw_message_id}/conversation`, `sender` is the workspace owner's
+saved contact name (or `Unnamed contact` when there is none, never the public
+pushname and never a number), and `sender_phone` and `sender_jid` are removed.
+Phone-like digit runs inside DM message text are replaced with
+`[number hidden]`. This masking is best-effort, not a guarantee that no number
+can appear: numbers written as words, inside media, contact cards or unusual
+formats can still come through. Group-message responses are unchanged and still
+carry sender details for the owner's own broker attribution.
+
 Pending sensitive changes are visible only to authenticated workspace owners
 at `GET /approvals`. Approve or reject one with
 `POST /approvals/{approval_id}/decision` and `{"approved":true|false}`.
@@ -228,7 +248,9 @@ page. The response's `scope` identifies which chat category was searched.
   this history path.
 - Return only the information needed to answer the owner's request. Do not
   expose sender phone numbers unless the owner specifically requests the source
-  contact and the API response includes it.
+  contact and the API response includes it. DM responses remove the peer's
+  number at the API boundary as described above; do not try to recover it from
+  other endpoints or by matching content.
 - Never invent results. If the API returns no matching rows, say none were found
   in the captured workspace data.
 

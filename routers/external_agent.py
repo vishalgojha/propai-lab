@@ -42,6 +42,94 @@ DEFAULT_READ_SCOPES = {
 SENSITIVE_INVENTORY_FIELDS = {"contact_number", "owner_name", "contact_name", "quote"}
 SENSITIVE_REQUIREMENT_FIELDS = {"phone", "budget_min", "budget_max"}
 
+# --- Private DM identifier privacy -------------------------------------------
+# DM rows cross the external boundary without peer identifiers: no phone, no
+# JID, and the broker's saved contact name instead of the public pushname.
+# Group rows are unchanged; owner-facing broker attribution keeps its numbers.
+UNNAMED_DM_CONTACT = "Unnamed contact"
+
+# A phone-like run: 10-13 digits with common separators. Indian-style grouped
+# prices use commas, which break the run on purpose; dates (2026-11-21) and
+# measurements are too short. This is best-effort content masking, not proof
+# that no number can appear (words, media, vcards or odd formats can leak).
+_DM_PHONE_LIKE = re.compile(r"\+?\d[\d\s().\-]{7,17}\d")
+_DM_DATE_LIKE = re.compile(r"^\+?\d{4}-\d{1,2}-\d{1,2}")
+
+
+def _mask_phone_like_text(text: str) -> str:
+    def _hide(match: re.Match) -> str:
+        run = match.group(0)
+        if _DM_DATE_LIKE.match(run) or ":" in run:
+            return run
+        digits = re.sub(r"\D", "", run)
+        if 10 <= len(digits) <= 13:
+            return "[number hidden]"
+        return run
+    return _DM_PHONE_LIKE.sub(_hide, text)
+
+
+def _saved_dm_contact_name(sender_jid: str, sender_phone: str, cache: dict) -> str:
+    """The workspace owner's saved contact name for a DM peer.
+
+    Reads the device contact store (full_name/first_name/business_name) only;
+    the public pushname is not a saved name and is never used. A saved name
+    that is itself phone-like yields no name. Falls back to a fixed label,
+    never to the number."""
+    key = (sender_jid or "", sender_phone or "")
+    if key in cache:
+        return cache[key]
+    name = ""
+    jid_phone_match = re.match(r"\+?(\d+)@s\.whatsapp\.net$", sender_jid or "", re.I)
+    lookups = [value for value in (sender_jid, sender_phone, jid_phone_match.group(1) if jid_phone_match else "") if value]
+    for lookup in lookups:
+        for column in ("their_jid", "our_jid", "redacted_phone"):
+            try:
+                result = storage.client.table("whatsmeow_contacts").select(
+                    "full_name,first_name,business_name"
+                ).eq(column, lookup).limit(1).execute()
+            except Exception:
+                continue
+            row = (result.data or [None])[0] if result else None
+            if not row:
+                continue
+            for field in ("full_name", "first_name", "business_name"):
+                candidate = str(row.get(field) or "").strip()
+                if not candidate:
+                    continue
+                if not re.search(r"[A-Za-z\u0900-\u097F]", candidate):
+                    continue
+                masked = _mask_phone_like_text(candidate).strip()
+                name = masked
+                break
+            if name:
+                break
+        if name:
+            break
+    cache[key] = name or UNNAMED_DM_CONTACT
+    return cache[key]
+
+
+def _mask_dm_response_row(row: dict, name_cache: dict) -> dict:
+    """Strip DM peer identifiers from one external response row.
+
+    Group rows pass through unchanged. Stored evidence is untouched; this is
+    a response-boundary transform only."""
+    if row.get("is_group"):
+        return row
+    masked = dict(row)
+    masked["sender"] = _saved_dm_contact_name(
+        str(row.get("sender_jid") or ""), str(row.get("sender_phone") or ""), name_cache
+    )
+    masked["sender_jid"] = None
+    masked["sender_phone"] = None
+    group_name = str(row.get("group_name") or "")
+    if group_name and not group_name.endswith("@g.us"):
+        masked["group_name"] = None
+    message = masked.get("message")
+    if isinstance(message, str) and message:
+        masked["message"] = _mask_phone_like_text(message)
+    return masked
+
 
 class ApiKeyCreate(BaseModel):
     label: str = "Instinct"
@@ -329,7 +417,8 @@ async def external_raw_message_search(
         query = query.lte("timestamp", until)
     rows = (query.order("timestamp", desc=True).limit(limit + 1).offset(offset).execute().data or [])
     has_more = len(rows) > limit
-    items = rows[:limit]
+    name_cache: dict = {}
+    items = [_mask_dm_response_row(row, name_cache) for row in rows[:limit]]
     await asyncio.to_thread(_record_assistant_trial_start, str(key["tenant_id"]))
     return {
         "results": items,
@@ -354,6 +443,7 @@ async def external_raw_message_get(raw_message_id: int, key: dict = Depends(exte
         raise HTTPException(404, "Raw WhatsApp message not found")
     if not item.get("is_group"):
         _require_dm_consent(key)
+        item = _mask_dm_response_row(item, {})
     return {
         "message": item,
         "source": "raw_whatsapp_message",
@@ -438,6 +528,8 @@ async def external_raw_message_conversation(
     ).eq("is_group", False).like("message_uid", f"%:{chat_id}:%")
     rows = query.order("timestamp", desc=True).limit(limit).execute().data or []
     rows.reverse()
+    name_cache = {}
+    rows = [_mask_dm_response_row(row, name_cache) for row in rows]
     return {
         "messages": rows,
         "count": len(rows),
@@ -1059,6 +1151,57 @@ async def list_external_keys(user: dict = Depends(require_user), tenant_id: str 
     return {"keys": result.data or []}
 
 
+@router.get("/connection-status")
+async def external_connection_status(user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    """Truthful assistant-connection status for owner-facing UI.
+
+    Binds to the latest decided connect session's key rather than merging
+    every key on the workspace, so a tenant with several manual keys does not
+    show an optimistic aggregate. Manually created keys have no session
+    binding and are counted, not claimed as the assistant connection."""
+    org_result = storage.client.table("organizations").select(
+        "external_agent_dms_enabled,external_agent_dms_consented_at"
+    ).eq("id", tenant_id).limit(1).execute()
+    org = (org_result.data or [None])[0] if org_result else None
+    dm_consent = bool(org and org.get("external_agent_dms_enabled"))
+
+    session_result = storage.client.table("external_agent_connect_sessions").select(
+        "id,status,label,api_key_id,decided_at"
+    ).eq("tenant_id", tenant_id).in_("status", ["approved", "consumed"]).order("decided_at", desc=True).limit(1).execute()
+    session = (session_result.data or [None])[0] if session_result else None
+
+    connection = None
+    bound_key_id = session.get("api_key_id") if session else None
+    if session and bound_key_id:
+        key_result = storage.client.table("external_agent_api_keys").select(
+            "id,label,key_prefix,scopes,last_used_at,revoked_at,created_at"
+        ).eq("id", bound_key_id).eq("tenant_id", tenant_id).limit(1).execute()
+        bound = (key_result.data or [None])[0] if key_result else None
+        scopes = list(bound.get("scopes") or []) if bound else []
+        connection = {
+            "label": session.get("label") or "Instinct",
+            "key_id": str(bound_key_id),
+            "key_prefix": (bound or {}).get("key_prefix"),
+            "key_revoked": bool(bound and bound.get("revoked_at")),
+            "scopes": scopes,
+            "can_read_groups": "raw_messages:read" in scopes,
+            "can_read_dms": dm_consent and "raw_messages:dms" in scopes,
+            "can_write_private_crm": bool(WRITE_SCOPES & set(scopes)),
+            "last_used_at": (bound or {}).get("last_used_at"),
+        }
+
+    active_keys = storage.client.table("external_agent_api_keys").select(
+        "id"
+    ).eq("tenant_id", tenant_id).is_("revoked_at", "null").execute().data or []
+    unbound = len([row for row in active_keys if str(row.get("id")) != str(bound_key_id or "")])
+    return {
+        "dm_consent_enabled": dm_consent,
+        "dm_consented_at": (org or {}).get("external_agent_dms_consented_at"),
+        "connection": connection,
+        "unbound_active_keys": unbound,
+    }
+
+
 @router.put("/keys/{key_id}/write-access")
 async def update_external_key_write_access(
     key_id: str,
@@ -1087,6 +1230,51 @@ async def update_external_key_write_access(
         _write_audit_finish(audit_id, "failed", error_code="key_update_empty")
         raise HTTPException(409, "External API key changed; refresh the key list and retry")
     _write_audit_finish(audit_id, "succeeded", entity_id=key_id, result={"enabled": body.enabled})
+    return {"id": key_id, "scopes": scopes}
+
+
+class ApiKeyDmAccessUpdate(BaseModel):
+    enabled: bool = True
+
+
+@router.put("/keys/{key_id}/dm-access")
+async def update_external_key_dm_access(
+    key_id: str,
+    body: ApiKeyDmAccessUpdate,
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
+    """Grant or remove the private-DM read scope on one existing key.
+
+    Deliberate per-key opt-in: workspace consent alone never adds DM read to
+    a key, and this control never touches any other key. Enabling requires
+    the workspace consent switch to be on; disabling it there removes the
+    scope from every key as before."""
+    await _require_org_permission(user, tenant_id, "manage_whatsapp")
+    if body.enabled:
+        consent = storage.client.table("organizations").select(
+            "external_agent_dms_enabled"
+        ).eq("id", tenant_id).limit(1).execute()
+        org = (consent.data or [None])[0] if consent else None
+        if not org or not org.get("external_agent_dms_enabled"):
+            raise HTTPException(409, "Workspace private DM consent is off. Enable it before granting DM read to a key.")
+    result = storage.client.table("external_agent_api_keys").select(
+        "id,scopes"
+    ).eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").limit(1).execute()
+    key = (result.data or [None])[0] if result else None
+    if not key:
+        raise HTTPException(404, "Active external API key not found")
+    scopes = [scope for scope in (key.get("scopes") or []) if scope != "raw_messages:dms"]
+    if body.enabled:
+        scopes.append("raw_messages:dms")
+    audit_id = _write_audit_start({"tenant_id": tenant_id, "id": key_id}, "permission_change", "external_agent_api_key", {"key_id": key_id, "dm_access": body.enabled}, [])
+    updated = storage.client.table("external_agent_api_keys").update(
+        {"scopes": scopes}
+    ).eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").execute()
+    if not updated.data:
+        _write_audit_finish(audit_id, "failed", error_code="key_update_empty")
+        raise HTTPException(409, "External API key changed; refresh the key list and retry")
+    _write_audit_finish(audit_id, "succeeded", entity_id=key_id, result={"dm_access": body.enabled})
     return {"id": key_id, "scopes": scopes}
 
 
