@@ -169,6 +169,26 @@ export default function McpWorkspacePage() {
     finally { setKeyScopeBusy(null); }
   }
 
+  async function updateKeyDmAccess(key: ExternalAgentKey, enabled: boolean) {
+    setKeyScopeBusy(key.id);
+    setKeyMessage("");
+    try {
+      const result = await fetchJSON<{ scopes: string[] }>(`/external/v1/keys/${encodeURIComponent(key.id)}/dm-access`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      setExternalKeys((current) => current.map((item) => item.id === key.id ? { ...item, scopes: result.scopes } : item));
+      setKeyMessage(enabled
+        ? `Private DM read enabled on ${key.label} (${key.key_prefix}) only. Workspace DM consent must stay on for it to work; no other key changed.`
+        : `Private DM read removed from ${key.label} (${key.key_prefix}) only. No other key changed.`);
+    } catch (error) {
+      setKeyMessage(error instanceof Error ? error.message : "DM access could not be changed on that key. Workspace DM consent must be on to grant it. No change was made.");
+    } finally {
+      setKeyScopeBusy(null);
+    }
+  }
+
   async function updateKeyPhotoAccess(key: ExternalAgentKey, enabled: boolean) {
     setKeyScopeBusy(key.id);
     setKeyMessage("");
@@ -287,12 +307,12 @@ export default function McpWorkspacePage() {
             <p className="mt-2 text-xs leading-5 text-zinc-400">Enable property cross-search for your own signed-in mcp.propai.live/raw-mcp connection. This grants reader access only, not sharing of your own groups, DM access or writes. Refresh the existing connection's tool list after enabling. No replacement connection is required.</p>
             {mcpMarketAccess===null?<p className="mt-3 text-xs text-zinc-400">MCP permission could not be verified. Refresh before changing it.</p>:<button type="button" disabled={keyBusy} onClick={()=>void updateMcpMarketAccess()} className="mt-3 rounded-lg border border-emerald-400/30 px-3 py-2 text-xs text-emerald-200">{mcpMarketAccess?"Disable MCP property cross-search":"Enable MCP property cross-search"}</button>}
           </div>}
-          <h3 className="text-sm font-semibold text-white">Existing external API keys</h3>
-          <p className="mt-1 text-xs leading-5 text-zinc-500">Enable private CRM writes on the current key without rotating its secret. This does not change private DM permission.</p>
+          <h3 id="key-access" className="scroll-mt-24 text-sm font-semibold text-white">Existing external API keys</h3>
+          <p className="mt-1 text-xs leading-5 text-zinc-500">Enable private CRM writes or private DM read on one existing key without rotating its secret. Private DM read also needs the workspace consent switch below and changes no other key.</p>
           <div className="mt-3 space-y-2">
             {externalKeys.filter((key) => !key.revoked_at).map((key) => {
               const hasWriteAccess = key.scopes.includes("inventory:write") && key.scopes.includes("requirements:write");
-              return <div key={key.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 px-3 py-3">
+              return <div key={key.id} id={`key-${key.id}`} className="flex scroll-mt-24 flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 px-3 py-3">
                 <div className="min-w-0">
                   <div className="text-xs font-semibold text-white">{key.label}</div>
                   <code className="mt-1 block text-[11px] text-zinc-500">{key.key_prefix}</code>
@@ -300,6 +320,7 @@ export default function McpWorkspacePage() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button type="button" onClick={() => void updateKeyWriteAccess(key, !hasWriteAccess)} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{keyScopeBusy === key.id ? "Updating…" : hasWriteAccess ? "Remove write access" : "Enable private CRM writes"}</button>
+                  <button type="button" onClick={() => void updateKeyDmAccess(key, !key.scopes.includes("raw_messages:dms"))} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{key.scopes.includes("raw_messages:dms") ? "Remove private DM read" : "Enable private DM read"}</button>
                   <button type="button" onClick={() => void updateKeyPhotoAccess(key, !key.scopes.includes("photos:write"))} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-emerald-300/30 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-300/10 disabled:opacity-60">{key.scopes.includes("photos:write") ? "Disable private photos" : "Enable private photos only"}</button>
                   {marketEnabled && <button type="button" onClick={() => void updateKeyMarketAccess(key, !key.scopes.includes("broker_market:read"))} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-emerald-300/30 px-3 py-2 text-xs font-semibold text-emerald-200 disabled:opacity-60">{key.scopes.includes("broker_market:read") ? "Disable property cross-search" : "Enable property cross-search"}</button>}
                   <button type="button" onClick={() => void rotateKey(key)} disabled={keyScopeBusy === key.id} className="inline-flex min-h-9 items-center rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5 disabled:opacity-60">Rotate token</button>
@@ -316,7 +337,7 @@ export default function McpWorkspacePage() {
           <p className="mt-1 text-xs leading-5 text-zinc-400">These changes are paused until you approve them. Review the request in Instinct or your CRM context before allowing it.</p>
           <div className="mt-3 space-y-2">{approvals.map((approval) => <div key={approval.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 px-3 py-3"><div><div className="text-xs font-semibold text-white">{approval.entity_type}</div><div className="mt-1 text-[11px] text-zinc-400">Sensitive: {approval.sensitive_fields.join(", ")}</div><code className="mt-1 block max-w-xl break-all text-[11px] text-zinc-500">{JSON.stringify(approval.payload || {})}</code></div><div className="flex gap-2"><button type="button" onClick={() => void decideApproval(approval.id, false)} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300">Reject</button><button type="button" onClick={() => void decideApproval(approval.id, true)} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black">Approve</button></div></div>)}</div>
         </div>}
-        <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4">
+        <div id="dm-consent" className="mt-5 scroll-mt-24 rounded-xl border border-white/10 bg-black/20 p-4">
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="text-sm font-semibold text-white">Allow private DM access</div>

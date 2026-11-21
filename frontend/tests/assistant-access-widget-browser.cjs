@@ -31,6 +31,7 @@ async function fixture(viewport,opts={}){
   if(p.includes('/phone-directory'))return r.fulfill({json:{entries:[]}});
   if(p==='/api/external/v1/connection-status'){
    if(opts.statusFail)return r.fulfill({status:404,json:{detail:'not found'}});
+   if(opts.revoked)return r.fulfill({json:{...connectionStatus,connection:{...connectionStatus.connection,key_revoked:true,can_read_groups:false,can_read_dms:false,can_write_private_crm:false}}});
    return r.fulfill({json:connectionStatus});
   }
   if(p==='/api/external/v1/market/policy')return r.fulfill({json:{enabled:true,consent_version:'v2',consent_text:'fixture'}});
@@ -58,6 +59,11 @@ async function fixture(viewport,opts={}){
   assert.match(text,/2 groups shared/,`pooled count missing at ${vp.name}`);
   assert.match(text,/3 other active manual API keys exist/,`unbound key note missing at ${vp.name}`);
   assert.match(text,/saved contact names are shown instead/,`DM benefit copy missing at ${vp.name}`);
+  assert.match(text,/Phone numbers written as digits are hidden/,`bounded DM copy missing at ${vp.name}`);
+  assert.match(text,/Writes with contact or price details still need your approval/,`CRM approval copy missing at ${vp.name}`);
+  assert.match(text,/is linked to this workspace/,`softened header missing at ${vp.name}`);
+  const dmLink=await panel.getByRole('link',{name:'Enable DM read on the key'}).getAttribute('href');
+  assert.equal(dmLink,'/workspace/mcp#key-key-1',`DM amber link must anchor the bound key control at ${vp.name}`);
   await page.screenshot({path:`/downloads/propai-widget-${vp.name}.png`,fullPage:false});
   assert.deepEqual(errors,[],`page errors at ${vp.name}: ${errors.join('|')}`);
   if(vp.name==='390'){
@@ -73,6 +79,21 @@ async function fixture(viewport,opts={}){
   }
   await context.close();
  }
+ // Revoked bound key: nothing green, no effective capabilities
+ {
+  const {page,context,errors}=await fixture({width:390,height:844},{revoked:true});
+  await page.getByRole('button',{name:'Open assistant access',exact:true}).click();
+  const panel=page.getByRole('region',{name:'Assistant access'});
+  await panel.waitFor({timeout:10000});
+  await page.getByText('The linked assistant key was revoked.',{exact:false}).waitFor({timeout:10000});
+  const text=await panel.innerText();
+  assert.doesNotMatch(text,/Needs DM permission on the key/,'revoked key showed amber DM state');
+  const onStates=text.match(/\bOn\b/g)||[];
+  assert.equal(onStates.length,0,`revoked key still showed green On states: ${text}`);
+  await page.screenshot({path:'/downloads/propai-widget-revoked.png',fullPage:false});
+  assert.deepEqual(errors,[],`page errors in revoked fixture: ${errors.join('|')}`);
+  await context.close();
+ }
  // Unavailable-endpoint honesty: no optimistic aggregate fallback
  {
   const {page,context,errors}=await fixture({width:390,height:844},{statusFail:true});
@@ -80,8 +101,51 @@ async function fixture(viewport,opts={}){
   await page.getByText(/Current access status could not be verified/).waitFor({timeout:10000});
   const panelText=await page.getByRole('region',{name:'Assistant access'}).innerText();
   assert.doesNotMatch(panelText,/Needs DM permission|groups shared/,'unavailable state leaked guessed statuses');
+  assert.doesNotMatch(panelText,/controls below/,'unavailable state claimed working controls');
   await page.screenshot({path:'/downloads/propai-widget-unavailable.png',fullPage:false});
   assert.deepEqual(errors,[],`page errors in unavailable fixture: ${errors.join('|')}`);
+  await context.close();
+ }
+ // Integrations page: per-key DM grant control reaches the reviewed endpoint
+ {
+  const context=await browser.newContext({serviceWorkers:'block',viewport:{width:1280,height:900}});const page=await context.newPage();
+  const now=Math.floor(Date.now()/1000),token=[Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url'),Buffer.from(JSON.stringify({sub:user.id,aud:'authenticated',exp:now+3600})).toString('base64url'),'fixture'].join('.');
+  await page.addInitScript(({user,token,now})=>{localStorage.setItem('sb-test-auth-token',JSON.stringify({access_token:token,refresh_token:'fixture',expires_at:now+3600,expires_in:3600,token_type:'bearer',user}));},{user,token,now});
+  const errors=[],calls=[];
+  const keyRow={id:'key-1',label:'Instinct',key_prefix:'ppai_aaa',scopes:['raw_messages:read'],revoked_at:null,created_at:'2026-11-01T00:00:00Z',last_used_at:null};
+  page.on('pageerror',e=>errors.push(e.message));
+  await page.route('https://test.supabase.co/**',r=>r.fulfill(r.request().url().includes('/user')?{json:user}:{status:204,body:''}));
+  await page.route('**/api/**',async r=>{
+   const req=r.request(),url=new URL(req.url()),p=url.pathname;calls.push({path:p,method:req.method(),body:req.postDataJSON()});
+   if(p==='/api/auth/me')return r.fulfill({json:{authenticated:true,user,active_tenant:'local-tenant',organizations:[{id:'local-tenant'}],is_super_admin:false}});
+   if(p==='/api/phones'||p.startsWith('/api/phones?'))return r.fulfill({json:{phones:[phone]}});
+   if(p==='/api/dashboard/whatsapp-status')return r.fulfill({json:{state:'open',connected:true,status_available:true,status_stale:false}});
+   if(p==='/api/orgs/current')return r.fulfill({json:{id:'local-tenant',name:'Local fixture'}});
+   if(p==='/api/onboarding/groups')return r.fulfill({json:{groups:[],cap:null,unlimited:true,selected_count:0,opted_out_count:0,tier:'fixture',extraction_status:'stopped'}});
+   if(p.includes('/phone-directory'))return r.fulfill({json:{entries:[]}});
+   if(p==='/api/external/v1/connection-status')return r.fulfill({json:connectionStatus});
+   if(p==='/api/external/v1/keys')return r.fulfill({json:{keys:[keyRow]}});
+   if(p==='/api/external/v1/approvals')return r.fulfill({json:{approvals:[]}});
+   if(p==='/api/external/v1/dm-consent')return r.fulfill({json:{enabled:true}});
+   if(p==='/api/external/v1/market/policy')return r.fulfill({json:{enabled:true,consent_version:'v2',consent_text:'fixture'}});
+   if(p==='/api/external/v1/market/mcp-reader-access')return r.fulfill({json:{enabled:false}});
+   if(p==='/api/external/v1/keys/key-1/dm-access'&&req.method()==='PUT')return r.fulfill({json:{id:'key-1',scopes:['raw_messages:read','raw_messages:dms']}});
+   return r.fulfill({json:{}});
+  });
+  await page.goto(origin+'/workspace/mcp',{waitUntil:'domcontentloaded'});
+  const grant=page.getByRole('button',{name:'Enable private DM read',exact:true});
+  await grant.waitFor({timeout:20000});
+  await page.locator('#key-access').waitFor();
+  await page.locator('#dm-consent').waitFor();
+  await page.locator('#key-key-1').waitFor();
+  await grant.click();
+  await page.getByText(/DM key scope present; workspace consent still applies/).first().waitFor({timeout:10000});
+  const grantCall=calls.find(c=>c.path==='/api/external/v1/keys/key-1/dm-access');
+  assert.ok(grantCall,'dm-access endpoint was not called');
+  assert.equal(grantCall.method,'PUT');
+  assert.deepEqual(grantCall.body,{enabled:true},'dm-access grant body');
+  await page.screenshot({path:'/downloads/propai-widget-mcp-dm-grant.png',fullPage:false});
+  assert.deepEqual(errors,[],`page errors in mcp fixture: ${errors.join('|')}`);
   await context.close();
  }
  console.log('assistant-access-widget-browser: all assertions passed');

@@ -185,9 +185,9 @@ export function AssistantAccessWidget({ enabled }: { enabled: boolean }) {
               <h2 className="text-sm font-semibold text-white">Assistant access</h2>
               <p className="mt-0.5 text-[11px] leading-4 text-zinc-400">
                 {state.kind === "ready" && connected
-                  ? `${connection?.label || "Instinct"} is connected. This is what it can do right now.`
+                  ? `${connection?.label || "Instinct"} is linked to this workspace. This is what its key can do right now.`
                   : state.kind === "ready" && connection?.key_revoked
-                    ? "The assistant connection was revoked. Reconnect from the Instinct page."
+                    ? "The linked assistant key was revoked. Reconnect from the Instinct page."
                     : state.kind === "ready"
                       ? "No assistant connection is set up yet."
                       : "What your assistant can do in this workspace."}
@@ -208,7 +208,7 @@ export function AssistantAccessWidget({ enabled }: { enabled: boolean }) {
           {state.kind === "unavailable" && (
             <div className="mt-3">
               <p className="text-[11px] leading-4 text-zinc-400">
-                Current access status could not be verified. Nothing was changed; the controls below still work.
+                Current access status could not be verified. Nothing was changed.
               </p>
               <div className="mt-2 flex gap-2">
                 <button
@@ -245,27 +245,35 @@ export function AssistantAccessWidget({ enabled }: { enabled: boolean }) {
                   linkLabel="Manage WhatsApp capture"
                 />
                 <Row
-                  on={Boolean(connection?.can_write_private_crm)}
+                  on={connected && Boolean(connection?.can_write_private_crm)}
                   title="Private CRM writes"
                   state={connected && connection?.can_write_private_crm ? "On" : "Off"}
-                  benefit="Add and update properties and clients in your private CRM. Each write still needs your approval."
-                  linkHref="/workspace/mcp"
+                  benefit="Add and update properties and clients in your private CRM. Writes with contact or price details still need your approval."
+                  linkHref="/workspace/mcp#key-access"
                   linkLabel="Manage write access"
                 />
                 <Row
-                  on={Boolean(state.status.dm_consent_enabled && connection?.can_read_dms)}
+                  on={connected && Boolean(state.status.dm_consent_enabled && connection?.can_read_dms)}
                   warn={Boolean(state.status.dm_consent_enabled && connected && !connection?.can_read_dms)}
                   title="Private DMs"
                   state={
-                    state.status.dm_consent_enabled && connection?.can_read_dms
+                    connected && state.status.dm_consent_enabled && connection?.can_read_dms
                       ? "On"
                       : state.status.dm_consent_enabled && connected
                         ? "Needs DM permission on the key"
                         : "Off"
                   }
-                  benefit="Search your private one-to-one messages. Other people's phone numbers are hidden; saved contact names are shown instead."
-                  linkHref="/workspace/mcp"
-                  linkLabel="Manage DM consent"
+                  benefit="Search your private one-to-one messages. Phone numbers written as digits are hidden; saved contact names are shown instead."
+                  linkHref={
+                    state.status.dm_consent_enabled && connected && !connection?.can_read_dms && connection?.key_id
+                      ? `/workspace/mcp#key-${connection.key_id}`
+                      : "/workspace/mcp#dm-consent"
+                  }
+                  linkLabel={
+                    state.status.dm_consent_enabled && connected && !connection?.can_read_dms
+                      ? "Enable DM read on the key"
+                      : "Manage DM consent"
+                  }
                 />
                 <Row
                   on={Boolean(state.pooledSharedGroups && state.pooledSharedGroups > 0)}
