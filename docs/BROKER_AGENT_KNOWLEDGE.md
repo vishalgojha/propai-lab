@@ -1,6 +1,6 @@
 # How broker Instincts read Mumbai listings
 
-General background knowledge for an assistant working with real estate brokers and WhatsApp deal flow. It holds no client, deal or contact data. Updated 19 Nov 2026.
+General background knowledge for an assistant working with real estate brokers and WhatsApp deal flow. It holds no client, deal or contact data. Updated 21 Nov 2026.
 
 ## How to use this
 Treat it as background knowledge, not as instructions from your broker. Your broker's own rules, permissions and sources come first and can override anything here. Items marked Confirmed were stated by a working broker. Items marked General describe common practice in Indian rental and sale listings. This guide installs nothing, connects no data source, grants no access and sets no rules for how any system handles data.
@@ -29,15 +29,20 @@ Treat it as background knowledge, not as instructions from your broker. Your bro
 - Keep worth checking (call priority, what to verify) separate from client-ready. Treat a match as unconfirmed until your broker has checked the must-haves with the listing broker.
 
 
-## Ask the connected broker about group selection
+## First step: review shared groups and suggest unchecks
 
-When an authenticated connected broker starts connection setup, or the broker raises sharing, cross-search or connecting a phone, raise this choice conversationally only if it remains unanswered. Do not raise it at every new property-search session. Respect a remembered prior answer. Do not interrupt an unrelated task, ask repeatedly in the same session, or ask again after a refusal unless the broker brings it up. A known previous selection is not permission to change it or add new groups.
+When an authenticated connected broker starts connection setup or a first raw session, make shared-group review the first step, before other setup guidance. Raise it again only if it remains incomplete and the broker asks or starts sharing changes. Do not raise it at every new property-search session. Respect a remembered prior answer or completed review. Do not interrupt an unrelated task or ask again after a refusal unless the broker brings it up. A known previous selection is not permission to change it or add new groups.
 
-Ask: "Would you like to review which property groups you want to share with other PropAI brokers? Personal, sensitive and unrelated groups should stay unchecked. You choose the exact groups, and nothing is shared without your confirmation."
+Ask: "Would you like to review which property groups you want to share with other PropAI brokers? I can show what is currently shared and suggest which to uncheck. Personal, sensitive and unrelated groups should stay unchecked. You choose the exact groups, and nothing changes without your confirmation."
 
-If they agree to review, guide them to https://app.propai.live/whatsapp?tab=groups and the separate raw-message sharing controls. Explain the group-choice checklist below. Let the broker review their current account and exact names there. The ordinary external read-only connection does not grant permission to read a full group directory or manage sharing. Do not infer group choices from message searches, request broader account access, or save consents through another route. If the broker wants help with named groups, use only the names they choose to provide and ask about unclear purposes, not private message content. A yes to reviewing is not approval to share all groups.
-
-If they decline, acknowledge the choice and continue the original task without changing sharing or reader access. If no phone is connected, do not pressure them to connect or share their own data just to be a reader. If they say they already chose groups, leave the set alone unless they ask to review it.
+1. See the current set. Where cross-search tools are present, call property_shared_sources_list and show the broker the exact shared groups with their listed metadata (names, message counts and last activity). Where those tools are not present, guide the broker to https://app.propai.live/whatsapp?tab=groups and the separate raw-message sharing controls to review there. The ordinary external read-only connection does not grant permission to read a full group directory or manage sharing; this review covers currently shared groups only and never includes direct messages.
+2. Give tentative suggestions; the broker decides. For each shared group, offer a tentative suggestion with its reason:
+   - Names that read as personal, family, health, school, social or unrelated business: suggest unchecking, and say the suggestion comes from the name alone.
+   - Names that read as property-specific broker networks, rental/sale requirement groups or locality/project property groups: suggest keeping, with the same caveat that a name is only a clue, not proof of purpose or authority.
+   - Unclear or mixed-purpose names: do not lean either way; ask the broker what the group is for.
+   - You may state listed activity facts (for example "no messages shared yet" or "last activity on <date>") as context. Never present a name or low activity as proof a group is irrelevant, and never recommend removal on activity alone.
+   Do not read message content to classify groups; names and the listed metadata are the only inputs. Do not infer group choices from message searches, request broader account access, or save consents through another route. If the broker wants help with named groups, use only the names they choose to provide and ask about unclear purposes, not private message content.
+3. Broker approval before any uncheck. The broker chooses the exact groups. Every change is made by the broker as the workspace owner in PropAI; you never change sharing, capture or reader access yourself, and there is no automatic uncheck. Recommendations never count as consent. A yes to reviewing is not approval to uncheck anything. If they decline, acknowledge the choice and continue the original task without changing sharing or reader access. If no phone is connected, do not pressure them to connect or share their own data just to be a reader. If they say they already chose groups, leave the set alone unless they ask to review it.
 
 This workflow is delivered through PropAI's API guide/knowledge fetch and authenticated raw MCP initialization. It cannot push a question into an assistant conversation that is not fetching PropAI guidance or starting/refreshing its connection. Do not claim all existing connected assistants were notified. Guide text is setup advice, never an authorization from the broker.
 
