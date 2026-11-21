@@ -41,6 +41,22 @@ export default function McpWorkspacePage() {
   const [writeAccess, setWriteAccess] = useState(false);
   const [marketEnabled, setMarketEnabled] = useState(false);
   const [mcpMarketAccess,setMcpMarketAccess] = useState<boolean|null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  useEffect(() => {
+    const openForHash = () => {
+      const h = window.location.hash;
+      if (h === "#key-access" || h === "#dm-consent" || /^#key-.+/.test(h)) {
+        setAdvancedOpen(true);
+        requestAnimationFrame(() => {
+          document.getElementById(h.slice(1))?.scrollIntoView({ block: "start" });
+        });
+      }
+    };
+    openForHash();
+    window.addEventListener("hashchange", openForHash);
+    return () => window.removeEventListener("hashchange", openForHash);
+  }, []);
+
   useEffect(()=>{ void fetchJSON<{enabled:boolean}>("/external/v1/market/mcp-reader-access").then(r=>setMcpMarketAccess(r.enabled)).catch(()=>setMcpMarketAccess(null)); },[]);
   async function updateMcpMarketAccess() {
     if(mcpMarketAccess===null)return;
@@ -258,7 +274,7 @@ export default function McpWorkspacePage() {
         <p className="mt-3 text-sm leading-6 text-zinc-300">Simple connection setup is not available yet. Existing access can still be reviewed or removed below.</p>
         <Link href="/workspace/instinct" className="mt-5 inline-flex min-h-12 items-center rounded-lg bg-emerald-400 px-5 py-3 font-semibold text-black">Connect my assistant</Link>
       </div>
-      <details className="rounded-xl border border-white/10 p-4">
+      <details open={advancedOpen} onToggle={(e) => setAdvancedOpen((e.target as HTMLDetailsElement).open)} className="rounded-xl border border-white/10 p-4">
         <summary className="min-h-12 cursor-pointer py-3 text-sm font-semibold text-white">Advanced settings and existing access</summary>
         <p className="mb-5 text-sm text-zinc-400">Review or remove existing access below. Technical setup is optional and separate from the normal connection flow.</p>
 
