@@ -52,41 +52,77 @@ UNNAMED_DM_CONTACT = "Unnamed contact"
 # prices use commas, which break the run on purpose; dates (2026-11-21) and
 # measurements are too short. This is best-effort content masking, not proof
 # that no number can appear (words, media, vcards or odd formats can leak).
-_DM_PHONE_LIKE = re.compile(r"\+?\d[\d\s().\-]{7,17}\d")
-_DM_DATE_LIKE = re.compile(r"^\+?\d{4}-\d{1,2}-\d{1,2}")
+# A maximal run of phone-like characters. The run is unbounded on purpose:
+# adjacent numbers separated by spaces merge into one run and must still be
+# masked, so length bounds belong to the digit count check, not the pattern.
+_DM_PHONE_RUN = re.compile(r"\+?\d[\d\s().\-]*\d")
+_DM_DATE_PREFIX = re.compile(r"^\+?\d{4}-\d{1,2}-\d{1,2}")
+_DM_DATEISH = re.compile(r"^\+?\d{1,2}[-.]\d{1,2}[-.]\d{2,4}$")
 
 
 def _mask_phone_like_text(text: str) -> str:
     def _hide(match: re.Match) -> str:
         run = match.group(0)
-        if _DM_DATE_LIKE.match(run) or ":" in run:
+        if ":" in run or _DM_DATE_PREFIX.match(run) or _DM_DATEISH.match(run):
             return run
         digits = re.sub(r"\D", "", run)
-        if 10 <= len(digits) <= 13:
-            return "[number hidden]"
-        return run
-    return _DM_PHONE_LIKE.sub(_hide, text)
+        if len(digits) < 7:
+            return run
+        return "[number hidden]"
+    return _DM_PHONE_RUN.sub(_hide, text)
 
 
-def _saved_dm_contact_name(sender_jid: str, sender_phone: str, cache: dict) -> str:
+def _tenant_device_jids(tenant_id: str, cache: dict) -> list:
+    """JIDs of the WhatsApp devices that belong to this workspace.
+
+    Contact-name lookups are always bound to one of these devices, so one
+    workspace can never read another workspace's saved contact names."""
+    if tenant_id in cache:
+        return cache[tenant_id]
+    jids = []
+    try:
+        rows = storage.client.table("org_whatsapp_connections").select(
+            "phone_number"
+        ).eq("organization_id", tenant_id).execute().data or []
+    except Exception:
+        rows = []
+    for row in rows:
+        digits = re.sub(r"\D", "", str(row.get("phone_number") or ""))
+        if digits:
+            jids.append(f"{digits}@s.whatsapp.net")
+    cache[tenant_id] = jids
+    return jids
+
+
+def _saved_dm_contact_name(tenant_id: str, sender_jid: str, sender_phone: str, cache: dict, device_cache: dict) -> str:
     """The workspace owner's saved contact name for a DM peer.
 
-    Reads the device contact store (full_name/first_name/business_name) only;
-    the public pushname is not a saved name and is never used. A saved name
-    that is itself phone-like yields no name. Falls back to a fixed label,
-    never to the number."""
-    key = (sender_jid or "", sender_phone or "")
+    Reads the device contact store (full_name/first_name/business_name) only,
+    and only from rows owned by this workspace's own devices (our_jid bound
+    to the tenant's connected numbers). The public pushname is not a saved
+    name and is never used. A saved name that is itself phone-like yields no
+    name. Falls back to a fixed label, never to the number."""
+    key = (tenant_id, sender_jid or "", sender_phone or "")
     if key in cache:
         return cache[key]
+    device_jids = _tenant_device_jids(tenant_id, device_cache)
     name = ""
-    jid_phone_match = re.match(r"\+?(\d+)@s\.whatsapp\.net$", sender_jid or "", re.I)
-    lookups = [value for value in (sender_jid, sender_phone, jid_phone_match.group(1) if jid_phone_match else "") if value]
-    for lookup in lookups:
-        for column in ("their_jid", "our_jid", "redacted_phone"):
+    if device_jids:
+        jid_phone_match = re.match(r"\+?(\d+)@s\.whatsapp\.net$", sender_jid or "", re.I)
+        phone_digits = re.sub(r"\D", "", sender_phone or "")
+        jid_digits = jid_phone_match.group(1) if jid_phone_match else ""
+        queries = []
+        for value in (sender_jid, jid_digits):
+            if value:
+                queries.append(("their_jid", value))
+        for value in (phone_digits, jid_digits):
+            if value:
+                queries.append(("redacted_phone", value))
+        for column, value in queries:
             try:
                 result = storage.client.table("whatsmeow_contacts").select(
                     "full_name,first_name,business_name"
-                ).eq(column, lookup).limit(1).execute()
+                ).eq(column, value).in_("our_jid", device_jids).limit(1).execute()
             except Exception:
                 continue
             row = (result.data or [None])[0] if result else None
@@ -103,13 +139,11 @@ def _saved_dm_contact_name(sender_jid: str, sender_phone: str, cache: dict) -> s
                 break
             if name:
                 break
-        if name:
-            break
     cache[key] = name or UNNAMED_DM_CONTACT
     return cache[key]
 
 
-def _mask_dm_response_row(row: dict, name_cache: dict) -> dict:
+def _mask_dm_response_row(row: dict, tenant_id: str, name_cache: dict, device_cache: dict) -> dict:
     """Strip DM peer identifiers from one external response row.
 
     Group rows pass through unchanged. Stored evidence is untouched; this is
@@ -118,7 +152,7 @@ def _mask_dm_response_row(row: dict, name_cache: dict) -> dict:
         return row
     masked = dict(row)
     masked["sender"] = _saved_dm_contact_name(
-        str(row.get("sender_jid") or ""), str(row.get("sender_phone") or ""), name_cache
+        tenant_id, str(row.get("sender_jid") or ""), str(row.get("sender_phone") or ""), name_cache, device_cache
     )
     masked["sender_jid"] = None
     masked["sender_phone"] = None
@@ -417,8 +451,10 @@ async def external_raw_message_search(
         query = query.lte("timestamp", until)
     rows = (query.order("timestamp", desc=True).limit(limit + 1).offset(offset).execute().data or [])
     has_more = len(rows) > limit
+    tenant_id = str(key["tenant_id"])
     name_cache: dict = {}
-    items = [_mask_dm_response_row(row, name_cache) for row in rows[:limit]]
+    device_cache: dict = {}
+    items = [_mask_dm_response_row(row, tenant_id, name_cache, device_cache) for row in rows[:limit]]
     await asyncio.to_thread(_record_assistant_trial_start, str(key["tenant_id"]))
     return {
         "results": items,
@@ -443,7 +479,7 @@ async def external_raw_message_get(raw_message_id: int, key: dict = Depends(exte
         raise HTTPException(404, "Raw WhatsApp message not found")
     if not item.get("is_group"):
         _require_dm_consent(key)
-        item = _mask_dm_response_row(item, {})
+        item = _mask_dm_response_row(item, str(key["tenant_id"]), {}, {})
     return {
         "message": item,
         "source": "raw_whatsapp_message",
@@ -529,7 +565,8 @@ async def external_raw_message_conversation(
     rows = query.order("timestamp", desc=True).limit(limit).execute().data or []
     rows.reverse()
     name_cache = {}
-    rows = [_mask_dm_response_row(row, name_cache) for row in rows]
+    device_cache = {}
+    rows = [_mask_dm_response_row(row, tenant_id, name_cache, device_cache) for row in rows]
     return {
         "messages": rows,
         "count": len(rows),
@@ -1178,15 +1215,18 @@ async def external_connection_status(user: dict = Depends(require_user), tenant_
         ).eq("id", bound_key_id).eq("tenant_id", tenant_id).limit(1).execute()
         bound = (key_result.data or [None])[0] if key_result else None
         scopes = list(bound.get("scopes") or []) if bound else []
+        # A revoked key has no effective capabilities, whatever its stored
+        # scopes say: owner-facing status must never show green for it.
+        revoked = bool(bound and bound.get("revoked_at"))
         connection = {
             "label": session.get("label") or "Instinct",
             "key_id": str(bound_key_id),
             "key_prefix": (bound or {}).get("key_prefix"),
-            "key_revoked": bool(bound and bound.get("revoked_at")),
+            "key_revoked": revoked,
             "scopes": scopes,
-            "can_read_groups": "raw_messages:read" in scopes,
-            "can_read_dms": dm_consent and "raw_messages:dms" in scopes,
-            "can_write_private_crm": bool(WRITE_SCOPES & set(scopes)),
+            "can_read_groups": not revoked and "raw_messages:read" in scopes,
+            "can_read_dms": not revoked and dm_consent and "raw_messages:dms" in scopes,
+            "can_write_private_crm": not revoked and bool(WRITE_SCOPES & set(scopes)),
             "last_used_at": (bound or {}).get("last_used_at"),
         }
 

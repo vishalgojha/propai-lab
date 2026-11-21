@@ -138,6 +138,14 @@ def _install(monkeypatch, tables):
     ("Call +919820012345 today", "Call [number hidden] today"),
     ("Call 98200-12345 today", "Call [number hidden] today"),
     ("Call (022) 48901234 today", "Call ([number hidden] today"),
+    # Adjacent numbers merge into one overlong run and must still be masked.
+    ("Call 919820012345 919123456789 now", "Call [number hidden] now"),
+    ("Call 9820012345 9820012346 9820012347", "Call [number hidden]"),
+    # 00-prefixed international format.
+    ("Reach 0091 98200 12345 today", "Reach [number hidden] today"),
+    ("Reach 00919820012345 today", "Reach [number hidden] today"),
+    # wa.me links carry the number in digits.
+    ("share wa.me/919820012345 please", "share wa.me/[number hidden] please"),
 ])
 def test_phone_like_runs_are_hidden(text, hidden):
     assert _mask_phone_like_text(text) == hidden
@@ -149,6 +157,7 @@ def test_phone_like_runs_are_hidden(text, hidden):
     "2,50,00,000 final",
     "1200 sqft carpet",
     "visit on 2026-11-21",
+    "visit on 21-11-2026",
     "met on 2026-11-21 14:30",
     "available 5-7 pm",
     "tower 4 flat 1203",
@@ -159,31 +168,55 @@ def test_property_quantities_prices_and_dates_survive(text):
 
 # --- saved contact name resolution -------------------------------------------
 
+DEVICE_JID = "919999900001@s.whatsapp.net"
+OTHER_DEVICE_JID = "918888800002@s.whatsapp.net"
+
+
+def _contacts(monkeypatch, rows, device_rows=None):
+    devices = device_rows if device_rows is not None else [{"organization_id": "t1", "phone_number": "+91 99999 00001"}]
+    _install(monkeypatch, {
+        "org_whatsapp_connections": devices,
+        "whatsmeow_contacts": rows,
+    })
+
+
 def test_saved_full_name_wins(monkeypatch):
-    _install(monkeypatch, {"whatsmeow_contacts": [{"their_jid": "9198@s.whatsapp.net", "full_name": "Sheetal", "first_name": "", "business_name": ""}]})
-    assert _saved_dm_contact_name("9198@s.whatsapp.net", "9198200", {}) == "Sheetal"
+    _contacts(monkeypatch, [{"their_jid": "9198@s.whatsapp.net", "our_jid": DEVICE_JID, "full_name": "Sheetal", "first_name": "", "business_name": ""}])
+    assert _saved_dm_contact_name("t1", "9198@s.whatsapp.net", "9198200", {}, {}) == "Sheetal"
 
 
 def test_pushname_is_never_used_as_saved_name(monkeypatch):
-    _install(monkeypatch, {"whatsmeow_contacts": [{"their_jid": "9198@s.whatsapp.net", "push_name": "Sheetal"}]})
-    assert _saved_dm_contact_name("9198@s.whatsapp.net", "", {}) == UNNAMED_DM_CONTACT
+    _contacts(monkeypatch, [{"their_jid": "9198@s.whatsapp.net", "our_jid": DEVICE_JID, "push_name": "Sheetal"}])
+    assert _saved_dm_contact_name("t1", "9198@s.whatsapp.net", "", {}, {}) == UNNAMED_DM_CONTACT
 
 
 def test_saved_name_with_embedded_number_is_masked(monkeypatch):
-    _install(monkeypatch, {"whatsmeow_contacts": [{"their_jid": "9198@s.whatsapp.net", "full_name": "Rahul 9820012345"}]})
-    assert _saved_dm_contact_name("9198@s.whatsapp.net", "", {}) == "Rahul [number hidden]"
+    _contacts(monkeypatch, [{"their_jid": "9198@s.whatsapp.net", "our_jid": DEVICE_JID, "full_name": "Rahul 9820012345"}])
+    assert _saved_dm_contact_name("t1", "9198@s.whatsapp.net", "", {}, {}) == "Rahul [number hidden]"
 
 
 def test_number_only_saved_name_falls_back_to_unnamed(monkeypatch):
-    _install(monkeypatch, {"whatsmeow_contacts": [{"their_jid": "9198@s.whatsapp.net", "full_name": "9820012345"}]})
-    assert _saved_dm_contact_name("9198@s.whatsapp.net", "", {}) == UNNAMED_DM_CONTACT
+    _contacts(monkeypatch, [{"their_jid": "9198@s.whatsapp.net", "our_jid": DEVICE_JID, "full_name": "9820012345"}])
+    assert _saved_dm_contact_name("t1", "9198@s.whatsapp.net", "", {}, {}) == UNNAMED_DM_CONTACT
 
 
 def test_unknown_contact_never_falls_back_to_phone(monkeypatch):
-    _install(monkeypatch, {"whatsmeow_contacts": []})
-    name = _saved_dm_contact_name("919820056180@s.whatsapp.net", "919820056180", {})
+    _contacts(monkeypatch, [])
+    name = _saved_dm_contact_name("t1", "919820056180@s.whatsapp.net", "919820056180", {}, {})
     assert name == UNNAMED_DM_CONTACT
     assert "9820056180" not in name
+
+
+def test_saved_name_binds_to_own_device_only(monkeypatch):
+    # Another workspace's device has this contact saved; this workspace's
+    # device does not. The other workspace's saved name must never leak.
+    _contacts(monkeypatch, [{"their_jid": "9198@s.whatsapp.net", "our_jid": OTHER_DEVICE_JID, "full_name": "Sheetal"}])
+    assert _saved_dm_contact_name("t1", "9198@s.whatsapp.net", "", {}, {}) == UNNAMED_DM_CONTACT
+
+
+def test_saved_name_lookup_with_no_connected_device_is_unnamed(monkeypatch):
+    _contacts(monkeypatch, [{"their_jid": "9198@s.whatsapp.net", "our_jid": DEVICE_JID, "full_name": "Sheetal"}], device_rows=[])
+    assert _saved_dm_contact_name("t1", "9198@s.whatsapp.net", "", {}, {}) == UNNAMED_DM_CONTACT
 
 
 # --- row masking --------------------------------------------------------------
@@ -198,8 +231,11 @@ def _dm_row():
 
 
 def test_dm_row_masked_with_saved_name(monkeypatch):
-    _install(monkeypatch, {"whatsmeow_contacts": [{"their_jid": "919820012345@s.whatsapp.net", "full_name": "Atul Sondhi"}]})
-    masked = _mask_dm_response_row(_dm_row(), {})
+    _install(monkeypatch, {
+        "org_whatsapp_connections": [{"organization_id": "t1", "phone_number": "919999900001"}],
+        "whatsmeow_contacts": [{"their_jid": "919820012345@s.whatsapp.net", "our_jid": "919999900001@s.whatsapp.net", "full_name": "Atul Sondhi"}],
+    })
+    masked = _mask_dm_response_row(_dm_row(), "t1", {}, {})
     assert masked["sender"] == "Atul Sondhi"
     assert masked["sender_jid"] is None
     assert masked["sender_phone"] is None
@@ -212,7 +248,7 @@ def test_group_row_untouched(monkeypatch):
     _install(monkeypatch, {})
     row = _dm_row()
     row.update({"is_group": True, "group_name": "Kandivali Brokers"})
-    masked = _mask_dm_response_row(row, {})
+    masked = _mask_dm_response_row(row, "t1", {}, {})
     assert masked == row
 
 
@@ -349,3 +385,22 @@ def test_connection_status_without_session_is_unbound(monkeypatch):
     assert result["connection"] is None
     assert result["unbound_active_keys"] == 1
     assert result["dm_consent_enabled"] is False
+
+
+def test_connection_status_revoked_bound_key_has_no_capabilities(monkeypatch):
+    _install(monkeypatch, {
+        "organizations": [{"id": "t1", "external_agent_dms_enabled": True, "external_agent_dms_consented_at": "2026-11-01T00:00:00+00:00"}],
+        "external_agent_connect_sessions": [
+            {"id": "s1", "tenant_id": "t1", "status": "consumed", "label": "Instinct", "api_key_id": "k1", "decided_at": "2026-11-20T00:00:00+00:00"},
+        ],
+        "external_agent_api_keys": [
+            {"id": "k1", "tenant_id": "t1", "label": "Instinct", "key_prefix": "ppai_aaa",
+             "scopes": ["raw_messages:read", "raw_messages:dms", "inventory:write"], "revoked_at": "2026-11-21T00:00:00+00:00", "last_used_at": None},
+        ],
+    })
+    result = asyncio.run(external_agent.external_connection_status(user={"id": "u1"}, tenant_id="t1"))
+    connection = result["connection"]
+    assert connection["key_revoked"] is True
+    assert connection["can_read_groups"] is False
+    assert connection["can_read_dms"] is False
+    assert connection["can_write_private_crm"] is False

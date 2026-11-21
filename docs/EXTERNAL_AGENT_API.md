@@ -95,7 +95,14 @@ Read endpoints:
 | `GET /messages/search` | Search captured WhatsApp source messages | `q`, `scope`, `since`, `until`, `limit`, `offset` |
 | `GET /messages/{raw_message_id}` | Fetch one full source message | `raw_message_id` from search results |
 | `GET /messages/{raw_message_id}/conversation` | Fetch nearby messages from the same private DM chat | `raw_message_id`, `limit` |
-| `GET /connection-status` | Owner UI: workspace DM consent plus the bound assistant connection's actual scopes | owner app session |
+| `GET /connection-status` | Owner UI: workspace DM consent plus the bound assistant connection's effective capabilities | owner app session |
+
+`GET /connection-status` binds to the latest decided connect session's key,
+never an aggregate of every key on the workspace. `connection` is null when no
+connect session has been decided; manually created keys are counted in
+`unbound_active_keys`, not claimed as the assistant connection. When the bound
+key is revoked, `key_revoked` is true and every `can_*` capability is false —
+stored scopes on a revoked key grant nothing.
 | `POST /messages/{raw_message_id}/extract` | Queue one selected WhatsApp group message for the existing extractor | `raw_messages:extract`; groups only |
 
 ## Shared realtor knowledge and search scope
@@ -188,12 +195,21 @@ Turning the workspace switch off still removes DM read from every key.
 Private DM responses hide the other person's identifiers. On every DM row
 returned by `/messages/search`, `/messages/{raw_message_id}` and
 `/messages/{raw_message_id}/conversation`, `sender` is the workspace owner's
-saved contact name (or `Unnamed contact` when there is none, never the public
-pushname and never a number), and `sender_phone` and `sender_jid` are removed.
-Phone-like digit runs inside DM message text are replaced with
-`[number hidden]`. This masking is best-effort, not a guarantee that no number
-can appear: numbers written as words, inside media, contact cards or unusual
-formats can still come through. Group-message responses are unchanged and still
+saved contact name, resolved only from that workspace's own connected devices
+(or `Unnamed contact` when there is none, never the public pushname and never
+a number), and `sender_phone` and `sender_jid` are returned as null. Phone-like
+digit runs inside DM message text are replaced with `[number hidden]`,
+including adjacent numbers separated only by spaces and `00`-prefixed
+international formats. Dates and times are preserved.
+
+This masking is a bounded best effort, never a guarantee that no number can
+appear. Numbers written as words ("nine eight two zero...") are not detected.
+Media payloads and contact cards are not returned by these endpoints at all
+(`raw_payload` and `message_uid` stay internal to the service), so nothing
+inside an image, voice note or vCard crosses the boundary, but this also means
+no claim is made about their contents. Searching a number still matches the
+stored raw value server-side, so a query can confirm a message exists even
+when the response hides it. Group-message responses are unchanged and still
 carry sender details for the owner's own broker attribution.
 
 Pending sensitive changes are visible only to authenticated workspace owners
