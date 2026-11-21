@@ -1467,11 +1467,18 @@ def _unseal_token(sealed: str) -> str:
 
 def _prune_connect_sessions() -> None:
     """Best-effort removal of expired sessions so uncollected secrets do not
-    linger. Expired rows are also rejected at read time; this just bounds the
-    residue."""
+    linger. Only rows that never minted a key (api_key_id IS NULL) are
+    eligible: once a row has api_key_id set it is the durable binding record
+    for a minted key - approved/consumed rows back /connection-status, and an
+    approved-but-uncollected row is that key's only delivery path - so rows
+    with a minted-key binding are never pruned, however old their expires_at
+    (the approval-link TTL, not a record-retention time). The sealed token on
+    an uncollected row is still rejected at read time once expired; keeping
+    the row preserves provenance without extending collectability. This just
+    bounds the residue of sessions that never produced a key."""
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-        storage.client.table("external_agent_connect_sessions").delete().lt("expires_at", cutoff).execute()
+        storage.client.table("external_agent_connect_sessions").delete().lt("expires_at", cutoff).is_("api_key_id", "null").execute()
     except Exception:
         logger.warning("Connect session prune failed", exc_info=True)
 
