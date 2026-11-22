@@ -19,6 +19,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -350,11 +351,12 @@ type SessionManager struct {
 	startupCancel map[string]context.CancelFunc
 	resetting     map[string]bool
 	startupStatus map[string]Status
-	// intentionalDisconnects marks brokers the owner explicitly disconnected
-	// via /disconnect within this process lifetime. The reconciler must never
-	// restart these on its own; an explicit /connect or new pairing clears it.
-	intentionalDisconnects map[string]bool
-	sessionWg              sync.WaitGroup
+	// reconcileEnabled gates the session reconciler. It starts false and is
+	// enabled only after the durable desired-state table (desired_state.go)
+	// is ensured at startup; without that table there is no trustworthy
+	// record of owner intent, so auto-starting anything would be unsafe.
+	reconcileEnabled atomic.Bool
+	sessionWg        sync.WaitGroup
 }
 
 type inboxThreadCursor struct {
@@ -389,15 +391,25 @@ type selfChatAgentResponse struct {
 }
 
 // reconcileAction decides what the periodic reconciler may do with one mapped
-// broker. It is deliberately conservative: anything that is not a paired,
-// mapped, currently-not-running, not-intentionally-disconnected session is a
-// skip, never a start.
-func reconcileAction(sessionExists, intentionalDisconnect, devicePaired bool) string {
+// broker. It is deliberately conservative: a session is (re)started only when
+// every guard passes, and durable owner intent
+// (broker_session_desired_state, see desired_state.go) says "running".
+// That record is set to running only after the broker actually completed a
+// WhatsApp connect (events.Connected) or the owner explicitly hit /connect,
+// and to stopped on an explicit /disconnect, so it survives process
+// restarts. Brokers with no recorded intent — the whole pre-existing fleet
+// and any broker that never connected while this build ran — are left
+// exactly as today: stopped until someone connects them manually. Deliberate
+// reset/delete-session deletes the mapping, so those brokers never appear in
+// the reconciler's list at all. Anything that is not an explicit, evidenced
+// "start" is a skip.
+func reconcileAction(sessionExists bool, desiredState string, devicePaired bool) string {
 	switch {
 	case sessionExists:
 		return "skip-running"
-	case intentionalDisconnect:
-		return "skip-intentional-disconnect"
+	case desiredState != desiredStateRunning:
+		// "stopped" or unknown/absent: no durable positive intent, do not start.
+		return "skip-no-durable-want"
 	case !devicePaired:
 		return "skip-unpaired"
 	default:
@@ -411,6 +423,14 @@ func reconcileAction(sessionExists, intentionalDisconnect, devicePaired bool) st
 // disconnects, and leaves brokers owned by another ingestor instance alone
 // (StartOrGet returns nil when the cross-instance advisory lock is held).
 func (sm *SessionManager) reconcileMappedSessions(ctx context.Context) {
+	if !sm.reconcileEnabled.Load() {
+		return
+	}
+	want, err := sm.desiredStates(ctx)
+	if err != nil {
+		log.Printf("reconciler: desired-state read failed: %v", err)
+		return
+	}
 	rows, err := sm.db.QueryContext(ctx, "SELECT whatsapp_connection_key, device_jid FROM broker_whatsapp_devices")
 	if err != nil {
 		log.Printf("reconciler: mapping query failed: %v", err)
@@ -441,11 +461,11 @@ func (sm *SessionManager) reconcileMappedSessions(ctx context.Context) {
 			log.Printf("[broker %s] reconciler: device lookup failed: %v", m.brokerID, getErr)
 			continue
 		}
-		action := reconcileAction(sm.Get(m.brokerID) != nil, sm.isIntentionalDisconnect(m.brokerID), device != nil && device.ID != nil)
+		action := reconcileAction(sm.Get(m.brokerID) != nil, want[m.brokerID], device != nil && device.ID != nil)
 		if action != "start" {
 			continue
 		}
-		log.Printf("[broker %s] reconciler: starting mapped paired session", m.brokerID)
+		log.Printf("[broker %s] reconciler: restarting mapped paired session with durable running intent (missing after restart/crash)", m.brokerID)
 		if session := sm.StartOrGet(m.brokerID); session == nil {
 			log.Printf("[broker %s] reconciler: session owned by another instance; leaving it alone", m.brokerID)
 		}
@@ -472,36 +492,14 @@ func (sm *SessionManager) startReconciler() {
 	log.Printf("reconciler running every %d minute(s)", intervalMinutes)
 }
 
-func (sm *SessionManager) markIntentionalDisconnect(brokerID string) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	if sm.intentionalDisconnects == nil {
-		sm.intentionalDisconnects = make(map[string]bool)
-	}
-	sm.intentionalDisconnects[brokerID] = true
-}
-
-func (sm *SessionManager) clearIntentionalDisconnect(brokerID string) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	delete(sm.intentionalDisconnects, brokerID)
-}
-
-func (sm *SessionManager) isIntentionalDisconnect(brokerID string) bool {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-	return sm.intentionalDisconnects[brokerID]
-}
-
 func NewSessionManager(container *sqlstore.Container, db, lockDB *sql.DB) *SessionManager {
 	return &SessionManager{
-		sessions:             make(map[string]*BrokerSession),
-		container:            container,
-		db:                   db,
-		lockDB:               lockDB,
-		starting:             make(map[string]chan struct{}),
-		startupStatus:        make(map[string]Status),
-		intentionalDisconnects: make(map[string]bool),
+		sessions:      make(map[string]*BrokerSession),
+		container:     container,
+		db:            db,
+		lockDB:        lockDB,
+		starting:      make(map[string]chan struct{}),
+		startupStatus: make(map[string]Status),
 	}
 }
 
@@ -945,6 +943,9 @@ func (sm *SessionManager) deleteDeviceMapping(ctx context.Context, brokerID stri
 	}
 
 	_, err = sm.db.ExecContext(ctx, "DELETE FROM broker_whatsapp_devices WHERE whatsapp_connection_key=$1", brokerID)
+	// The broker's identity is gone (reset/delete-session); its durable
+	// intent record goes with it so a future fresh pairing starts clean.
+	sm.deleteDesiredState(brokerID)
 	return err
 }
 
@@ -1416,6 +1417,10 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 			ConnectedSince:  time.Now().UTC().Format(time.RFC3339),
 		})
 		log.Printf("[broker %s] connected to WhatsApp server (phone: %s)", s.brokerID, phone)
+		// A completed connect is proven owner intent: the session was wanted
+		// and working. Record it durably so the reconciler may restore this
+		// broker after a later crash/restart dropped it.
+		go sm.setDesiredState(s.brokerID, desiredStateRunning)
 		go sm.initializeConnectedSession(s)
 
 	case *events.PairSuccess:
@@ -2641,8 +2646,9 @@ func (sm *SessionManager) connectHandler(w http.ResponseWriter, r *http.Request)
 		json.NewEncoder(w).Encode(map[string]string{"error": "broker_id is required"})
 		return
 	}
-	// An explicit /connect is owner intent to run again: clear the disconnect mark.
-	sm.clearIntentionalDisconnect(brokerID)
+	// An explicit /connect is durable owner intent to run again: record it so
+	// the reconciler keeps this broker alive across later crashes/restarts.
+	sm.setDesiredState(brokerID, desiredStateRunning)
 	session := sm.StartOrGet(brokerID)
 	if session == nil {
 		w.WriteHeader(http.StatusConflict)
@@ -3077,9 +3083,9 @@ func (sm *SessionManager) disconnectHandler(w http.ResponseWriter, r *http.Reque
 		json.NewEncoder(w).Encode(map[string]string{"error": "broker_id is required"})
 		return
 	}
-	// Remember the owner asked for this disconnect so the reconciler does not
-	// quietly restart the session behind their back.
-	sm.markIntentionalDisconnect(brokerID)
+	// Record the owner asked for this disconnect (durable, survives restart)
+	// so the reconciler never quietly restarts the session behind their back.
+	sm.setDesiredState(brokerID, desiredStateStopped)
 	barrierCtx, cancelBarrier := context.WithTimeout(r.Context(), 7*time.Second)
 	finish, barrierErr := sm.beginReset(barrierCtx, brokerID)
 	cancelBarrier()
@@ -4015,8 +4021,16 @@ func main() {
 	// mapped sessions are restored at process start, and restores only happen
 	// at startup. After a crash or restart, every other mapped, paired broker
 	// would stay disconnected until someone manually clicks Reconnect in the
-	// app. The reconciler closes that gap at runtime, conservatively.
-	sm.startReconciler()
+	// app. The reconciler closes that gap at runtime, conservatively: only
+	// brokers with durable evidence the owner wanted them running
+	// (broker_session_desired_state) are restarted. Without the intent table
+	// the reconciler stays disabled rather than guessing.
+	if err := ensureDesiredStateTable(sm.db); err != nil {
+		log.Printf("reconciler disabled: desired-state table unavailable: %v", err)
+	} else {
+		sm.reconcileEnabled.Store(true)
+		sm.startReconciler()
+	}
 
 	// HTTP server
 	mux := http.NewServeMux()
