@@ -148,6 +148,12 @@ async def add_directory_entry(
         )
     except Exception as exc:
         message = str(exc).lower()
+        if "unique" in message or "duplicate" in message:
+            raise HTTPException(
+                409,
+                "This WhatsApp number is already saved in this workspace. "
+                "Edit the existing entry instead of adding it again.",
+            ) from exc
         if "maximum" in message or "p0001" in message:
             raise HTTPException(400, "Maximum 3 WhatsApp phone numbers per workspace") from exc
         raise

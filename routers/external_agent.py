@@ -167,6 +167,30 @@ def _require_dm_consent(key: dict):
     _require_scope(key, "raw_messages:dms")
 
 
+def _raw_message_window(since: str, until: str) -> tuple[str, str]:
+    """Return one bounded, timezone-aware window for raw evidence reads."""
+    now = datetime.now(timezone.utc)
+
+    def parse(value: str, label: str) -> datetime | None:
+        if not value.strip():
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise HTTPException(422, f"{label} must be a valid ISO date") from exc
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    end = parse(until, "until") or now
+    start = parse(since, "since") or (end - timedelta(days=30))
+    if start > end:
+        raise HTTPException(422, "since must be earlier than until")
+    if (end.date() - start.date()).days > 90:
+        raise HTTPException(422, "Raw message search is limited to a 90-day window")
+    return start.isoformat(), end.isoformat()
+
+
 ASSISTANT_TRIAL_DAYS = 15
 # Written only when the clock is started by the first-successful-search path.
 # Rows without this marker predate it; their start is NOT a recorded search.
@@ -303,6 +327,7 @@ async def external_raw_message_search(
     _require_scope(key, "raw_messages:read")
     if scope in {"dms", "all"}:
         _require_dm_consent(key)
+    since_value, until_value = _raw_message_window(since, until)
     query = storage.client.table("raw_messages").select(RAW_MESSAGE_COLUMNS).eq("tenant_id", str(key["tenant_id"]))
     if scope == "groups":
         query = query.eq("is_group", True)
@@ -317,10 +342,7 @@ async def external_raw_message_search(
             f"message.ilike.%{term}%,sender.ilike.%{term}%,"
             f"sender_phone.ilike.%{term}%,group_name.ilike.%{term}%"
         )
-    if since:
-        query = query.gte("timestamp", since)
-    if until:
-        query = query.lte("timestamp", until)
+    query = query.gte("timestamp", since_value).lte("timestamp", until_value)
     rows = (query.order("timestamp", desc=True).limit(limit + 1).offset(offset).execute().data or [])
     has_more = len(rows) > limit
     items = rows[:limit]

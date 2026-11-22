@@ -182,6 +182,10 @@ not use it; keep group and private-message searches separate. If a DM request is
 denied, explain that private-DM access is disabled and stop. Do not retry with
 `scope=all` or search groups instead.
 
+If `since` and `until` are omitted, the API searches the most recent 30 days.
+An explicit window may not exceed 90 calendar days; invalid or reversed
+timestamps return `422` rather than widening the search.
+
 Example private-message search:
 
 ```http

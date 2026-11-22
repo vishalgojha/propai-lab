@@ -144,6 +144,23 @@ def test_search_rejects_unknown_scope(monkeypatch):
     assert scope_parameter["schema"]["pattern"] == "^(groups|dms|all)$"
 
 
+def test_raw_message_window_defaults_to_recent_30_days_and_caps_history():
+    start, end = external_agent._raw_message_window("", "")
+    parsed_start = external_agent.datetime.fromisoformat(start)
+    parsed_end = external_agent.datetime.fromisoformat(end)
+    assert (parsed_end.date() - parsed_start.date()).days == 30
+
+    with pytest.raises(HTTPException, match="90-day window"):
+        external_agent._raw_message_window("2026-01-01T00:00:00Z", "2026-04-02T00:00:00Z")
+
+
+def test_raw_message_window_rejects_invalid_or_reversed_dates():
+    with pytest.raises(HTTPException, match="valid ISO date"):
+        external_agent._raw_message_window("not-a-date", "")
+    with pytest.raises(HTTPException, match="earlier"):
+        external_agent._raw_message_window("2026-11-10T00:00:00Z", "2026-11-09T00:00:00Z")
+
+
 def test_public_agent_guide_is_fetchable_without_a_key():
     response = asyncio.run(external_agent.external_agent_docs())
     guide = response.body.decode("utf-8")

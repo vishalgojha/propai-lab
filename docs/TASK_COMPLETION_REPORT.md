@@ -1370,3 +1370,23 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Deployment/push status: Commit `64f6ccab` was pushed to `origin/main`. No Coolify redeployment was performed. Required services: `mcp`, `propai-lab:main`, and `propai-lab:main-app`; `api` should redeploy with the scope changes.
 - Known limitations: Billing provider/webhook enforcement, hard-coded historical publication seed cleanup, Coolify health checks/unhealthy workers, and an authenticated browser smoke test remain outstanding.
 - Next action: Deploy the verified code, run a tenant-A/tenant-B shared/private/contact smoke test, then finish billing and worker health remediation.
+
+### Align bounded raw-message REST search with MCP
+
+- Requested outcome: Make safe local progress on the remaining raw-message API/MCP and shared-access work without widening tenant access, exposing private data, sending messages, changing production state, or rebuilding the missing usage-tracking v4 handoff.
+- Files changed: `routers/external_agent.py`, `tests/test_external_agent_search.py`, and `docs/EXTERNAL_AGENT_API.md`. Existing dirty files and untracked handoffs were preserved and not staged.
+- Behavior: Authenticated REST raw-message search now defaults to the recent 30 days, accepts explicit windows up to 90 calendar days, normalizes timestamps to UTC, and returns `422` for invalid or reversed windows. Tenant scope, group/DM consent, and existing raw-evidence-only behavior remain unchanged. The API guide now documents the boundary.
+- Verification performed: Independent task-verifier second pass: **PARTIAL**. Acceptance checks: bounded REST/MCP contract alignment PASS by code inspection; tenant and DM authorization preservation PASS by existing `tests/test_external_agent_search.py` and `tests/test_external_agent_consent.py` coverage; new default/cap/invalid/reversed window tests PASS (`2 passed`); Python compilation PASS; `git diff --check` PASS. A broader endpoint test invocation did not terminate cleanly in the existing async assistant-trial harness, so no live Supabase or authenticated HTTP proof is claimed.
+- Deployment/push status: Local only. No commit, push, deployment, production database/schema write, notification, WhatsApp recovery, billing, credential, account, or public-listing action was performed. No Coolify redeployment is requested for this local-only slice.
+- Known limitations: The reviewed usage-tracking v4 patch is absent from this checkout; the older system-wide `/api/usage` remains and was not replaced. WhatsApp status/counters/phone-card concurrency, disconnect notifications, private photo saving, consent UI, Kapil end-to-end access, privacy-policy reconciliation, public eligibility diagnosis, and client onboarding decisions remain unverified or blocked by the user’s explicit gates. Live schema and cross-tenant HTTP behavior were not checked.
+- Next action: Provide the reviewed usage-tracking v4 patch handoff. Separately authorize any live read-only schema/API smoke check and resolve the listed product decisions before implementation; do not treat this local slice as shipped.
+
+### Return a truthful conflict for concurrent phone-directory duplicates
+
+- Requested outcome: Continue the WhatsApp status/counter/phone-card work without deleting, resetting, reconnecting, or replacing any existing phone card.
+- Files changed: `routers/phone_directory.py`. The earlier raw-message contract files remain part of the same local commit; existing user changes were not staged.
+- Behavior: A database unique/duplicate conflict during phone-directory creation now returns HTTP 409 with guidance to edit the existing entry, instead of a generic 500. The working connection is not touched.
+- Verification performed: Python compilation and diff inspection passed. The route-level pytest was not used as completion evidence because this repository’s async `asyncio.to_thread` harness hangs during the existing phone-directory endpoint tests; no live database proof is claimed. Independent task-verifier verdict for the combined local work remains **PARTIAL**.
+- Deployment/push status: Not yet committed or pushed at this point; redeployment is pending final review.
+- Known limitations: The database-backed placeholder RPC referenced by existing code is not present in this checkout’s migrations, so it was not recreated without a handoff/schema review. Existing extra cards remain untouched.
+- Next action: Push the isolated local fixes only after the final diff review; redeploy the API service only if Coolify’s configured source branch is confirmed to contain this commit.
