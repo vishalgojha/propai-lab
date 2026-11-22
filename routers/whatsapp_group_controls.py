@@ -1439,12 +1439,17 @@ async def select_groups(
 
     now = datetime.now(timezone.utc).isoformat()
     if not _is_propai_connection(connection):
-        storage.client.table("organization_group_connections").update({
+        deselections = storage.client.table("organization_group_connections").update({
             "is_active": False,
             "opted_out": True,
             "public_market_source": False,
             "updated_at": now,
-        }).eq("organization_id", org_id).eq("whatsapp_connection_id", body.whatsapp_connection_id).execute()
+        }).eq("organization_id", org_id).eq("whatsapp_connection_id", body.whatsapp_connection_id)
+        # Do not transiently opt out retained groups. Privacy triggers deliberately
+        # revoke raw sharing on a real opt-out, with no automatic regrant.
+        if requested:
+            deselections = deselections.not_.in_("group_jid", requested)
+        deselections.execute()
 
     if requested:
         storage.client.table("organization_group_connections").upsert([

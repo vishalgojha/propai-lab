@@ -1,0 +1,124 @@
+"""Query-time broker market policy. No extraction, replication, or source-name fallback."""
+from __future__ import annotations
+
+import base64
+import hashlib
+import hmac
+import json
+import re
+import time
+import unicodedata
+from datetime import datetime, timedelta, timezone
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+CONSENT_VERSION = "broker-property-cross-search-v2"
+CONSENT_TEXT = (
+    "Allow other authenticated PropAI brokers' AI agents to cross-search the message text "
+    "in these selected groups for property-related requests. Data stays in your account. "
+    "A matching message may include discussion as well as property details. DMs and unchecked "
+    "groups stay private. Remove a group here to stop future cross-search access. Contact numbers are "
+    "hidden until a broker chooses a specific option."
+)
+CONTACT_NOTICE = (
+    "Numbers are hidden to avoid bulk exposure and unwanted calls. This is not a paywall. "
+    "Choose one specific option to request its contact."
+)
+# Matching-purpose restriction, not a semantic privacy filter. The original text can be mixed.
+PROPERTY_PATTERN = r"\m(bhk|bedroom|bedrooms|flat|flats|apartment|apartments|penthouse|villa|bungalow|office|offices|shop|shops|warehouse|plot|carpet|sqft|sq[ .]?ft|sq[ .]?m|lease|rent|rental|sale|resale|possession|furnished|unfurnished|crore|cr|lakh|lac)\M"
+
+
+class PropertySearch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    building: str = Field("", max_length=100)
+    locality: str = Field("", max_length=100)
+    property_type: Literal["apartment", "penthouse", "villa", "bungalow", "office", "shop", "warehouse", "plot"] | None = None
+    transaction: Literal["sale", "rent", "lease", "requirement"] | None = None
+    bedrooms: int | None = Field(None, ge=1, le=20)
+    # Bounds limit the source history searched, not property price. Price in raw text
+    # has varying units and must be interpreted by the requesting agent, not invented here.
+    days: int = Field(30, ge=1, le=90)
+    limit: int = Field(10, ge=1, le=20)
+    cursor: str = Field("", max_length=1800)
+
+    @model_validator(mode="after")
+    def meaningful_property_request(self):
+        for field in ("building", "locality"):
+            value = unicodedata.normalize("NFKC", getattr(self, field)).strip()
+            # Do not accept SQL/ILIKE operators, contacts, URLs or arbitrary paragraphs.
+            if value and (len(value) < 2 or not re.fullmatch(r"[\w .,'()&/-]+", value, re.UNICODE)
+                          or re.search(r"\d(?:[ .()-]?\d){6,}", value)
+                          or any(c in value for c in ("%", "_", "@", ":", "\n"))):
+                raise ValueError(f"{field} must be a building or locality name, not a contact or general query")
+            setattr(self, field, value)
+        if not (self.building or self.locality or
+                sum(v is not None for v in (self.property_type, self.transaction, self.bedrooms)) >= 2):
+            raise ValueError("Provide a building/locality or at least two property criteria; general browsing is not supported")
+        return self
+
+    def fingerprint(self) -> str:
+        data = self.model_dump(exclude={"cursor", "limit"})
+        return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+
+    def terms(self) -> list[list[str]]:
+        groups = []
+        for value in (self.building, self.locality):
+            if value:
+                groups.append([value.lower()])
+        aliases = {
+            "apartment": ["apartment", "flat", "bhk", "bedroom"],
+            "sale": ["sale", "resale", "sell", "selling"],
+            "rent": ["rent", "rental", "lease"],
+            "requirement": ["required", "requirement", "looking for", "wanted", "need"],
+        }
+        for value in (self.property_type, self.transaction):
+            if value:
+                groups.append(aliases.get(value, [value]))
+        if self.bedrooms is not None:
+            n = self.bedrooms
+            groups.append([f"{n}bhk", f"{n} bhk", f"{n} bedroom", f"{n} bed"])
+        return groups
+
+
+def redact_contacts(text: str) -> str:
+    """Conservative output boundary; labels, payloads and sender identity are not returned."""
+    text = unicodedata.normalize("NFKC", str(text))
+    text = re.sub(r"(?:https?://|www\.)\S+|\b(?:wa\.me|t\.me)/\S+", "[link hidden]", text, flags=re.I)
+    text = re.sub(r"\b[\w.+-]+@[\w.-]+(?:\.[a-z]{2,}|\.net|\.us)\b", "[contact hidden]", text, flags=re.I)
+    # Covers separated international/national numbers and digit-bearing WhatsApp JIDs.
+    text = re.sub(r"(?<!\w)\+?\d(?:[\s().-]*\d){6,}(?!\d)(?:@[\w.]+)?", "[number hidden]", text)
+    return text
+
+
+def seal(payload: dict, secret: str) -> str:
+    if not secret:
+        raise ValueError("Market signing secret is not configured")
+    body = base64.urlsafe_b64encode(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).decode().rstrip("=")
+    signature = hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
+    return body + "." + signature
+
+
+def unseal(token: str, secret: str, *, kind: str, reader: str) -> dict:
+    if not secret:
+        raise ValueError("Market signing secret is not configured")
+    try:
+        body, supplied = token.split(".")
+        expected = hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(supplied, expected):
+            raise ValueError("signature")
+        value = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+        if value.get("kind") != kind or value.get("reader") != reader or value.get("exp", 0) < time.time():
+            raise ValueError("scope or expiry")
+        return value
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        raise ValueError("Invalid or expired market reference") from exc
+
+
+def search_bounds(body: PropertySearch, cursor: dict | None) -> tuple[str, str, int | None, str | None]:
+    if cursor:
+        if cursor.get("query") != body.fingerprint():
+            raise ValueError("Cursor belongs to another property query")
+        return cursor["since"], cursor["until"], cursor["last_id"], cursor["last_at"]
+    until = datetime.now(timezone.utc)
+    return (until - timedelta(days=body.days)).isoformat(), until.isoformat(), None, None

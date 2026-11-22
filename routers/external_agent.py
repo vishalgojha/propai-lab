@@ -28,6 +28,7 @@ KEY_PREFIX = "ppai_"
 logger = logging.getLogger(__name__)
 RAW_MESSAGE_COLUMNS = "id,group_name,sender,sender_jid,sender_phone,message,message_type,timestamp,source,is_group,processed"
 EXTERNAL_AGENT_DOCS = Path(__file__).resolve().parents[1] / "docs" / "EXTERNAL_AGENT_API.md"
+BROKER_AGENT_KNOWLEDGE = Path(__file__).resolve().parents[1] / "docs" / "BROKER_AGENT_KNOWLEDGE.md"
 WRITE_SCOPES = {"inventory:write", "requirements:write"}
 TOOL_READ_SCOPES = {
     "standing_searches:read", "automatch:read", "workspace:attention", "followups:read",
@@ -36,10 +37,163 @@ EXTRACTION_SCOPE = "raw_messages:extract"
 TOOL_WRITE_SCOPES = {"standing_searches:write", "followups:write"}
 DEFAULT_READ_SCOPES = {
     "inventory:read", "requirements:read", "matches:read", "raw_messages:read",
+    # New credentials can read the explicitly consented shared broker pool by
+    # default. Existing keys keep their minted scopes untouched; owners remove
+    # the scope per key at any time (Account -> Integrations).
+    "broker_market:read",
     *TOOL_READ_SCOPES,
 }
 SENSITIVE_INVENTORY_FIELDS = {"contact_number", "owner_name", "contact_name", "quote"}
 SENSITIVE_REQUIREMENT_FIELDS = {"phone", "budget_min", "budget_max"}
+
+# --- Private DM identifier privacy -------------------------------------------
+# DM rows cross the external boundary without peer identifiers: no phone, no
+# JID, and the broker's saved contact name instead of the public pushname.
+# Group rows are unchanged; owner-facing broker attribution keeps its numbers.
+UNNAMED_DM_CONTACT = "Unnamed contact"
+
+# A phone-like run: 10-13 digits with common separators. Indian-style grouped
+# prices use commas, which break the run on purpose; dates (2026-11-21) and
+# measurements are too short. This is best-effort content masking, not proof
+# that no number can appear (words, media, vcards or odd formats can leak).
+# A maximal run of phone-like characters. The run is unbounded on purpose:
+# adjacent numbers separated by spaces merge into one run and must still be
+# masked, so length bounds belong to the digit count check, not the pattern.
+_DM_PHONE_RUN = re.compile(r"\+?\d[\d\s().\-]*\d")
+_DM_DATE_PREFIX = re.compile(r"^\+?\d{4}-\d{1,2}-\d{1,2}")
+_DM_DATEISH = re.compile(r"^\+?\d{1,2}[-.]\d{1,2}[-.]\d{2,4}$")
+
+
+def _mask_phone_like_text(text: str) -> str:
+    def _hide(match: re.Match) -> str:
+        run = match.group(0)
+        if ":" in run or _DM_DATE_PREFIX.match(run) or _DM_DATEISH.match(run):
+            return run
+        digits = re.sub(r"\D", "", run)
+        if len(digits) < 7:
+            return run
+        return "[number hidden]"
+    return _DM_PHONE_RUN.sub(_hide, text)
+
+
+def _tenant_device_jids(tenant_id: str, cache: dict) -> list:
+    """JIDs of the WhatsApp devices that belong to this workspace.
+
+    Contact-name lookups are always bound to one of these devices, so one
+    workspace can never read another workspace's saved contact names."""
+    if tenant_id in cache:
+        return cache[tenant_id]
+    jids = []
+    try:
+        rows = storage.client.table("org_whatsapp_connections").select(
+            "phone_number"
+        ).eq("organization_id", tenant_id).execute().data or []
+    except Exception:
+        rows = []
+    for row in rows:
+        digits = re.sub(r"\D", "", str(row.get("phone_number") or ""))
+        if digits:
+            jids.append(f"{digits}@s.whatsapp.net")
+    cache[tenant_id] = jids
+    return jids
+
+
+def _device_jid_or_filter(device_jids: list) -> str:
+    """PostgREST or-filter binding a row to one of the workspace's own devices.
+
+    Real whatsmeow sessions store our_jid with a device suffix
+    ("9198...:14@s.whatsapp.net"), so an exact match on "{digits}@s.whatsapp.net"
+    silently misses every row. Accept both the plain JID and the suffixed form.
+    The like pattern is anchored at the string start and requires the colon right
+    after the device digits, so a longer number containing those digits cannot
+    match."""
+    parts = []
+    for jid in device_jids:
+        digits = re.sub(r"\D", "", str(jid).split("@")[0])
+        if not digits:
+            continue
+        parts.append(f"our_jid.eq.{digits}@s.whatsapp.net")
+        parts.append(f"our_jid.like.{digits}:%@s.whatsapp.net")
+    return ",".join(parts)
+
+
+def _saved_dm_contact_name(tenant_id: str, sender_jid: str, sender_phone: str, cache: dict, device_cache: dict) -> str:
+    """The workspace owner's saved contact name for a DM peer.
+
+    Reads the device contact store (full_name/first_name/business_name) only,
+    and only from rows owned by this workspace's own devices (our_jid bound
+    to the tenant's connected numbers). The public pushname is not a saved
+    name and is never used. A saved name that is itself phone-like yields no
+    name. Falls back to a fixed label, never to the number."""
+    key = (tenant_id, sender_jid or "", sender_phone or "")
+    if key in cache:
+        return cache[key]
+    device_jids = _tenant_device_jids(tenant_id, device_cache)
+    name = ""
+    if device_jids:
+        jid_phone_match = re.match(r"\+?(\d+)@s\.whatsapp\.net$", sender_jid or "", re.I)
+        phone_digits = re.sub(r"\D", "", sender_phone or "")
+        jid_digits = jid_phone_match.group(1) if jid_phone_match else ""
+        queries = []
+        for value in (sender_jid, jid_digits):
+            if value:
+                queries.append(("their_jid", value))
+        if phone_digits and phone_digits != jid_digits:
+            # WhatsApp now reports many DM senders as "<lid>@lid" while the
+            # device contact store keys the saved name under the phone-number
+            # JID. Without these forms an @lid sender never reaches its saved
+            # name row (observed in production after the device-suffix fix).
+            queries.append(("their_jid", f"{phone_digits}@s.whatsapp.net"))
+            queries.append(("their_jid", phone_digits))
+        for value in (phone_digits, jid_digits):
+            if value:
+                queries.append(("redacted_phone", value))
+        device_filter = _device_jid_or_filter(device_jids)
+        for column, value in queries:
+            try:
+                result = storage.client.table("whatsmeow_contacts").select(
+                    "full_name,first_name,business_name"
+                ).eq(column, value).or_(device_filter).limit(1).execute()
+            except Exception:
+                continue
+            row = (result.data or [None])[0] if result else None
+            if not row:
+                continue
+            for field in ("full_name", "first_name", "business_name"):
+                candidate = str(row.get(field) or "").strip()
+                if not candidate:
+                    continue
+                if not re.search(r"[A-Za-z\u0900-\u097F]", candidate):
+                    continue
+                masked = _mask_phone_like_text(candidate).strip()
+                name = masked
+                break
+            if name:
+                break
+    cache[key] = name or UNNAMED_DM_CONTACT
+    return cache[key]
+
+
+def _mask_dm_response_row(row: dict, tenant_id: str, name_cache: dict, device_cache: dict) -> dict:
+    """Strip DM peer identifiers from one external response row.
+
+    Group rows pass through unchanged. Stored evidence is untouched; this is
+    a response-boundary transform only."""
+    if row.get("is_group"):
+        return row
+    masked = dict(row)
+    masked["sender"] = _saved_dm_contact_name(
+        tenant_id, str(row.get("sender_jid") or ""), str(row.get("sender_phone") or ""), name_cache, device_cache
+    )
+    masked["sender_jid"] = None
+    masked["sender_phone"] = None
+    group_name = str(row.get("group_name") or "")
+    if group_name and not group_name.endswith("@g.us"):
+        masked["group_name"] = None
+    message = masked.get("message")
+    if isinstance(message, str) and message:
+        masked["message"] = _mask_phone_like_text(message)
+    return masked
 
 
 class ApiKeyCreate(BaseModel):
@@ -135,6 +289,21 @@ async def external_health(key: dict = Depends(external_auth)):
     return {"ok": True, "tenant_scoped": True, "scopes": key.get("scopes") or []}
 
 
+@router.get("/connection-check")
+async def external_connection_check(key: dict = Depends(external_auth)):
+    """Authenticated, scoped database read without content or a trial start.
+
+    This proves current backend access, not permanent assistant storage, fresh
+    capture, pool permission or DM consent. It never marks browser setup done.
+    """
+    _require_scope(key, "raw_messages:read")
+    await asyncio.to_thread(lambda: storage.client.table("raw_messages").select("id")
+                            .eq("tenant_id", str(key["tenant_id"])).eq("is_group", True).limit(1).execute())
+    return {"ok": True, "workspace_id": str(key["tenant_id"]), "groups_read_verified": True,
+            "checked_at": datetime.now(timezone.utc).isoformat(), "starts_trial": False,
+            "storage_verified": False, "dms_included": False, "pool_access_verified": False}
+
+
 @router.get("/docs", response_class=PlainTextResponse)
 async def external_agent_docs():
     """Public bootstrap guide; contains API instructions, never tenant data or credentials."""
@@ -150,7 +319,12 @@ async def external_agent_docs():
 @router.get("/knowledge", response_class=PlainTextResponse)
 async def external_agent_knowledge():
     """Product vocabulary only. No workspace records, credentials or prompt."""
-    return PlainTextResponse(build_ai_domain_context(), headers={"Cache-Control": "public, max-age=300"})
+    try:
+        background = BROKER_AGENT_KNOWLEDGE.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise HTTPException(503, "Broker background knowledge is temporarily unavailable") from exc
+    return PlainTextResponse(build_ai_domain_context() + "\n\n" + background,
+                             headers={"Cache-Control": "public, max-age=300"})
 
 
 def _require_scope(key: dict, scope: str):
@@ -345,7 +519,10 @@ async def external_raw_message_search(
     query = query.gte("timestamp", since_value).lte("timestamp", until_value)
     rows = (query.order("timestamp", desc=True).limit(limit + 1).offset(offset).execute().data or [])
     has_more = len(rows) > limit
-    items = rows[:limit]
+    tenant_id = str(key["tenant_id"])
+    name_cache: dict = {}
+    device_cache: dict = {}
+    items = [_mask_dm_response_row(row, tenant_id, name_cache, device_cache) for row in rows[:limit]]
     await asyncio.to_thread(_record_assistant_trial_start, str(key["tenant_id"]))
     return {
         "results": items,
@@ -370,6 +547,7 @@ async def external_raw_message_get(raw_message_id: int, key: dict = Depends(exte
         raise HTTPException(404, "Raw WhatsApp message not found")
     if not item.get("is_group"):
         _require_dm_consent(key)
+        item = _mask_dm_response_row(item, str(key["tenant_id"]), {}, {})
     return {
         "message": item,
         "source": "raw_whatsapp_message",
@@ -454,6 +632,9 @@ async def external_raw_message_conversation(
     ).eq("is_group", False).like("message_uid", f"%:{chat_id}:%")
     rows = query.order("timestamp", desc=True).limit(limit).execute().data or []
     rows.reverse()
+    name_cache = {}
+    device_cache = {}
+    rows = [_mask_dm_response_row(row, tenant_id, name_cache, device_cache) for row in rows]
     return {
         "messages": rows,
         "count": len(rows),
@@ -587,6 +768,11 @@ async def external_matches(q: str = "", limit: int = Query(20, ge=1, le=50), key
     return {"matches": [_public_listing(row) for row in rows], "count": len(rows), "query": q}
 
 
+def _new_key_scopes(write_access: bool) -> list[str]:
+    """One source for approval disclosure and the actual new credential grant."""
+    return sorted(DEFAULT_READ_SCOPES | (WRITE_SCOPES | TOOL_WRITE_SCOPES if write_access else set()))
+
+
 def _create_external_key(tenant_id: str, user_id: str, label: str, write_access: bool) -> tuple[dict, str]:
     """Mint one tenant-scoped external API key; returns (row, one-time token).
 
@@ -594,9 +780,7 @@ def _create_external_key(tenant_id: str, user_id: str, label: str, write_access:
     connect-session flow so both produce identical key material and scopes.
     """
     token = KEY_PREFIX + secrets.token_urlsafe(32)
-    scopes = sorted(DEFAULT_READ_SCOPES)
-    if write_access:
-        scopes.extend(sorted(WRITE_SCOPES | TOOL_WRITE_SCOPES))
+    scopes = _new_key_scopes(write_access)
     payload = {
         "tenant_id": tenant_id,
         "created_by": user_id,
@@ -1075,6 +1259,60 @@ async def list_external_keys(user: dict = Depends(require_user), tenant_id: str 
     return {"keys": result.data or []}
 
 
+@router.get("/connection-status")
+async def external_connection_status(user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    """Truthful assistant-connection status for owner-facing UI.
+
+    Binds to the latest decided connect session's key rather than merging
+    every key on the workspace, so a tenant with several manual keys does not
+    show an optimistic aggregate. Manually created keys have no session
+    binding and are counted, not claimed as the assistant connection."""
+    org_result = storage.client.table("organizations").select(
+        "external_agent_dms_enabled,external_agent_dms_consented_at"
+    ).eq("id", tenant_id).limit(1).execute()
+    org = (org_result.data or [None])[0] if org_result else None
+    dm_consent = bool(org and org.get("external_agent_dms_enabled"))
+
+    session_result = storage.client.table("external_agent_connect_sessions").select(
+        "id,status,label,api_key_id,decided_at"
+    ).eq("tenant_id", tenant_id).in_("status", ["approved", "consumed"]).order("decided_at", desc=True).limit(1).execute()
+    session = (session_result.data or [None])[0] if session_result else None
+
+    connection = None
+    bound_key_id = session.get("api_key_id") if session else None
+    if session and bound_key_id:
+        key_result = storage.client.table("external_agent_api_keys").select(
+            "id,label,key_prefix,scopes,last_used_at,revoked_at,created_at"
+        ).eq("id", bound_key_id).eq("tenant_id", tenant_id).limit(1).execute()
+        bound = (key_result.data or [None])[0] if key_result else None
+        scopes = list(bound.get("scopes") or []) if bound else []
+        # A revoked key has no effective capabilities, whatever its stored
+        # scopes say: owner-facing status must never show green for it.
+        revoked = bool(bound and bound.get("revoked_at"))
+        connection = {
+            "label": session.get("label") or "Instinct",
+            "key_id": str(bound_key_id),
+            "key_prefix": (bound or {}).get("key_prefix"),
+            "key_revoked": revoked,
+            "scopes": scopes,
+            "can_read_groups": not revoked and "raw_messages:read" in scopes,
+            "can_read_dms": not revoked and dm_consent and "raw_messages:dms" in scopes,
+            "can_write_private_crm": not revoked and bool(WRITE_SCOPES & set(scopes)),
+            "last_used_at": (bound or {}).get("last_used_at"),
+        }
+
+    active_keys = storage.client.table("external_agent_api_keys").select(
+        "id"
+    ).eq("tenant_id", tenant_id).is_("revoked_at", "null").execute().data or []
+    unbound = len([row for row in active_keys if str(row.get("id")) != str(bound_key_id or "")])
+    return {
+        "dm_consent_enabled": dm_consent,
+        "dm_consented_at": (org or {}).get("external_agent_dms_consented_at"),
+        "connection": connection,
+        "unbound_active_keys": unbound,
+    }
+
+
 @router.put("/keys/{key_id}/write-access")
 async def update_external_key_write_access(
     key_id: str,
@@ -1103,6 +1341,51 @@ async def update_external_key_write_access(
         _write_audit_finish(audit_id, "failed", error_code="key_update_empty")
         raise HTTPException(409, "External API key changed; refresh the key list and retry")
     _write_audit_finish(audit_id, "succeeded", entity_id=key_id, result={"enabled": body.enabled})
+    return {"id": key_id, "scopes": scopes}
+
+
+class ApiKeyDmAccessUpdate(BaseModel):
+    enabled: bool = True
+
+
+@router.put("/keys/{key_id}/dm-access")
+async def update_external_key_dm_access(
+    key_id: str,
+    body: ApiKeyDmAccessUpdate,
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
+    """Grant or remove the private-DM read scope on one existing key.
+
+    Deliberate per-key opt-in: workspace consent alone never adds DM read to
+    a key, and this control never touches any other key. Enabling requires
+    the workspace consent switch to be on; disabling it there removes the
+    scope from every key as before."""
+    await _require_org_permission(user, tenant_id, "manage_whatsapp")
+    if body.enabled:
+        consent = storage.client.table("organizations").select(
+            "external_agent_dms_enabled"
+        ).eq("id", tenant_id).limit(1).execute()
+        org = (consent.data or [None])[0] if consent else None
+        if not org or not org.get("external_agent_dms_enabled"):
+            raise HTTPException(409, "Workspace private DM consent is off. Enable it before granting DM read to a key.")
+    result = storage.client.table("external_agent_api_keys").select(
+        "id,scopes"
+    ).eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").limit(1).execute()
+    key = (result.data or [None])[0] if result else None
+    if not key:
+        raise HTTPException(404, "Active external API key not found")
+    scopes = [scope for scope in (key.get("scopes") or []) if scope != "raw_messages:dms"]
+    if body.enabled:
+        scopes.append("raw_messages:dms")
+    audit_id = _write_audit_start({"tenant_id": tenant_id, "id": key_id}, "permission_change", "external_agent_api_key", {"key_id": key_id, "dm_access": body.enabled}, [])
+    updated = storage.client.table("external_agent_api_keys").update(
+        {"scopes": scopes}
+    ).eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").execute()
+    if not updated.data:
+        _write_audit_finish(audit_id, "failed", error_code="key_update_empty")
+        raise HTTPException(409, "External API key changed; refresh the key list and retry")
+    _write_audit_finish(audit_id, "succeeded", entity_id=key_id, result={"dm_access": body.enabled})
     return {"id": key_id, "scopes": scopes}
 
 
@@ -1210,11 +1493,18 @@ def _unseal_token(sealed: str) -> str:
 
 def _prune_connect_sessions() -> None:
     """Best-effort removal of expired sessions so uncollected secrets do not
-    linger. Expired rows are also rejected at read time; this just bounds the
-    residue."""
+    linger. Only rows that never minted a key (api_key_id IS NULL) are
+    eligible: once a row has api_key_id set it is the durable binding record
+    for a minted key - approved/consumed rows back /connection-status, and an
+    approved-but-uncollected row is that key's only delivery path - so rows
+    with a minted-key binding are never pruned, however old their expires_at
+    (the approval-link TTL, not a record-retention time). The sealed token on
+    an uncollected row is still rejected at read time once expired; keeping
+    the row preserves provenance without extending collectability. This just
+    bounds the residue of sessions that never produced a key."""
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-        storage.client.table("external_agent_connect_sessions").delete().lt("expires_at", cutoff).execute()
+        storage.client.table("external_agent_connect_sessions").delete().lt("expires_at", cutoff).is_("api_key_id", "null").execute()
     except Exception:
         logger.warning("Connect session prune failed", exc_info=True)
 
@@ -1229,10 +1519,10 @@ def _generate_user_code() -> str:
     return f"{body[:4]}-{body[4:]}"
 
 
-def _connect_session_by_user_code(user_code: str) -> dict:
+def _connect_session_by_user_code(user_code: str, *, allow_expired: bool = False) -> dict:
     code = (user_code or "").strip().upper()
     result = storage.client.table("external_agent_connect_sessions").select(
-        "id,status,label,write_access,expires_at"
+        "id,status,label,write_access,expires_at,tenant_id,approved_by,api_key_id"
     ).eq("user_code", code).limit(1).execute()
     row = (result.data or [None])[0] if result else None
     if not row:
@@ -1241,7 +1531,7 @@ def _connect_session_by_user_code(user_code: str) -> dict:
         expired = datetime.fromisoformat(str(row.get("expires_at")).replace("Z", "+00:00")) <= datetime.now(timezone.utc)
     except ValueError:
         expired = True
-    if expired:
+    if expired and not allow_expired:
         raise HTTPException(410, "Connect session expired; start a new connection from the agent")
     return row
 
@@ -1315,23 +1605,52 @@ async def poll_connect_session(device_code: str):
         if not consumed.data:
             raise HTTPException(409, "Connect session token already collected")
         return {"status": "approved", "token": _unseal_token(sealed), "warning": "Save this token now. It will not be shown again."}
+    if row.get("status") == "consumed":
+        # A successfully collected session is not expired; say so truthfully.
+        # The token itself is never served again either way.
+        raise HTTPException(410, "Connect session already collected; the token is never returned again")
     raise HTTPException(410, "Connect session expired; start a new connection")
 
 
 @router.get("/connect/sessions/by-code/{user_code}")
 async def preview_connect_session(user_code: str, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
     """Broker-facing: what the signed-in connect page renders before deciding."""
-    row = _connect_session_by_user_code(user_code)
-    if row.get("status") != "pending":
-        raise HTTPException(409, "Connect session already decided")
-    scopes = sorted(DEFAULT_READ_SCOPES)
-    if row.get("write_access"):
-        scopes.extend(sorted(WRITE_SCOPES | TOOL_WRITE_SCOPES))
-    return {"label": row.get("label") or "Instinct", "write_access": bool(row.get("write_access")), "scopes": scopes}
+    row = _connect_session_by_user_code(user_code, allow_expired=True)
+    state = row.get("status")
+    # Terminal state belongs only to the person/workspace that decided it.
+    if state != "pending" and (row.get("tenant_id") != tenant_id or row.get("approved_by") != user.get("id")):
+        raise HTTPException(404, "Connect session not found")
+    result = {"label": row.get("label") or "Instinct", "write_access": bool(row.get("write_access")), "scopes": [], "workspace_id": str(tenant_id), "connection_verified": False}
+    # Fixed known destination, never a caller-controlled redirect or a secret-bearing URL.
+    if result["label"].strip().casefold() == "instinct":
+        result["return_url"] = "https://wa.me/16508702892"
+    if state in {"approved", "consumed"}:
+        key = storage.client.table("external_agent_api_keys").select("id,revoked_at,expires_at").eq("id", row.get("api_key_id")).eq("tenant_id", tenant_id).limit(1).execute()
+        key_row = (key.data or [None])[0] if key else None
+        if not key_row or key_row.get("revoked_at"):
+            return {**result, "status": "revoked"}
+        key_expiry = key_row.get("expires_at")
+        if key_expiry and datetime.fromisoformat(str(key_expiry).replace("Z", "+00:00")) <= datetime.now(timezone.utc):
+            return {**result, "status": "expired"}
+        # A collected key remains valid after its short approval link expires.
+        if state == "consumed":
+            return {**result, "status": "collected", "connection_verified": False}
+    if datetime.fromisoformat(str(row["expires_at"]).replace("Z", "+00:00")) <= datetime.now(timezone.utc):
+        return {**result, "status": "expired"}
+    if state in {"approved", "denied", "approving", "expired"}:
+        return {**result, "status": state}
+    if state != "pending":
+        raise HTTPException(409, "Connect session is not available")
+    scopes = _new_key_scopes(bool(row.get("write_access")))
+    return {**result, "status": "pending", "scopes": scopes}
+
+
+class ConnectApproval(BaseModel):
+    workspace_id: str = Field(min_length=1)
 
 
 @router.post("/connect/sessions/by-code/{user_code}/approve")
-async def approve_connect_session(user_code: str, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+async def approve_connect_session(user_code: str, body: ConnectApproval, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
     """Broker-facing: mint a key for the waiting agent.
 
     Uses the same org permission gate as key rotation, since approving grants
@@ -1339,6 +1658,8 @@ async def approve_connect_session(user_code: str, user: dict = Depends(require_u
     session row and returned to the agent exactly once via the device poll.
     """
     await _require_org_permission(user, tenant_id, "manage_whatsapp")
+    if body.workspace_id != str(tenant_id):
+        raise HTTPException(409, "Workspace changed. Review the connection again before allowing access.")
     row = _connect_session_by_user_code(user_code)
     if row.get("status") != "pending":
         raise HTTPException(409, "Connect session already decided")
