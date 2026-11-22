@@ -350,7 +350,11 @@ type SessionManager struct {
 	startupCancel map[string]context.CancelFunc
 	resetting     map[string]bool
 	startupStatus map[string]Status
-	sessionWg     sync.WaitGroup
+	// intentionalDisconnects marks brokers the owner explicitly disconnected
+	// via /disconnect within this process lifetime. The reconciler must never
+	// restart these on its own; an explicit /connect or new pairing clears it.
+	intentionalDisconnects map[string]bool
+	sessionWg              sync.WaitGroup
 }
 
 type inboxThreadCursor struct {
@@ -384,14 +388,120 @@ type selfChatAgentResponse struct {
 	Message string `json:"message"`
 }
 
+// reconcileAction decides what the periodic reconciler may do with one mapped
+// broker. It is deliberately conservative: anything that is not a paired,
+// mapped, currently-not-running, not-intentionally-disconnected session is a
+// skip, never a start.
+func reconcileAction(sessionExists, intentionalDisconnect, devicePaired bool) string {
+	switch {
+	case sessionExists:
+		return "skip-running"
+	case intentionalDisconnect:
+		return "skip-intentional-disconnect"
+	case !devicePaired:
+		return "skip-unpaired"
+	default:
+		return "start"
+	}
+}
+
+// reconcileMappedSessions starts mapped, paired sessions that are not running.
+// It never creates new devices, never starts unpaired or unmapped brokers,
+// skips sessions already running or pairing, honors explicit owner
+// disconnects, and leaves brokers owned by another ingestor instance alone
+// (StartOrGet returns nil when the cross-instance advisory lock is held).
+func (sm *SessionManager) reconcileMappedSessions(ctx context.Context) {
+	rows, err := sm.db.QueryContext(ctx, "SELECT whatsapp_connection_key, device_jid FROM broker_whatsapp_devices")
+	if err != nil {
+		log.Printf("reconciler: mapping query failed: %v", err)
+		return
+	}
+	type mapping struct{ brokerID, deviceJID string }
+	var mappings []mapping
+	for rows.Next() {
+		var m mapping
+		if scanErr := rows.Scan(&m.brokerID, &m.deviceJID); scanErr != nil {
+			log.Printf("reconciler: mapping scan error: %v", scanErr)
+			continue
+		}
+		mappings = append(mappings, m)
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("reconciler: mapping iteration failed: %v", err)
+	}
+	rows.Close()
+	for _, m := range mappings {
+		jid, parseErr := types.ParseJID(m.deviceJID)
+		if parseErr != nil {
+			log.Printf("[broker %s] reconciler: malformed stored identity; skipping", m.brokerID)
+			continue
+		}
+		device, getErr := sm.container.GetDevice(ctx, jid)
+		if getErr != nil {
+			log.Printf("[broker %s] reconciler: device lookup failed: %v", m.brokerID, getErr)
+			continue
+		}
+		action := reconcileAction(sm.Get(m.brokerID) != nil, sm.isIntentionalDisconnect(m.brokerID), device != nil && device.ID != nil)
+		if action != "start" {
+			continue
+		}
+		log.Printf("[broker %s] reconciler: starting mapped paired session", m.brokerID)
+		if session := sm.StartOrGet(m.brokerID); session == nil {
+			log.Printf("[broker %s] reconciler: session owned by another instance; leaving it alone", m.brokerID)
+		}
+	}
+}
+
+// startReconciler runs reconcileMappedSessions on a fixed cadence.
+// RECONCILE_INTERVAL_MINUTES <= 0 disables it; default is 3 minutes.
+func (sm *SessionManager) startReconciler() {
+	intervalMinutes := getEnvInt("RECONCILE_INTERVAL_MINUTES", 3)
+	if intervalMinutes <= 0 {
+		log.Printf("reconciler disabled (RECONCILE_INTERVAL_MINUTES=%d)", intervalMinutes)
+		return
+	}
+	ticker := time.NewTicker(time.Duration(intervalMinutes) * time.Minute)
+	go func() {
+		defer ticker.Stop()
+		for range ticker.C {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			sm.reconcileMappedSessions(ctx)
+			cancel()
+		}
+	}()
+	log.Printf("reconciler running every %d minute(s)", intervalMinutes)
+}
+
+func (sm *SessionManager) markIntentionalDisconnect(brokerID string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if sm.intentionalDisconnects == nil {
+		sm.intentionalDisconnects = make(map[string]bool)
+	}
+	sm.intentionalDisconnects[brokerID] = true
+}
+
+func (sm *SessionManager) clearIntentionalDisconnect(brokerID string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	delete(sm.intentionalDisconnects, brokerID)
+}
+
+func (sm *SessionManager) isIntentionalDisconnect(brokerID string) bool {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.intentionalDisconnects[brokerID]
+}
+
 func NewSessionManager(container *sqlstore.Container, db, lockDB *sql.DB) *SessionManager {
 	return &SessionManager{
-		sessions:      make(map[string]*BrokerSession),
-		container:     container,
-		db:            db,
-		lockDB:        lockDB,
-		starting:      make(map[string]chan struct{}),
-		startupStatus: make(map[string]Status),
+		sessions:             make(map[string]*BrokerSession),
+		container:            container,
+		db:                   db,
+		lockDB:               lockDB,
+		starting:             make(map[string]chan struct{}),
+		startupStatus:        make(map[string]Status),
+		intentionalDisconnects: make(map[string]bool),
 	}
 }
 
@@ -2531,6 +2641,8 @@ func (sm *SessionManager) connectHandler(w http.ResponseWriter, r *http.Request)
 		json.NewEncoder(w).Encode(map[string]string{"error": "broker_id is required"})
 		return
 	}
+	// An explicit /connect is owner intent to run again: clear the disconnect mark.
+	sm.clearIntentionalDisconnect(brokerID)
 	session := sm.StartOrGet(brokerID)
 	if session == nil {
 		w.WriteHeader(http.StatusConflict)
@@ -2965,6 +3077,9 @@ func (sm *SessionManager) disconnectHandler(w http.ResponseWriter, r *http.Reque
 		json.NewEncoder(w).Encode(map[string]string{"error": "broker_id is required"})
 		return
 	}
+	// Remember the owner asked for this disconnect so the reconciler does not
+	// quietly restart the session behind their back.
+	sm.markIntentionalDisconnect(brokerID)
 	barrierCtx, cancelBarrier := context.WithTimeout(r.Context(), 7*time.Second)
 	finish, barrierErr := sm.beginReset(barrierCtx, brokerID)
 	cancelBarrier()
@@ -3893,7 +4008,15 @@ func main() {
 			sm.sessionWg.Add(1)
 			go sm.runSession(session)
 		}
+		log.Printf("startup restore complete: restored %d mapped session(s) (selector: %v)", len(startupSessions), selectedBrokers)
 	}
+
+	// Runtime reconciliation: the startup selector deliberately limits which
+	// mapped sessions are restored at process start, and restores only happen
+	// at startup. After a crash or restart, every other mapped, paired broker
+	// would stay disconnected until someone manually clicks Reconnect in the
+	// app. The reconciler closes that gap at runtime, conservatively.
+	sm.startReconciler()
 
 	// HTTP server
 	mux := http.NewServeMux()
