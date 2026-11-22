@@ -311,9 +311,9 @@ async def save_listing_webhook(
         # The raw message is the source of truth.  Running it through the normal
         # pipeline creates parsed_output, broker evidence and one listing per
         # option; it deliberately does not copy "location" into micro_market.
-        from extraction import process_raw_message
+        from extraction_controls import process_business_intake
         try:
-            result = await asyncio.to_thread(process_raw_message, raw_id, {
+            result = await asyncio.to_thread(process_business_intake, raw_id, {
                 "sender_name": broker.get("canonical_name") or body.name or broker_phone,
                 "push_name": broker.get("canonical_name") or body.name or broker_phone,
                 "sender_jid": f"{broker_phone}@s.whatsapp.net",
@@ -327,7 +327,7 @@ async def save_listing_webhook(
                 "message_id": body.source_message_id or message_uid,
                 "msg": {},
                 "tenant_id": tenant_id,
-            }) or {}
+            }, storage, kind="authenticated_waba_agent") or {}
         except Exception as exc:
             print(f"[business-api] extraction unavailable for listing raw_id={raw_id}: {exc}", flush=True)
             raise HTTPException(503, {
@@ -399,9 +399,9 @@ async def create_requirement_webhook(
     if existing and existing.processed:
         parsed_ids = [parsed.id for parsed in storage.get_parsed_by_message(raw_id)]
     else:
-        from extraction import process_raw_message
+        from extraction_controls import process_business_intake
         try:
-            result = await asyncio.to_thread(process_raw_message, raw_id, {
+            result = await asyncio.to_thread(process_business_intake, raw_id, {
                 "sender_name": broker.get("canonical_name") or body.name or broker_phone,
                 "push_name": broker.get("canonical_name") or body.name or broker_phone,
                 "sender_jid": f"{broker_phone}@s.whatsapp.net",
@@ -415,7 +415,7 @@ async def create_requirement_webhook(
                 "message_id": source_message_id or message_uid,
                 "msg": {},
                 "tenant_id": tenant_id,
-            }) or {}
+            }, storage, kind="authenticated_waba_agent") or {}
         except Exception as exc:
             print(f"[business-api] extraction unavailable for requirement raw_id={raw_id}: {exc}", flush=True)
             raise HTTPException(503, {

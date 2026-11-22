@@ -8,6 +8,25 @@ class ExtractionPaused(RuntimeError):
 
 
 provider_control = ContextVar("extraction_provider_control", default=None)
+_business_intake = ContextVar("authorized_business_intake", default=None)
+
+
+def process_business_intake(raw_id, ctx, storage, *, kind):
+    """Called only after the existing WABA registration/confirmation or secret gate.
+
+    Authorization is local to this synchronous call and exact source object.
+    Stored labels, instance names and retry rows cannot recreate it.
+    """
+    if kind not in {"confirmed_waba_direct", "authenticated_waba_agent"}:
+        raise ValueError("Unsupported business intake contract")
+    if not ctx.get("tenant_id") or not raw_id:
+        raise ExtractionPaused("Business intake requires tenant and raw evidence")
+    from extraction import process_raw_message
+    token = _business_intake.set((storage, ctx.get("tenant_id"), ctx))
+    try:
+        return process_raw_message(raw_id, ctx, storage)
+    finally:
+        _business_intake.reset(token)
 
 
 def source_context(value):
@@ -30,6 +49,9 @@ def source_context(value):
 
 
 def extraction_allowed(storage, tenant_id, source):
+    grant = _business_intake.get()
+    if grant is not None and grant[0] is storage and grant[1] == tenant_id and grant[2] is source:
+        return True
     check = getattr(storage, "is_extraction_allowed_for_source", None)
     if not callable(check):
         return False

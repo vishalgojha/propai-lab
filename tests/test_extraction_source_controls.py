@@ -237,3 +237,117 @@ def test_source_check_isolation_between_parallel_worker_contexts(monkeypatch):
         futures = [pool.submit(extraction.process_raw_message, i, {"tenant_id": f"tenant-{i}", "broker_id": str(i)}, object()) for i in range(2)]
         assert {f.result() for f in futures} == {"tenant-0", "tenant-1"}
     assert provider_control.get() is None
+
+
+@pytest.mark.parametrize("kind,instance", [("confirmed_waba_direct", "waba"), ("authenticated_waba_agent", "waba-agent")])
+def test_business_intake_grant_is_exact_scoped_and_never_stored_metadata(monkeypatch, kind, instance):
+    from extraction_controls import process_business_intake, extraction_allowed
+    storage, _ = source_storage([connection("a", "paused")])
+    ctx = {"tenant_id": "tenant-a", "instance": instance, "source": "WABA_AGENT"}
+    def pipeline(raw_id, actual, current_storage):
+        assert extraction_allowed(current_storage, "tenant-a", actual)
+        assert not extraction_allowed(current_storage, "tenant-b", actual)
+        assert not extraction_allowed(object(), "tenant-a", actual)
+        assert not extraction_allowed(current_storage, "tenant-a", dict(actual))
+        # The same exact authorization is used at dispatch.
+        from extraction_controls import require_extraction_allowed
+        require_extraction_allowed(*provider_control.get())
+        return {"listing_ids": [1]}
+    monkeypatch.setattr(extraction, "_process_raw_message", pipeline)
+    assert process_business_intake(1, ctx, storage, kind=kind)["listing_ids"] == [1]
+    assert not extraction_allowed(storage, "tenant-a", ctx)
+    assert provider_control.get() is None
+
+
+def test_business_intake_exception_does_not_leak_authorization(monkeypatch):
+    from extraction_controls import process_business_intake, extraction_allowed
+    storage = object()
+    ctx = {"tenant_id": "tenant-a", "instance": "waba"}
+    monkeypatch.setattr(extraction, "_process_raw_message", lambda *a: (_ for _ in ()).throw(RuntimeError("fixture")))
+    with pytest.raises(RuntimeError):
+        process_business_intake(1, ctx, storage, kind="confirmed_waba_direct")
+    assert not extraction_allowed(storage, "tenant-a", ctx)
+
+
+def test_scheduler_record_has_real_source_instance_and_obeys_pause(monkeypatch):
+    import scheduler
+    from ingestion.base import SourceRecord
+    storage, _ = source_storage([connection("a", "paused"), connection("b")])
+    storage.save_raw_message = lambda _: 1
+    monkeypatch.setattr(scheduler, "get_app_storage", lambda: storage)
+    record = SourceRecord(source="whatsapp", instance="phone-a", group_id="fixture@g.us", record_id="1", text="2 BHK Bandra", meta={"tenant_id": "tenant-a"})
+    result = scheduler.process_record(record)
+    assert result["extraction_source"] == "extraction_control:not_running"
+
+
+@pytest.mark.parametrize("requirement", [False, True])
+def test_actual_business_webhooks_preserve_authenticated_intake(monkeypatch, requirement):
+    import business_api
+    from extraction_controls import extraction_allowed
+    storage = SimpleNamespace(get_raw_by_uid=lambda *a, **k: None, save_raw_message=lambda _: 71)
+    monkeypatch.setattr(business_api, "BUSINESS_API_WEBHOOK_SECRET", "fixture-secret")
+    monkeypatch.setattr(business_api, "get_storage", lambda: storage)
+    monkeypatch.setattr(business_api, "resolve_broker", lambda _: {"id": "broker-a", "canonical_name": "Fixture"})
+    monkeypatch.setattr(business_api, "_tenant_id_for", lambda _: "tenant-a")
+    calls = []
+    def pipeline(raw_id, ctx, current_storage):
+        assert extraction_allowed(current_storage, "tenant-a", ctx)
+        assert provider_control.get()[0] is storage
+        calls.append(raw_id)
+        return {"listing_ids": [3], "parsed_ids": [4]}
+    monkeypatch.setattr(extraction, "_process_raw_message", pipeline)
+    if requirement:
+        body = business_api.CreateRequirementRequest(phone="919999999999", raw_text="Need 2 BHK", confirmed=True)
+        func = business_api.create_requirement_webhook
+        unconfirmed = body.model_copy(update={"confirmed": False})
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(func(unconfirmed, "fixture-secret"))
+        assert exc.value.status_code == 409
+    else:
+        body = business_api.SaveListingRequest(phone="919999999999", raw_text="2 BHK for rent")
+        func = business_api.save_listing_webhook
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(func(body, "wrong-secret"))
+    assert exc.value.status_code in {401, 403}
+    assert not calls
+    assert asyncio.run(func(body, "fixture-secret"))["status"] == "saved"
+    assert calls == [71]
+
+
+def test_actual_waba_confirm_publish_uses_scoped_business_contract(monkeypatch):
+    from routers import common
+    from extraction_controls import extraction_allowed
+    class DB:
+        def execute(self, sql, params):
+            if sql.startswith("SELECT id, message"):
+                return SimpleNamespace(fetchall=lambda: [(1, "2 BHK for rent in Bandra")])
+            return SimpleNamespace(lastrowid=72)
+    storage = SimpleNamespace(db=DB())
+    monkeypatch.setattr(common, "storage", storage)
+    def pipeline(raw_id, ctx, current_storage):
+        assert raw_id == 72
+        assert ctx["instance"] == "waba"
+        assert extraction_allowed(current_storage, "tenant-a", ctx)
+        return {"listing_ids": [3]}
+    monkeypatch.setattr(extraction, "_process_raw_message", pipeline)
+    result = asyncio.run(common._publish_waba_direct_listing("919999999999", "confirmation-id", "Fixture", {}, "tenant-a"))
+    assert result.startswith("Published 1 listing")
+    assert provider_control.get() is None
+
+
+def test_scheduler_running_record_does_not_acquire_business_exemption(monkeypatch):
+    import scheduler
+    from ingestion.base import SourceRecord
+    from extraction_controls import extraction_allowed
+    storage, _ = source_storage([connection("a")])
+    storage.save_raw_message = lambda _: 1
+    monkeypatch.setattr(scheduler, "get_app_storage", lambda: storage)
+    def pipeline(raw_id, ctx, current_storage):
+        assert extraction_allowed(current_storage, "tenant-a", ctx)
+        assert ctx["instance"] == "phone-a"
+        # Merely calling a scheduler record waba cannot borrow business authority.
+        assert not extraction_allowed(current_storage, "tenant-a", {**ctx, "instance": "waba"})
+        return {"storage_status": "stored"}
+    monkeypatch.setattr(extraction, "_process_raw_message", pipeline)
+    record = SourceRecord(source="whatsapp", instance="phone-a", group_id="fixture@g.us", record_id="1", text="2 BHK Bandra", meta={"tenant_id": "tenant-a"})
+    assert scheduler.process_record(record)["storage_status"] == "stored"

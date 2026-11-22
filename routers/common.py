@@ -2078,7 +2078,7 @@ async def _publish_waba_direct_listing(
     if not raw_id:
         return "I couldn't create the direct listing record. Please try CONFIRM again."
 
-    from extraction import process_raw_message
+    from extraction_controls import process_business_intake
     context = {
         "tenant_id": tenant_id,
         "sender_name": sender_name or digits,
@@ -2094,7 +2094,7 @@ async def _publish_waba_direct_listing(
         "msg_text": combined,
         "msg": {"source": "WABA_DIRECT"},
     }
-    result = await asyncio.to_thread(process_raw_message, int(raw_id), context, storage)
+    result = await asyncio.to_thread(process_business_intake, int(raw_id), context, storage, kind="confirmed_waba_direct")
     listing_ids = result.get("listing_ids") or [] if isinstance(result, dict) else []
     if not listing_ids:
         return "I couldn't publish this yet. Please send the missing property details and then reply CONFIRM."
