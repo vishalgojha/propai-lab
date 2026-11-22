@@ -356,7 +356,10 @@ type SessionManager struct {
 	// is ensured at startup; without that table there is no trustworthy
 	// record of owner intent, so auto-starting anything would be unsafe.
 	reconcileEnabled atomic.Bool
-	sessionWg        sync.WaitGroup
+	// desiredStateWriter is a test hook for durable intent writes
+	// (recordDesiredState); nil in production, which uses setDesiredState.
+	desiredStateWriter func(brokerID, state string)
+	sessionWg          sync.WaitGroup
 }
 
 type inboxThreadCursor struct {
@@ -1419,8 +1422,11 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 		log.Printf("[broker %s] connected to WhatsApp server (phone: %s)", s.brokerID, phone)
 		// A completed connect is proven owner intent: the session was wanted
 		// and working. Record it durably so the reconciler may restore this
-		// broker after a later crash/restart dropped it.
-		go sm.setDesiredState(s.brokerID, desiredStateRunning)
+		// broker after a later crash/restart dropped it. This write is
+		// deliberately synchronous: handleEvent is admitted and tracked via
+		// eventWg (session_retirement.go), so a disconnect's drain waits for
+		// it and a late "running" write can never land after an owner's stop.
+		sm.recordDesiredState(s.brokerID, desiredStateRunning)
 		go sm.initializeConnectedSession(s)
 
 	case *events.PairSuccess:
@@ -2646,15 +2652,16 @@ func (sm *SessionManager) connectHandler(w http.ResponseWriter, r *http.Request)
 		json.NewEncoder(w).Encode(map[string]string{"error": "broker_id is required"})
 		return
 	}
-	// An explicit /connect is durable owner intent to run again: record it so
-	// the reconciler keeps this broker alive across later crashes/restarts.
-	sm.setDesiredState(brokerID, desiredStateRunning)
 	session := sm.StartOrGet(brokerID)
 	if session == nil {
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]string{"error": "session is already active in another ingestor instance"})
 		return
 	}
+	// An accepted explicit /connect is durable owner intent to run again:
+	// record it so the reconciler keeps this broker alive across later
+	// crashes/restarts.
+	sm.recordDesiredState(brokerID, desiredStateRunning)
 	status := session.getStatus()
 	json.NewEncoder(w).Encode(status)
 }
@@ -3083,9 +3090,6 @@ func (sm *SessionManager) disconnectHandler(w http.ResponseWriter, r *http.Reque
 		json.NewEncoder(w).Encode(map[string]string{"error": "broker_id is required"})
 		return
 	}
-	// Record the owner asked for this disconnect (durable, survives restart)
-	// so the reconciler never quietly restarts the session behind their back.
-	sm.setDesiredState(brokerID, desiredStateStopped)
 	barrierCtx, cancelBarrier := context.WithTimeout(r.Context(), 7*time.Second)
 	finish, barrierErr := sm.beginReset(barrierCtx, brokerID)
 	cancelBarrier()
@@ -3100,6 +3104,14 @@ func (sm *SessionManager) disconnectHandler(w http.ResponseWriter, r *http.Reque
 		json.NewEncoder(w).Encode(map[string]string{"error": "Session retirement could not be confirmed. Contact support; do not start another session.", "code": "disconnect_retirement_unverified"})
 		return
 	}
+	// Record the owner's stop only after retirement is confirmed. Desired-state
+	// writes from Connected events are tracked via eventWg, so every
+	// pre-retirement "running" write has drained before Remove returned; the
+	// reset barrier still blocks new starts until the deferred finish() runs
+	// after this write. This stopped value is therefore the final durable
+	// state across restarts, and the reconciler never quietly restarts the
+	// session behind the owner's back.
+	sm.recordDesiredState(brokerID, desiredStateStopped)
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true, "disconnect_confirmed": true})
 }
 

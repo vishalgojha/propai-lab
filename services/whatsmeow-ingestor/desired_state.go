@@ -34,6 +34,17 @@ func ensureDesiredStateTable(db *sql.DB) error {
 	return err
 }
 
+// recordDesiredState is the single choke point for durable intent writes.
+// Tests inject SessionManager.desiredStateWriter to control and block writes;
+// production always uses setDesiredState.
+func (sm *SessionManager) recordDesiredState(brokerID, state string) {
+	if w := sm.desiredStateWriter; w != nil {
+		w(brokerID, state)
+		return
+	}
+	sm.setDesiredState(brokerID, state)
+}
+
 // setDesiredState records the latest observed owner intent. It never deletes
 // anything and failures are logged, not fatal.
 func (sm *SessionManager) setDesiredState(brokerID, state string) {
