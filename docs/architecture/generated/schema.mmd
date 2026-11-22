@@ -21,6 +21,25 @@ erDiagram
         timestamp_with_time_zone last_seen_at
         uuid tenant_id FK
     }
+    broker_market_raw_source_consents {
+        uuid organization_id
+        bigint whatsapp_connection_id
+        text broker_id
+        text group_jid
+        text group_name
+        text version
+        uuid confirmed_by
+        timestamp_with_time_zone confirmed_at
+        timestamp_with_time_zone revoked_at
+    }
+    broker_market_source_consents {
+        bigint group_connection_id
+        text version
+        uuid confirmed_by
+        timestamp_with_time_zone confirmed_at
+        timestamp_with_time_zone source_updated_at
+        timestamp_with_time_zone revoked_at
+    }
     broker_whatsapp_device_history {
         integer id PK
         text whatsapp_connection_key
