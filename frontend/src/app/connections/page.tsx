@@ -1611,11 +1611,11 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                     <span className="text-amber-100/75"> · Name suggests a {topicHint} group; review before opting out.</span>
                   </div>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   {group.selectable !== false && !group.opted_out && (
-                    <input type="checkbox" checked={selectedGroups.has(group.group_jid)} onChange={() => toggleGroupSelection(group)} disabled={savingSelection} className="h-4 w-4 accent-emerald-400" aria-label={`Select ${whatsappGroupDisplayName(group)}`} />
+                    <input type="checkbox" checked={selectedGroups.has(group.group_jid)} onChange={() => toggleGroupSelection(group)} disabled={savingSelection} className="h-4 w-4 shrink-0 accent-emerald-400" aria-label={`Select ${whatsappGroupDisplayName(group)}`} />
                   )}
-                  <div className="connection-group-name truncate text-sm font-semibold">{whatsappGroupDisplayName(group)}</div>
+                  <div className="connection-group-name min-w-[10rem] flex-1 break-words text-sm font-semibold">{whatsappGroupDisplayName(group)}</div>
                   {group.network_owned ? (
                     <span title="Detected on PropAI's shared WhatsApp network" className="connection-group-status rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300" aria-label="Detected on shared network">PropAI network</span>
                   ) : group.shared_network_member_overlap ? (
