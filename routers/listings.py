@@ -394,6 +394,8 @@ async def retry_extraction(
     """
     if not tenant_id or not await asyncio.to_thread(storage.is_super_admin, user.get("id")):
         raise HTTPException(403, "Super Admin access required")
+    if not await asyncio.to_thread(storage.is_extraction_allowed_for_tenant, tenant_id):
+        raise HTTPException(409, "Extraction is paused or unavailable for this workspace")
     row = await asyncio.to_thread(storage.retry_raw_extraction, raw_message_id, tenant_id)
     if not row:
         raise HTTPException(404, "Source message not found in this workspace")

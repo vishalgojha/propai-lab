@@ -1718,6 +1718,9 @@ async def webhook(request: Request):
             finally:
                 set_tenant_id(previous)
         raw_id = await asyncio.to_thread(save_scoped_raw)
+        extraction_running = await asyncio.to_thread(
+            storage.is_extraction_allowed_for_tenant, resolved_tenant_id
+        )
         if not group_extraction_allowed:
             await asyncio.to_thread(storage.set_raw_message_extraction_suppressed, raw_id, True)
         conversation_type = "group" if str(group).endswith("@g.us") else "broadcast" if str(group).endswith("@broadcast") else "direct"
@@ -1742,13 +1745,14 @@ async def webhook(request: Request):
         "reply_context": msg.get("extendedTextMessage", {}).get("contextInfo", {}) or msg.get("imageMessage", {}).get("contextInfo", {}) or msg.get("videoMessage", {}).get("contextInfo", {}) or {},
         "source": "WHATSAPP", "is_group": not is_dm, "timestamp": message_timestamp,
         "synced_at": now, "event_id": message_id}
-    if group_extraction_allowed and not _schedule_raw_extraction(raw_id, extraction_ctx):
+    if group_extraction_allowed and extraction_running and not _schedule_raw_extraction(raw_id, extraction_ctx):
         _retry_schedule_raw_extraction(raw_id, extraction_ctx)
     return {
         "status": "ok",
         "raw_id": raw_id,
         "message": "saved" if group_extraction_allowed else "saved_raw_only",
         "extraction_suppressed": not group_extraction_allowed,
+        "extraction_queued": bool(group_extraction_allowed and extraction_running),
     }
 
 @router.post("/ingest")
@@ -1869,6 +1873,9 @@ async def trigger_extraction(req: TriggerExtractionRequest, request: Request):
             "status": "queued_for_worker",
             "raw_id": req.raw_id,
         }
+
+    if not await asyncio.to_thread(storage.is_extraction_allowed_for_tenant, req.tenant_id):
+        return {"status": "queued_for_worker", "raw_id": req.raw_id, "extraction_paused": True}
 
     if row.processed:
         return {"status": "already_processed", "raw_id": req.raw_id}

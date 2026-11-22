@@ -828,14 +828,26 @@ def run_cycle(storage, retry_counts: dict):
             print("[worker] expired extraction-window cleanup failed", flush=True)
             traceback.print_exc()
     if hasattr(storage, "get_running_extraction_tenant_ids"):
-        running_tenant_ids = storage.get_running_extraction_tenant_ids()
+        try:
+            running_tenant_ids = storage.get_running_extraction_tenant_ids()
+        except Exception:
+            # A control-plane outage is not consent. Keep raw rows queued and
+            # retry the control lookup on the next poll.
+            running_tenant_ids = []
+            print("[worker] extraction control lookup unavailable; failing closed", flush=True)
         if running_tenant_ids == []:
             print("[worker] extraction paused/stopped for all active tenants; raw_messages remain queued", flush=True)
             return 0, 0, 0, 0, 0
-        if running_tenant_ids is None:
-            print("[worker] extraction control lookup unavailable; failing open", flush=True)
     if DRAIN_SUPPRESSED and DRAIN_TENANT_ID:
-        running_tenant_ids = [DRAIN_TENANT_ID]
+        # Maintenance drain can narrow an already-authorized set, never
+        # bypass a paused/stopped/unavailable extraction control.
+        running_tenant_ids = [
+            tenant_id for tenant_id in (running_tenant_ids or [])
+            if tenant_id == DRAIN_TENANT_ID
+        ]
+        if not running_tenant_ids:
+            print("[worker] suppressed drain tenant is not extraction-enabled; raw_messages remain queued", flush=True)
+            return 0, 0, 0, 0, 0
 
     reconcile_pending = getattr(storage, "reconcile_pending_repeat_observations", None)
     if RECONCILE_PENDING_ON_CYCLE and reconcile_pending:

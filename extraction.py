@@ -4218,6 +4218,23 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     if ctx.get("tenant_id"):
         storage.tenant_id = ctx["tenant_id"]
 
+    # This workhorse is reachable from the webhook fast path, the polling
+    # worker, and local/explicit retry paths. Re-check the tenant control at
+    # the final boundary before classification or any provider call so a
+    # pause racing with queue fetch/scheduling cannot silently grant work.
+    # A control lookup failure is fail-closed. Raw evidence and queued rows
+    # are deliberately left untouched for a later, explicit resume.
+    control_check = getattr(storage, "is_extraction_allowed_for_tenant", None)
+    if callable(control_check) and not control_check(ctx.get("tenant_id")):
+        return {
+            "raw_id": raw_id,
+            "parsed_ids": [],
+            "listing_ids": [],
+            "requirement_ids": [],
+            "storage_status": "skipped",
+            "extraction_source": "extraction_control:not_running",
+        }
+
     from lab.config import load_excluded_groups
 
     msg_text = ctx["msg_text"]

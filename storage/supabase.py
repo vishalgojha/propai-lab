@@ -3917,12 +3917,12 @@ class SupabaseStorage(Storage):
                 return candidate
         return row
 
-    def get_running_extraction_tenant_ids(self) -> list[str] | None:
+    def get_running_extraction_tenant_ids(self) -> list[str]:
         """Return tenants allowed to consume raw messages.
 
-        ``None`` means the control-plane lookup failed and the worker should
-        fail open for compatibility. An empty list means all extraction is
-        intentionally paused/stopped.
+        An unavailable control-plane lookup fails closed as an empty list.
+        Raw messages remain stored and queued; callers must not interpret a
+        storage error as consent to invoke extraction.
         """
         try:
             response = self.client.table("org_whatsapp_connections").select(
@@ -3936,7 +3936,28 @@ class SupabaseStorage(Storage):
                 and row.get("extraction_status", "running") == "running"
             })
         except Exception:
-            return None
+            return []
+
+    def is_extraction_allowed_for_tenant(self, tenant_id: str | None) -> bool:
+        """Return whether this tenant currently has an active running source.
+
+        This is a late, fail-closed check used immediately before work can
+        enter the structured extraction pipeline. It intentionally does not
+        alter raw capture, queued rows, source selection, or publication.
+        """
+        if not tenant_id:
+            return False
+        try:
+            response = self.client.table("org_whatsapp_connections").select(
+                "extraction_status,is_active"
+            ).eq("organization_id", str(tenant_id)).execute()
+            return any(
+                row.get("is_active", True)
+                and row.get("extraction_status", "running") == "running"
+                for row in (response.data or [])
+            )
+        except Exception:
+            return False
 
     def set_raw_group_extraction_suppressed(self, tenant_id: str, group_jid: str, suppressed: bool) -> None:
         """Pause/resume queued extraction for one opted-out group.

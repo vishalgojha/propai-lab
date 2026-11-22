@@ -582,6 +582,8 @@ async def external_raw_message_extract(raw_message_id: int, key: dict = Depends(
     connection_id = group.get("whatsapp_connection_id")
     allowlist = storage.client.table("public_market_publication_allowlist").select("whatsapp_connection_id").eq("tenant_id", tenant_id).eq("whatsapp_connection_id", connection_id).eq("enabled", True).limit(1).execute()
     if not (allowlist.data or []): raise HTTPException(403, "This WhatsApp connection is not enabled for public extraction")
+    if not await asyncio.to_thread(storage.is_extraction_allowed_for_tenant, tenant_id):
+        raise HTTPException(409, "Extraction is paused or unavailable for this workspace")
     row = await asyncio.to_thread(storage.retry_raw_extraction, raw_message_id, tenant_id)
     if not row: raise HTTPException(404, "Raw WhatsApp message could not be queued")
     return {"success": True, "raw_message_id": raw_message_id, "status": "queued", "connection_id": connection_id}

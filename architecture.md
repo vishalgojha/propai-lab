@@ -62,6 +62,22 @@ backfill or a public feed. Raw MCP search defaults to groups, with private DMs
 requiring explicit scope. Raw result pages expose cursors, and complete
 message text is fetched by ID so display truncation never destroys evidence.
 
+## Extraction control boundary (2026-11-23)
+
+WhatsApp raw capture is independent from structured extraction. A captured
+message remains tenant-scoped raw evidence when extraction is paused, stopped,
+or the control-plane lookup is unavailable; it is not deleted or silently
+published. The final `process_raw_message` boundary re-checks that the tenant
+has an active running extraction connection before classification or any model
+provider call. Webhook scheduling, API triggers, explicit retries, and the
+polling worker must all fail closed through that boundary.
+
+Pausing or stopping does not cancel an already-running provider request. It
+prevents a new request from starting; in-flight work may finish under the
+existing source-selection, tenant, dedupe, and publication gates. Queued raw
+rows remain available for an explicit resume, but the worker's bounded retry
+window and expiry cleanup can make older rows ineligible before resume.
+
 ## Brokerage workspace and shared-market boundary
 
 PropAI is the brokerage workspace over a controlled multi-tenant market, not
