@@ -2507,11 +2507,16 @@ def _call_provider(
     config.
     """
     from usage_logger import log_ai_usage
+    from extraction_controls import ExtractionPaused, provider_control, require_extraction_allowed
 
     started = time.monotonic()
     try:
         _wait_for_provider_cooldown(provider["name"])
-        client = OpenAI(api_key=provider["api_key"], base_url=provider["base_url"])
+        # Hidden SDK retries cannot recheck source consent. Leave query-time
+        # interpretation's existing retry policy alone.
+        controlled = provider_control.get() is not None or call_stage == "segmentation"
+        client = OpenAI(api_key=provider["api_key"], base_url=provider["base_url"],
+                        **({"max_retries": 0} if controlled else {}))
         request = dict(
             model=provider["model"],
             messages=messages,
@@ -2533,6 +2538,20 @@ def _call_provider(
             request["reasoning_effort"] = None
         elif provider.get("reasoning_effort"):
             request["reasoning_effort"] = provider["reasoning_effort"]
+        # Read consent after cooldown and request preparation, before EVERY
+        # network dispatch, including repair, truncation retries and fallbacks.
+        # Query-time raw-message interpretation outside this pipeline remains
+        # independent of structured extraction Pause/Stop.
+        control = provider_control.get()
+        if control is not None:
+            require_extraction_allowed(*control)
+        elif call_stage == "segmentation":
+            from extraction import get_storage
+            control_storage = get_storage()
+            source = control_storage.get_raw_message(source_id, tenant_id=tenant_id) if source_id is not None and tenant_id else None
+            if source is None:
+                raise ExtractionPaused("Extraction source is unknown")
+            require_extraction_allowed(control_storage, tenant_id, source)
         resp = client.chat.completions.create(**request)
         rate_headers = _response_headers(resp)
         if rate_headers:
@@ -2636,6 +2655,8 @@ def _call_provider(
         # and must survive into each normalized item. Legacy array responses
         # remain supported by the caller.
         return parsed
+    except ExtractionPaused:
+        raise
     except json.JSONDecodeError:
         _logger.warning("Provider %s returned malformed JSON", provider["name"])
         return "MALFORMED"

@@ -4,6 +4,9 @@ import extraction_worker
 
 
 class _Storage:
+    def is_extraction_allowed_for_source(self, _tenant_id, **_source):
+        return True
+
     def __init__(self):
         self.protocol_rows = []
         self.skip_rows = []

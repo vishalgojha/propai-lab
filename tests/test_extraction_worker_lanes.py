@@ -15,6 +15,9 @@ def test_stale_extraction_claim_is_not_a_retryable_failure():
 
 
 class _Storage:
+    def is_extraction_allowed_for_source(self, _tenant_id, **_source):
+        return True
+
     def __init__(self):
         self.calls = []
         self.processed = []

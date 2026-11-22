@@ -3959,6 +3959,27 @@ class SupabaseStorage(Storage):
         except Exception:
             return False
 
+    def is_extraction_allowed_for_source(self, tenant_id, *, broker_id=None, instance=None) -> bool:
+        """Require an unambiguous source connection in this tenant to be running.
+
+        Never substitute another phone, including retired broker aliases.
+        Unknown historical sources stay queued until their routing is known.
+        """
+        if not tenant_id or not (broker_id or instance):
+            return False
+        try:
+            rows = self.client.table("org_whatsapp_connections").select(
+                "id,broker_id,instance_name,is_active,extraction_status"
+            ).eq("organization_id", str(tenant_id)).execute().data or []
+            matches = [row for row in rows
+                       if (not broker_id or str(row.get("broker_id") or "") == str(broker_id))
+                       and (not instance or str(row.get("instance_name") or "") == str(instance))]
+            return (len(matches) == 1
+                    and matches[0].get("is_active") is True
+                    and matches[0].get("extraction_status") == "running")
+        except Exception:
+            return False
+
     def set_raw_group_extraction_suppressed(self, tenant_id: str, group_jid: str, suppressed: bool) -> None:
         """Pause/resume queued extraction for one opted-out group.
 

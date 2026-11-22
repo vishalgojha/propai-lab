@@ -13,7 +13,7 @@ class _ControlStorage:
     def __init__(self, allowed):
         self.allowed = allowed
 
-    def is_extraction_allowed_for_tenant(self, _tenant_id):
+    def is_extraction_allowed_for_source(self, _tenant_id, **_source):
         return self.allowed
 
 

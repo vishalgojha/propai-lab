@@ -3,6 +3,7 @@
 Imports from routers.common for storage, require_user, _resolve_active_organization_id, etc.
 """
 import asyncio
+from extraction_controls import extraction_allowed
 import hmac
 import json
 import logging
@@ -1719,7 +1720,7 @@ async def webhook(request: Request):
                 set_tenant_id(previous)
         raw_id = await asyncio.to_thread(save_scoped_raw)
         extraction_running = await asyncio.to_thread(
-            storage.is_extraction_allowed_for_tenant, resolved_tenant_id
+            extraction_allowed, storage, resolved_tenant_id, {"raw_payload": data}
         )
         if not group_extraction_allowed:
             await asyncio.to_thread(storage.set_raw_message_extraction_suppressed, raw_id, True)
@@ -1874,7 +1875,7 @@ async def trigger_extraction(req: TriggerExtractionRequest, request: Request):
             "raw_id": req.raw_id,
         }
 
-    if not await asyncio.to_thread(storage.is_extraction_allowed_for_tenant, req.tenant_id):
+    if not await asyncio.to_thread(extraction_allowed, storage, req.tenant_id, row):
         return {"status": "queued_for_worker", "raw_id": req.raw_id, "extraction_paused": True}
 
     if row.processed:

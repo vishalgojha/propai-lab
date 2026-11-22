@@ -4199,7 +4199,23 @@ def _quarantine_broker_signature_building(
     return True
 
 
+def _control_denied_result(raw_id):
+    return {"raw_id": raw_id, "parsed_ids": [], "listing_ids": [],
+            "requirement_ids": [], "storage_status": "skipped",
+            "extraction_source": "extraction_control:not_running"}
+
+
 def process_raw_message(raw_id: int, ctx: dict, storage=None):
+    from extraction_controls import provider_control
+    storage = storage if storage is not None else get_storage()
+    token = provider_control.set((storage, ctx.get("tenant_id"), ctx))
+    try:
+        return _process_raw_message(raw_id, ctx, storage)
+    finally:
+        provider_control.reset(token)
+
+
+def _process_raw_message(raw_id: int, ctx: dict, storage=None):
     """Process a single raw message through the full extraction pipeline.
 
     This is the async workhorse — called from both webhook background threads
@@ -4218,22 +4234,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     if ctx.get("tenant_id"):
         storage.tenant_id = ctx["tenant_id"]
 
-    # This workhorse is reachable from the webhook fast path, the polling
-    # worker, and local/explicit retry paths. Re-check the tenant control at
-    # the final boundary before classification or any provider call so a
-    # pause racing with queue fetch/scheduling cannot silently grant work.
-    # A control lookup failure is fail-closed. Raw evidence and queued rows
-    # are deliberately left untouched for a later, explicit resume.
-    control_check = getattr(storage, "is_extraction_allowed_for_tenant", None)
-    if callable(control_check) and not control_check(ctx.get("tenant_id")):
-        return {
-            "raw_id": raw_id,
-            "parsed_ids": [],
-            "listing_ids": [],
-            "requirement_ids": [],
-            "storage_status": "skipped",
-            "extraction_source": "extraction_control:not_running",
-        }
+    from extraction_controls import extraction_allowed, ExtractionPaused
+    if not extraction_allowed(storage, ctx.get("tenant_id"), ctx):
+        return _control_denied_result(raw_id)
 
     from lab.config import load_excluded_groups
 
@@ -4850,6 +4853,19 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     storage.release_shared_extraction_hash(raw_id, _cache_hash(msg_text))
                 except Exception:
                     pass
+            if isinstance(exc, ExtractionPaused):
+                try:
+                    from message_identity import author_content_fingerprint
+                    storage.release_author_content_claim(
+                        raw_id, author_content_fingerprint(
+                            sender_phone=str(ctx.get("sender_phone") or ""),
+                            sender_jid=str(ctx.get("sender_jid") or ""),
+                            message=msg_text,
+                        ), tenant_id=str(ctx.get("tenant_id") or ""),
+                    )
+                except Exception:
+                    _logger.warning("raw_id=%d paused baseline claim release failed", raw_id)
+                return _control_denied_result(raw_id)
             _logger.warning("raw_id=%d ai_extract error: %s", raw_id, exc)
 
         # Provider failure is never a "no anchor". When every provider is down

@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from threading import Lock
 
 from extraction import get_storage, process_raw_message
+from extraction_controls import extraction_allowed
 from extraction_dedup import _cache_hash, should_skip
 from extraction_scope import market_scope_skip_reason
 from message_identity import is_protocol_event
@@ -680,13 +681,17 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
             attempt_id = None
             ctx = {}
             try:
+                ctx = context_from_raw(row)
+                if not extraction_allowed(storage, ctx.get("tenant_id"), ctx):
+                    with lock:
+                        stats["skipped"] += 1
+                    return
                 begin_attempt = getattr(storage, "begin_raw_extraction_attempt", None)
                 if begin_attempt:
                     attempt = begin_attempt(raw_id, lane=lane)
                     attempt_id = int((attempt or {}).get("attempt_id") or 0) or None
                 with lock:
                     stats["attempted"] += 1
-                ctx = context_from_raw(row)
                 result = process_raw_message(raw_id, ctx, storage=storage)
                 if isinstance(result, dict) and result.get("storage_status") == "failed":
                     raise RuntimeError("extraction completed without a successful parsed-row write")
