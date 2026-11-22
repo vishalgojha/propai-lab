@@ -1603,8 +1603,8 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
               const topicHint = whatsappGroupTopicHint(group);
               return (
           <div key={group.group_jid} className={`h-full rounded-lg border p-3 ${selectedGroups.has(group.group_jid) ? "border-emerald-400/35 bg-emerald-500/[0.04]" : "border-white/10 bg-white/[0.02]"}`}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-3">
+              <div className="min-w-0 flex-1 sm:basis-40">
                 {topicHint && (
                   <div className="mb-2 rounded-md border border-amber-400/25 bg-amber-400/[0.06] px-2 py-1 text-[10px] leading-4 text-amber-200" title="This hint uses the group name only. It does not inspect messages or change your selection.">
                     <span className="font-semibold">Possibly not real estate</span>
@@ -1615,7 +1615,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                   {group.selectable !== false && !group.opted_out && (
                     <input type="checkbox" checked={selectedGroups.has(group.group_jid)} onChange={() => toggleGroupSelection(group)} disabled={savingSelection} className="h-4 w-4 shrink-0 accent-emerald-400" aria-label={`Select ${whatsappGroupDisplayName(group)}`} />
                   )}
-                  <div className="connection-group-name min-w-[10rem] flex-1 break-words text-sm font-semibold">{whatsappGroupDisplayName(group)}</div>
+                  <div className="connection-group-name min-w-0 flex-1 basis-40 break-words text-sm font-semibold">{whatsappGroupDisplayName(group)}</div>
                   {group.network_owned ? (
                     <span title="Detected on PropAI's shared WhatsApp network" className="connection-group-status rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300" aria-label="Detected on shared network">PropAI network</span>
                   ) : group.shared_network_member_overlap ? (
@@ -1692,17 +1692,17 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                 </div>}
               </div>
               {group.covered_by_other_connection ? (
-                <span className="shrink-0 text-[11px] text-zinc-500">Already covered by another connection</span>
+                <span className="shrink-0 self-start text-[11px] text-zinc-500">Already covered by another connection</span>
               ) : group.opted_out && data.unlimited ? (
                 <button
                   onClick={() => stageGroupForSelection(group)}
                   disabled={savingSelection}
-                  className="connection-group-action connection-group-action-success rounded-lg border px-3 py-1.5 text-[11px] font-semibold hover:bg-emerald-500/10 disabled:opacity-50"
+                  className="connection-group-action connection-group-action-success self-start rounded-lg border px-3 py-1.5 text-[11px] font-semibold hover:bg-emerald-500/10 disabled:opacity-50"
                 >
                   Include group
                 </button>
               ) : data.unlimited ? (
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex shrink-0 items-center gap-2 self-start">
                   <button
                     onClick={() => void handleOptOut(group)}
                     disabled={activeGroup === group.group_jid}
