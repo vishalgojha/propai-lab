@@ -1226,22 +1226,24 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
 
   const applyDirectorySelection = useCallback((next: OnboardingGroupState) => {
     const selectable = (next.groups || []).filter((group) => group.selectable !== false && !group.opted_out);
-    // Default to opt-out: every eligible group is checked until the broker
-    // explicitly opts it out. Keep the separate confirmation step so this
-    // draft does not change extraction eligibility until the broker confirms.
-    setSelectedGroups(new Set(selectable.map((group) => group.group_jid)));
+    const persisted = selectable.filter((group) => group.connected);
+    // Existing confirmed choices are authoritative after a reload. Only a
+    // workspace with no persisted choices gets the initial all-eligible draft.
+    setSelectedGroups(new Set((persisted.length ? persisted : selectable).map((group) => group.group_jid)));
   }, []);
 
-  const loadGroups = useCallback(async () => {
-    if (!hasPairingIdentity) return;
+  const loadGroups = useCallback(async (): Promise<boolean> => {
+    if (!hasPairingIdentity) return false;
     setLoading(true);
     try {
       const next = await getOnboardingGroups(phone.id);
       setData(next);
       applyDirectorySelection(next);
       setError(null);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load group onboarding data.");
+      return false;
     } finally {
       setLoading(false);
     }
@@ -1316,14 +1318,28 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     try {
       const selectedJids = Array.from(selectedGroups);
       const result = await selectOnboardingGroups(phone.id, selectedJids);
-      // The response is the authoritative persisted state. Keep it in the
-      // checkbox model even if the following directory refresh is eventually
-      // consistent and briefly returns the previous connection rows.
-      setSelectedGroups(new Set(result.selected_group_jids));
-      setMessage("Selection saved for optional extraction. Raw WhatsApp capture is unaffected.");
-      await loadGroups();
-      setSelectedGroups(new Set(result.selected_group_jids));
-      await onRefresh();
+      // The response is authoritative. Update the local directory immediately
+      // so a transient refresh failure cannot make a successful confirmation
+      // look like an unsaved draft.
+      const confirmed = new Set(result.selected_group_jids);
+      setSelectedGroups(confirmed);
+      setData((current) => current ? {
+        ...current,
+        selected_count: result.selected_count,
+        groups: current.groups.map((group) => ({
+          ...group,
+          connected: confirmed.has(group.group_jid),
+        })),
+      } : current);
+      const refreshed = await loadGroups();
+      setSelectedGroups(confirmed);
+      if (!refreshed) {
+        setError(null);
+        setMessage("Selection saved and confirmed. Group refresh is temporarily unavailable; the saved selection remains active.");
+      } else {
+        setMessage("Selection saved and confirmed for optional extraction. Raw WhatsApp capture is unaffected.");
+      }
+      void Promise.resolve(onRefresh()).catch(() => undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save group selection.");
     } finally {
@@ -1490,6 +1506,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     selectedGroups.size !== persistedSelectedJids.size
     || Array.from(selectedGroups).some((jid) => !persistedSelectedJids.has(jid))
   );
+  const selectionConfirmed = persistedSelectedCount > 0 && !hasUnpersistedSelection;
   const captureConnected = isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus);
 
   if (!hasPairingIdentity) {
@@ -1583,6 +1600,12 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
           {hasUnpersistedSelection && (
             <div className="mt-3 border-l-2 border-cyan-400/50 bg-cyan-400/[0.04] px-3 py-2 text-[11px] text-cyan-200">
               {selectedGroups.size} group{selectedGroups.size === 1 ? " is" : "s are"} checked locally. Confirm the selection above before starting.
+            </div>
+          )}
+          {selectionConfirmed && (
+            <div className="mt-3 flex items-center gap-2 border-l-2 border-emerald-400/50 bg-emerald-400/[0.04] px-3 py-2 text-[11px] text-emerald-200">
+              <Check className="h-3.5 w-3.5 shrink-0" />
+              {persistedSelectedCount} group{persistedSelectedCount === 1 ? " is" : "s are"} confirmed and ready for optional extraction.
             </div>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
