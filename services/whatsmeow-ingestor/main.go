@@ -1316,6 +1316,14 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	if selfChatOnlyBroker(s.brokerID) && !isOwnWhatsAppJID(s, info.Chat) {
 		return
 	}
+	// Ordinary one-to-one chats are not PropAI ingestion sources. Brokers use
+	// the owner self-chat command path and the authenticated Instinct/MCP write
+	// APIs for private requirements and inventory; personal/broker DMs must not
+	// reach media capture, counters, webhooks, or raw_messages.
+	if !info.IsGroup && !isOwnWhatsAppJID(s, info.Chat) {
+		log.Printf("[broker %s] direct message ignored by no-DM ingestion policy chat=%s id=%s", s.brokerID, info.Chat.String(), info.ID)
+		return
+	}
 	if info.IsGroup {
 		// This deliberately records receipt before database/webhook work so a
 		// production test can distinguish WhatsApp stream loss from delivery
@@ -1338,15 +1346,9 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		}
 		log.Printf("[broker %s] direct message received chat=%s sender=%s id=%s from_me=%t own_id=%s own_lid=%s", s.brokerID, info.Chat.String(), info.Sender.String(), info.ID, info.IsFromMe, ownID, ownLID)
 	}
-	// Capture live media once. Ordinary group/DM media is metadata-only by
-	// default (deferred, never downloaded or uploaded to storage); message
-	// text and captions are serialized into raw_messages regardless. Only the
-	// broker's own self-chat still downloads, so a photo can become a draft
-	// and a voice note can be transcribed.
+	// Media is intentionally not captured or downloaded. Text/captions remain
+	// the only WhatsApp payload accepted by the ingestion pipeline.
 	var capturedMedia *inboundMedia
-	if evt.Message != nil {
-		capturedMedia = sm.captureMedia(s, evt.Message, info.Chat.String(), info.ID, isOwnWhatsAppJID(s, info.Chat))
-	}
 	// Self-chat commands go to the AI agent, but we still forward the message.
 	// Check every message (not just IsFromMe) so phone-sent self-messages
 	// (from_me=false on the web) also trigger the agent.
@@ -2009,13 +2011,11 @@ func (sm *SessionManager) handleHistorySync(s *BrokerSession, evt *events.Histor
 	if evt == nil || evt.Data == nil {
 		return
 	}
-	// Keep the existing self-chat control-plane boundary. Normal broker sessions
-	// may import direct-chat history, but history batches can also include group
-	// conversations, so filter every conversation before persistence.
-	if selfChatOnlyBroker(s.brokerID) {
-		log.Printf("[broker %s] history sync ignored: self-chat-only policy", s.brokerID)
-		return
-	}
+	// History sync is never a market-ingestion source. In particular, do not
+	// turn private DM history into raw_messages; owner commands use their
+	// separate self-chat transcript and broker writes use Instinct/MCP APIs.
+	log.Printf("[broker %s] history sync ignored by no-DM ingestion policy", s.brokerID)
+	return
 
 	conversations := evt.Data.GetConversations()
 	posted := 0
@@ -2102,7 +2102,8 @@ func whatsappConversationType(jid string) string {
 }
 
 func historySyncDirectChat(chatID string) bool {
-	return whatsappConversationType(chatID) == "direct"
+	// Private-chat history is intentionally never imported into PropAI.
+	return false
 }
 
 // WhatsApp history timestamps are normally seconds, but some sync payloads
@@ -2188,9 +2189,6 @@ func (sm *SessionManager) postWebMessage(s *BrokerSession, wmsg *waWeb.WebMessag
 			"source":           source,
 			"conversationName": chatName,
 		},
-	}
-	if media := sm.captureMedia(s, wmsg.GetMessage(), remoteJID, messageID, false); media != nil {
-		payload["data"].(map[string]interface{})["media"] = media
 	}
 
 	if _, err := sm.insertRawMessage(s.brokerID, payload); err != nil {

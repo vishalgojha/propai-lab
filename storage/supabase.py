@@ -4238,6 +4238,8 @@ class SupabaseStorage(Storage):
         data = {k: v for k, v in msg.__dict__.items()
                 if v is not None and k in self.RAW_MESSAGE_COLUMNS}
         data.pop("id", None)
+        if str(data.get("source") or "").upper() == "WHATSAPP" and not bool(data.get("is_group")):
+            raise ValueError("direct-message ingestion disabled")
         tenant_id = data.get("tenant_id") or self._tenant_id
         if not tenant_id:
             raise ValueError("tenant_id required for raw message persistence")

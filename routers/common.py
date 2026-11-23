@@ -1733,6 +1733,9 @@ async def _business_api_config_for(user: dict, tenant_id: str | None) -> dict:
         "webhook_callback_url": _waba_callback_url(org_id)}
 
 async def _download_waba_media(media_id: str, access_token: str = "") -> dict | None:
+    # WhatsApp media is not a PropAI ingestion source.
+    return None
+    """
     access_token = access_token or _business_api_get_config_value("access_token", "WABA_ACCESS_TOKEN")
     if not access_token:
         return None
@@ -1754,6 +1757,7 @@ async def _download_waba_media(media_id: str, access_token: str = "") -> dict | 
             return {"filename": filename, "filepath": filepath, "mime_type": mime_type}
     except Exception:
         return None
+    """
 
 async def _resolve_waba_webhook_config(body: dict, org_id: str | None = None) -> tuple[dict, str | None]:
     phone_number_id = ""; sender_phone = ""
@@ -1812,6 +1816,11 @@ async def _process_business_api_webhook(body: dict, org_id: str | None = None, r
             value = change.get("value", {})
             for msg in value.get("messages", []):
                 msg_from = msg.get("from", ""); msg_id = msg.get("id", ""); msg_type = msg.get("type", "")
+                # Business API messages are one-to-one chats. They are no
+                # longer a PropAI ingestion source; brokers submit private
+                # requirements/listings through Instinct/MCP writes.
+                processed.append({"type": "direct_message_ignored", "id": msg_id})
+                continue
                 caption = ""; pic_token = ""; media_id = ""; stored_inbound = False; sender_name = ""
                 if msg_type not in _BUSINESS_API_PERSISTABLE_TYPES:
                     print(f"[waba-webhook] skipping non-persistable msg_type={msg_type!r} id={msg_id} from={msg_from}", flush=True)

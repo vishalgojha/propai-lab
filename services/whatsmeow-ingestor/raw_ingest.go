@@ -117,6 +117,9 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 			groupJID = v
 		}
 	}
+	if !strings.HasSuffix(groupJID, "@g.us") {
+		return 0, fmt.Errorf("direct-message ingestion disabled")
+	}
 
 	senderJID := ""
 	if v, ok := key["participant"].(string); ok && v != "" {
@@ -149,7 +152,7 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 		msgType = mt
 	}
 
-	isGroup := strings.HasSuffix(groupJID, "@g.us")
+	isGroup := true
 	groupName := ""
 	if isGroup {
 		groupName = groupJID

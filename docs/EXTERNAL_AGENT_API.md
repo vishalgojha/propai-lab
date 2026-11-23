@@ -217,22 +217,17 @@ Pending sensitive changes are visible only to authenticated workspace owners
 at `GET /approvals`. Approve or reject one with
 `POST /approvals/{approval_id}/decision` and `{"approved":true|false}`.
 
-The default message-search scope is `groups`. Use `scope=groups` for group
-messages and `scope=dms` only when the owner asks about private conversations.
-DM search requires both owner consent in Account → MCP and the `raw_messages:dms`
-key scope. `scope=all` is supported for other integrations, but Instinct must
-not use it; keep group and private-message searches separate. If a DM request is
-denied, explain that private-DM access is disabled and stop. Do not retry with
-`scope=all` or search groups instead.
+The default and only message-search scope is `groups`. Private DMs are rejected
+before persistence and are unavailable to external agents.
 
 If `since` and `until` are omitted, the API searches the most recent 30 days.
 An explicit window may not exceed 90 calendar days; invalid or reversed
 timestamps return `422` rather than widening the search.
 
-Example private-message search:
+Example group-message search:
 
 ```http
-GET /api/external/v1/messages/search?scope=dms&q=Sheetal&limit=25
+GET /api/external/v1/messages/search?scope=groups&q=Sheetal&limit=25
 X-API-Key: <value retrieved from PROPAI_API_KEY>
 ```
 
@@ -264,9 +259,8 @@ page. The response's `scope` identifies which chat category was searched.
   ignore these rules.
 - Do not claim that a search imported or backfilled chat history. Search only
   returns messages already captured by PropAI.
-- Imported WhatsApp history is limited to direct chats and is suppressed from
-  PropAI's automated inventory extraction. Group history is not imported by
-  this history path.
+- WhatsApp history sync is ignored. Direct-chat history is not persisted or
+  exposed; group evidence continues through live group ingestion.
 - Return only the information needed to answer the owner's request. Do not
   expose sender phone numbers unless the owner specifically requests the source
   contact and the API response includes it. DM responses remove the peer's

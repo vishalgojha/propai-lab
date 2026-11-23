@@ -13,8 +13,8 @@ fallback to a user ID for ordinary reads or writes. Every tenant-owned query,
 worker claim, embedding, match, export, analytics event, MCP tool, and UI route
 must carry the authenticated tenant scope. Null tenant scope fails closed.
 
-PropAI has a hybrid visibility model. DMs and unchecked groups are private
-tenant evidence. A group that the operator explicitly checks and configures for
+PropAI has a hybrid visibility model. DMs are rejected at ingestion; unchecked
+groups remain private tenant evidence. A group that the operator explicitly checks and configures for
 ingestion becomes an authorized `public_market_source`; typed inventory
 derived from that source may enter the multi-tenant shared market. Shared
 projections may cross tenant boundaries only through their approved fields and
@@ -58,8 +58,8 @@ MCP structured listing search may use a source-backed fallback over the same
 tenant's captured WhatsApp groups when typed projections are empty or stale.
 These candidates remain explicitly unverified and retain raw message IDs,
 group provenance, timestamps, and field confidence; this is not a history
-backfill or a public feed. Raw MCP search defaults to groups, with private DMs
-requiring explicit scope. Raw result pages expose cursors, and complete
+backfill or a public feed. Raw MCP search is group-only because private DMs are
+not ingested. Raw result pages expose cursors, and complete
 message text is fetched by ID so display truncation never destroys evidence.
 
 ## Extraction control boundary (2026-11-23)
@@ -180,9 +180,10 @@ Reconnect remains reserved for an already-paired saved session; a connected
 session rejects a new QR-pairing request.
 
 The earliest active WhatsApp connection is the sole continuous-extraction
-owner for this single-tenant workspace. Its live group and direct-message
-events are captured into tenant-scoped `raw_messages` independently of the
-group-selection screen. DMs are always workspace-private. A group is
+owner for this single-tenant workspace. Its live group events are captured
+into tenant-scoped `raw_messages` independently of the group-selection screen.
+Ordinary DMs and history-sync messages are rejected before raw persistence;
+the owner's self-chat commands use a separate private-agent transcript. A group is
 workspace-private by default; only an explicitly confirmed selected group is
 marked `public_market_source` and may produce `shared_market` typed inventory.
 Group selection controls extraction eligibility and publication consent; an
@@ -193,14 +194,14 @@ explicitly confirmed before extraction uses it; the screen gates starting
 extraction and is not a raw-capture filter. When extraction runs, eligible
 live rows may be parsed after the deterministic gates. Strong non-property
 terms in a group name can produce an advisory review hint; group messages are
-not analyzed for this hint, and it never changes selection state. Additional connected numbers retain raw
-messages as tenant-scoped evidence but are raw-only and are not continuously
-parsed. History-sync is disabled by default and history rows are suppressed;
-the owner's self-chat commands use a separate private-agent transcript rather
-than becoming raw property evidence.
+not analyzed for this hint, and it never changes selection state. Additional
+connected numbers retain only eligible group messages as tenant-scoped
+evidence and are not continuously parsed. WhatsApp media is not downloaded or
+stored because the pipeline has no supported media parser.
 
 The workspace market-locality selection is also a typed-extraction boundary.
-Raw WhatsApp ingestion remains broad and preserves every event, but the
+Raw WhatsApp group ingestion remains broad and preserves every eligible group
+event, but the
 extraction worker and direct webhook extraction paths only parse messages that
 contain one of the explicitly selected primary or nearby localities. Messages
 outside that selection, or with no configured selection, are retained as raw
@@ -222,17 +223,16 @@ receive a gateway-imposed output-token ceiling. This path
 intentionally does not wait on the raw-message extraction backlog.
 
 The private self-chat agent also has an explicit `search_whatsapp_messages`
-tool for owner-requested archive searches across captured group and direct
-messages. This is source retrieval only: it returns the original message,
+tool for owner-requested archive searches across captured group messages. This
+is source retrieval only: it returns the original message,
 conversation type, sender, and timestamp, and cannot create typed inventory,
 publish a record, or treat a personal DM as market evidence. The default
 window is recent and the tool reports that its coverage is the tenant-captured
-WhatsApp archive, within the 30-day raw-message retention contract. It does
+WhatsApp group archive, within the 30-day raw-message retention contract. It does
 not request a history backfill. Ordinary web market searches continue to
-use the narrower group-evidence tool so private DMs are not widened into web
-inventory searches by accident. A concrete property search issued in WhatsApp
-self-chat also performs a tenant-scoped lookup of captured group and direct
-messages. It filters source posts by requested locality, configuration, and
+use the group-evidence tool. A concrete property search issued in WhatsApp
+self-chat also performs a tenant-scoped lookup of captured group messages. It
+filters source posts by requested locality, configuration, and
 budget, then shows them separately as unverified evidence beside normalized
 shared inventory. The display retains each source message's sender and chat.
 
@@ -256,8 +256,8 @@ tenant-scoped permission action; the key secret and its unrelated scopes are
 preserved. Sensitive CRM writes pause in a tenant-scoped approval queue until
 an authenticated workspace owner approves them; every external-agent write
 attempt is recorded with redacted payload metadata and an outcome. Key rotation
-revokes the prior secret immediately. DM reads remain gated separately by
-workspace consent. Instinct may request a retry of a captured group message
+revokes the prior secret immediately. DM reads are unavailable because DMs are
+not ingested. Instinct may request a retry of a captured group message
 through `raw_messages:extract`, but the API checks the selected group directory
 and a connection-level publication allowlist before releasing the raw row to
 the existing extraction worker. It cannot write typed listings or visibility
@@ -276,13 +276,9 @@ exception only bypasses a self-chat-disabled flag for that configured number;
 it does not bypass an inactive WhatsApp connection or tenant resolution.
 
 External agent tokens may also carry `raw_messages:read` for tenant-scoped group
-evidence. Search supports `scope=groups` by default, `scope=dms` for explicitly
-consented private messages, and `scope=all` only when that same consent is on.
-The separate `raw_messages:dms` scope for private DMs is disabled by default and is issued only after the workspace owner explicitly enables
-`organizations.external_agent_dms_enabled`; disabling consent removes the scope
-from active external tokens. Consent is an owner/administrator action. The REST surface exposes paginated raw search and full-message lookup, while preserving
-the source-evidence warning; no transport payload blobs or cross-tenant rows
-are returned.
+evidence. Raw search is group-only because DMs are rejected before persistence.
+Instinct/MCP may write only tenant-private broker inventory and requirements
+through the explicit `inventory:write` and `requirements:write` scopes.
 
 The public `GET /api/external/v1/docs` endpoint serves the versioned
 `docs/EXTERNAL_AGENT_API.md` bootstrap guide for new external-agent sessions.
@@ -290,11 +286,9 @@ It contains endpoint, authentication, consent, and evidence-handling rules but
 no tenant data or credential values. The machine-readable OpenAPI schema remains
 available separately.
 
-WhatsApp history sync persists only direct-chat conversations. Historical raw
-messages are marked processed with extraction suppressed, so history is
-available as private source evidence to an authorized external agent but never
-enters automated inventory extraction. Group history is skipped; groups continue
-through live ingestion and existing group-selection paths.
+WhatsApp history sync is ignored. No direct-chat history is persisted, and no
+WhatsApp media is downloaded or stored. Groups continue through live ingestion
+and existing group-selection paths.
 
 ### Google Drive inventory export
 
@@ -1190,6 +1184,22 @@ coverage. LLMs may explain measured facts but may not invent the conclusion.
 
 **Consequence:** Users get auditable counts and distributions with explicit
 scope and freshness instead of false certainty from a partial feed.
+
+### 2026-11-23 — Disable WhatsApp DM and media ingestion
+
+**Context:** Ordinary WhatsApp DMs were still entering `raw_messages`, while
+the supported broker write surfaces are Instinct and MCP. WhatsApp media also
+consumed Supabase storage without a supported parser.
+
+**Decision:** Reject ordinary DMs and history-sync messages before raw
+persistence. Keep only the owner's separate self-chat transcript, allow
+group-based source evidence, and disable all WhatsApp media downloads. Instinct
+and MCP remain tenant-scoped paths for private broker inventory and requirement
+writes.
+
+**Consequence:** New private WhatsApp conversations no longer appear in the
+Market Inbox or raw-message archive. Existing DM rows remain subject to the
+normal retention policy and are not backfilled or deleted by this change.
 
 ### 2026-11-03 — Live direct chats enter extraction without history replay
 

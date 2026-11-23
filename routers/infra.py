@@ -1654,6 +1654,12 @@ async def webhook(request: Request):
     supplied_conversation_name = (msg_data.get("conversationName") or msg_data.get("chatName") or msg_data.get("conversation_name") or "").strip()
     group_name = supplied_conversation_name or await asyncio.to_thread(_resolve_group_name, group)
     is_dm = str(group).endswith("@s.whatsapp.net") or str(group).endswith("@lid")
+    if is_dm:
+        # Private WhatsApp DMs are intentionally not PropAI evidence. The owner
+        # self-chat is handled by its separate agent transcript in the ingestor;
+        # broker-owned requirements and inventory arrive through Instinct/MCP
+        # authenticated write scopes instead.
+        return {"status": "ignored", "reason": "direct_message_ingestion_disabled", "jid": group}
     raw_group_name = "" if is_dm else group_name
     if supplied_conversation_name and str(group).endswith("@g.us"):
         try:

@@ -212,11 +212,10 @@ only selected connected groups.
   Opt out, and the broker must confirm the selection before extraction uses it.
   Group names with strong non-property signals may receive an advisory review
   hint; that name-only hint never changes the selection.
-  WhatsApp history sync is restricted to private direct conversations;
-  imported history remains raw evidence and is suppressed from automated
-  extraction. External agents can read it only with explicit workspace DM
-  consent. The agent's self-chat command path is stored separately
-  and is not property-source evidence.
+  Private WhatsApp DMs and history are not ingested into PropAI. The owner's
+  self-chat command path is stored only in the private agent transcript, and
+  broker-owned requirements/listings are submitted through the authenticated
+  Instinct/MCP write paths. WhatsApp media is not downloaded or stored.
 - Broker identity controls are owner-side reference and workflow controls; they
   do not create separate broker workspaces or alter source evidence.
 - Platform administration is the owner's operational administration. Broker
