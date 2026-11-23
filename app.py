@@ -347,6 +347,8 @@ app.include_router(architecture_router)
 
 from routers.search import router as search_router
 app.include_router(search_router)
+from routers.usage import router as usage_router
+app.include_router(usage_router)
 
 from routers.notes import router as notes_router
 app.include_router(notes_router)

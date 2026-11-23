@@ -14,6 +14,7 @@ from urllib.parse import quote, urlparse
 
 import json as _json
 
+from usage_events import tracked_search, tracked_chat_turn, mark_chat_search, has_chat_search_activity
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -273,6 +274,7 @@ async def _market_search_with_summary(
     return chat_engine.deterministic_market_response(query, search_result, sources)
 
 
+@tracked_search("app", chat_helper=True)
 async def _current_listing_search(query: dict, tenant_id: str | None, user_id: str | None) -> dict:
     """Run a parsed inventory query through the current Supabase agent tool.
 
@@ -490,6 +492,7 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
     return response
 
 
+@tracked_search("app", chat_helper=True)
 async def _current_requirement_search(query: dict, tenant_id: str | None, user_id: str | None) -> dict:
     """Search live, tenant-scoped broker demand without relying on tool selection."""
     from agent_tools import execute_tool as execute_agent_tool
@@ -695,7 +698,8 @@ _GROUP_SEARCH_SIGNALS = re.compile(
 )
 
 
-async def _fast_group_source_search(text: str, tenant_id: str | None) -> dict | None:
+@tracked_search("app", chat_helper=True)
+async def _fast_group_source_search(text: str, tenant_id: str | None, user_id: str | None = None) -> dict | None:
     """Search captured group evidence before the conversational model.
 
     A request that explicitly names WhatsApp groups must not depend on the
@@ -2242,6 +2246,7 @@ async def resolve_broker_contact(
 
 
 @router.post("/api/ai/chat")
+@tracked_chat_turn
 async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     from ai_chat_engine import get_memory
 
@@ -2710,7 +2715,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     # This keeps the result useful when the conversation provider is busy or
     # out of credits, while leaving the full agent loop available for normal
     # conversational turns and follow-up actions.
-    group_source_result = await _fast_group_source_search(last_user, tenant_id) if last_user else None
+    group_source_result = await _fast_group_source_search(last_user, tenant_id, str(user.get("id") or "")) if last_user else None
     if group_source_result and deterministic_query:
         try:
             inventory_result = await _current_listing_search(
@@ -3044,6 +3049,10 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             prefer_supabase_agent=True,
             disable_reasoning=bool(provider.get("disable_reasoning")),
         ))
+        # Only the selected, completed provider response may mark the turn.
+        # run_in_executor does not inherit ContextVars; a timed-out provider
+        # can keep running, so never mutate the request collector here.
+        response["_usage_search_succeeded"] = has_chat_search_activity(activity_sink)
         trace = dict(response.get("trace") or {}) if isinstance(response.get("trace"), dict) else {}
         if activity_sink:
             trace["actions"] = list(trace.get("actions") or []) + activity_sink
@@ -3053,6 +3062,8 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     if last_user and not _ANALYTICS_ACTION_SIGNALS.search(last_user):
         try:
             response = await _run_with_provider_failover(lambda provider: _call(provider), providers, timeout=90)
+            if response.pop("_usage_search_succeeded", False):
+                mark_chat_search(tenant_id, str(user.get("id") or ""))
             response = _annotate_chat_response(response, source_mode)
             _persist("user", last_user)
             _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))

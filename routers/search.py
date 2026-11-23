@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from routers.common import storage, require_user, get_tenant_context
+from usage_events import record_search_usage, tracked_search
 from routers.protection import TTLCache, bounded_page
 from storage.supabase import _merge_observation_rows
 
@@ -445,6 +446,7 @@ def _search_value(row: dict, *keys: str) -> str:
 
 
 @router.get("/api/search/market-items")
+@tracked_search("app")
 async def search_market_items(
     q: str,
     result_type: str = "all",
@@ -751,7 +753,8 @@ async def search_messages(q: str = "", use_llm: bool = False):
 
 
 @router.get("/api/search/raw")
-async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0, user: dict = Depends(require_user)):
+@tracked_search("app")
+async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     if not q:
         return {"results": [], "count": 0}
     q = q.strip()
@@ -895,6 +898,7 @@ async def search_raw_by_group(group_jid: str = "", limit: int = 50, user: dict =
 
 
 @router.get("/api/search/market")
+@tracked_search("app")
 async def market_search(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),

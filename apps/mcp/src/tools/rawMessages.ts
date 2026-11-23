@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getRawMessageById, getRawMessageContext, logToolCall, searchRawMessages, searchRawMessagesSemantic } from "../data.ts";
 import { recordAssistantSearchSuccess } from "../supabase.ts";
+import { recordSearchUsage } from "../usage.ts";
 import type { ToolContext } from "../types.js";
 
 type RawEvidenceItem = {
@@ -84,6 +85,7 @@ export function registerRawMessageTools(server: McpServer, context: ToolContext)
       cursor: input.cursor,
     });
     recordAssistantSearchSuccess(tenantId);
+    recordSearchUsage(tenantId);
 
     const summary = result.items.length
       ? `Found ${result.items.length} raw message(s) from ${result.since} to ${result.until}${result.has_more ? " (more are available; narrow the query or time window)" : ""}.`
@@ -129,6 +131,7 @@ export function registerRawMessageTools(server: McpServer, context: ToolContext)
       cursor: input.cursor,
     });
     recordAssistantSearchSuccess(tenantId);
+    recordSearchUsage(tenantId);
     return textResponse(
       result.items.length
         ? `Found ${result.items.length} source message(s) by semantic and keyword search. Results are raw WhatsApp evidence, not verified inventory.\n\n${formatRawMessageEvidence(result.items)}`

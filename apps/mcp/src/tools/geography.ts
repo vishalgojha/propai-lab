@@ -4,6 +4,7 @@ import { getMarketSummary, logToolCall } from "../data.ts";
 import { formatCurrencyCr } from "../format.ts";
 import type { ToolContext } from "../types.js";
 import { recordAssistantSearchSuccess } from "../supabase.ts";
+import { recordSearchUsage } from "../usage.ts";
 
 function textResponse(text: string, structured?: unknown) {
   return {
@@ -37,6 +38,7 @@ export function registerGeographyTools(server: McpServer, context: ToolContext) 
     await logToolCall(id, "location_search", input);
     const result = await getMarketSummary({ tenantId, locality: input.location, city: input.city, property_type: input.property_type, days: input.days });
     recordAssistantSearchSuccess(tenantId);
+    recordSearchUsage(tenantId);
     const parts = [
       `${input.location}: ${result.listing_count} listings`,
       result.avg_price_cr != null ? `avg sale ${formatCurrencyCr(result.avg_price_cr)}` : null,
@@ -60,6 +62,7 @@ export function registerGeographyTools(server: McpServer, context: ToolContext) 
     await logToolCall(id, "location_nearby", input);
     const result = await getMarketSummary({ tenantId, locality: input.location, property_type: input.property_type, days: 30 });
     recordAssistantSearchSuccess(tenantId);
+    recordSearchUsage(tenantId);
     return textResponse(`Activity near ${input.location} (${input.radius_km}km): ${result.listing_count} listings`, result);
   });
 

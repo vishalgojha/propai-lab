@@ -169,6 +169,10 @@ export default function AdminPage() {
           Platform Operations
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Link href="/admin/usage" className="block rounded-xl border border-[var(--border)] p-4 hover:underline">
+            <span className="font-medium">Broker usage</span>
+            <p className="mt-2 text-xs text-[var(--text-secondary)]">Setup, app searches, assistant usage and automated checks by workspace</p>
+          </Link>
           <Link
             href="/admin/whatsapp"
             className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"

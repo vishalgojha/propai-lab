@@ -1,3 +1,4 @@
+import { recordSearchUsage } from "./usage.ts";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { generateEmbedding } from "./embedding.ts";
@@ -290,6 +291,7 @@ export function createMcpServer(context: ToolContext = {}) {
       await logToolCall(id, "pricing_negotiation_brief", input);
       const result = await buildPricingNegotiationBrief({ ...input, tenantId: requireTenantId(context) });
       recordAssistantSearchSuccess(requireTenantId(context));
+      recordSearchUsage(requireTenantId(context));
 
       const leverage = result.leverage_points.length
         ? `Leverage: ${result.leverage_points.join(" | ")}`
@@ -481,6 +483,7 @@ export function createMcpServer(context: ToolContext = {}) {
       await logToolCall(id, "match_requirement_to_broker", input);
       const result = await matchBuyerToInventory({ brokerId: id, tenantId: requireTenantId(context), ...input });
       recordAssistantSearchSuccess(requireTenantId(context));
+      recordSearchUsage(requireTenantId(context));
 
       if (!result.items.length) {
         return textResponse("No broker matches found for this requirement yet. Try widening the locality, budget, or source mode.", result);
@@ -581,6 +584,7 @@ export function createMcpServer(context: ToolContext = {}) {
       await logToolCall(id, "price_estimate", input);
       const result = await estimatePrice({ ...input, tenantId: requireTenantId(context) });
       recordAssistantSearchSuccess(requireTenantId(context));
+      recordSearchUsage(requireTenantId(context));
       return textResponse(result.summary, result);
     },
   );
@@ -732,6 +736,7 @@ export function createMcpServer(context: ToolContext = {}) {
       await logToolCall(brokerId(context), "building_intel", input);
       const result = await getBuildingIntel({ ...input, tenantId: requireTenantId(context) });
       recordAssistantSearchSuccess(requireTenantId(context));
+      recordSearchUsage(requireTenantId(context));
 
       if (result.locality_supply.length === 0) {
         return textResponse(`No data found for "${input.building_name}" in the last ${input.days_back ?? 90} days. Try a broader building name or longer lookback period.`, { result });
@@ -813,6 +818,7 @@ export function createMcpServer(context: ToolContext = {}) {
       throw error;
     }
     recordAssistantSearchSuccess(requireTenantId(context));
+      recordSearchUsage(requireTenantId(context));
 
     const items = Array.isArray(result.results) ? result.results : [];
     reportMarketResultAnomalies(input.query, items);
@@ -1003,6 +1009,7 @@ export function createMcpServer(context: ToolContext = {}) {
           const query = decodeURIComponent(value);
           const result = await executeMarketSearch({ query, tenantId: requireTenantId(context) });
           recordAssistantSearchSuccess(requireTenantId(context));
+      recordSearchUsage(requireTenantId(context));
           const lines = [
             String(result.explanation || `Market intelligence for ${query}`),
             "",

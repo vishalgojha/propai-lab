@@ -5,6 +5,7 @@ import { executeMarketSearch } from "../marketSearch.ts";
 import { formatCurrencyCr } from "../format.ts";
 import { reportMarketResultAnomalies, reportMcpParserError } from "../anomalies.ts";
 import { recordAssistantSearchSuccess } from "../supabase.ts";
+import { recordSearchUsage } from "../usage.ts";
 import type { ToolContext } from "../types.js";
 import { deprecatedAlias } from "../compat.ts";
 
@@ -35,10 +36,11 @@ function marketText(result: { query: string; explanation: string; results?: unkn
     : "No results found. Try a broader search.";
 }
 
-async function auditedMarketSearch(input: { query: string; tenantId: string; locality?: string; city?: string; limit?: number; propertyType?: "sale" | "rent" | "lease" | "all"; budgetMinInr?: number; budgetMaxInr?: number; furnishing?: string; minCarParks?: number; petsAllowed?: boolean; communityRestrictions?: string; dealType?: "direct" | "side_by_side"; minLastSeen?: string; sort?: "recency" | "rent" | "relevance"; offset?: number }) {
+async function auditedMarketSearch(input: { query: string; tenantId: string; userId?: string; locality?: string; city?: string; limit?: number; propertyType?: "sale" | "rent" | "lease" | "all"; budgetMinInr?: number; budgetMaxInr?: number; furnishing?: string; minCarParks?: number; petsAllowed?: boolean; communityRestrictions?: string; dealType?: "direct" | "side_by_side"; minLastSeen?: string; sort?: "recency" | "rent" | "relevance"; offset?: number }) {
   try {
     const result = await executeMarketSearch(input);
     recordAssistantSearchSuccess(input.tenantId);
+    recordSearchUsage(input.tenantId);
     const rows = (result.results || []).map((row) => {
       const value = row as Record<string, unknown>;
       return value.listing_type ? toMarketSearchRow(value as any) : value;
@@ -76,7 +78,7 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "market_search", input);
-    const { result, rows } = await auditedMarketSearch({ query: input.query, tenantId: tenantId(context), locality: input.location, city: input.city, limit: input.limit, propertyType: input.property_type, budgetMinInr: input.budget_min_inr, budgetMaxInr: input.budget_max_inr, furnishing: input.furnishing, minCarParks: input.min_car_parks, petsAllowed: input.pets_allowed, communityRestrictions: input.community_restrictions, dealType: input.deal_type, minLastSeen: input.min_last_seen, sort: input.sort, offset: input.offset });
+    const { result, rows } = await auditedMarketSearch({ query: input.query, tenantId: tenantId(context), userId: context.user?.id, locality: input.location, city: input.city, limit: input.limit, propertyType: input.property_type, budgetMinInr: input.budget_min_inr, budgetMaxInr: input.budget_max_inr, furnishing: input.furnishing, minCarParks: input.min_car_parks, petsAllowed: input.pets_allowed, communityRestrictions: input.community_restrictions, dealType: input.deal_type, minLastSeen: input.min_last_seen, sort: input.sort, offset: input.offset });
     return textResponse(marketText(result), {
       ...result,
       results: rows,
@@ -105,7 +107,7 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "search_listings", input);
-    const { result, rows } = await auditedMarketSearch({ query: input.query, tenantId: tenantId(context), locality: input.location, city: input.city, limit: input.limit, propertyType: input.property_type, budgetMinInr: input.budget_min_inr, budgetMaxInr: input.budget_max_inr, furnishing: input.furnishing, minCarParks: input.min_car_parks, petsAllowed: input.pets_allowed, communityRestrictions: input.community_restrictions, dealType: input.deal_type, minLastSeen: input.min_last_seen, sort: input.sort, offset: input.offset });
+    const { result, rows } = await auditedMarketSearch({ query: input.query, tenantId: tenantId(context), userId: context.user?.id, locality: input.location, city: input.city, limit: input.limit, propertyType: input.property_type, budgetMinInr: input.budget_min_inr, budgetMaxInr: input.budget_max_inr, furnishing: input.furnishing, minCarParks: input.min_car_parks, petsAllowed: input.pets_allowed, communityRestrictions: input.community_restrictions, dealType: input.deal_type, minLastSeen: input.min_last_seen, sort: input.sort, offset: input.offset });
     return textResponse(marketText(result), deprecatedAlias({
       ...result,
       results: rows,
@@ -126,6 +128,7 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
     await logToolCall(id, "market_summary", input);
     const result = await getMarketSummary({ tenantId: tenantId(context), locality: input.location, city: input.city, property_type: input.property_type, bhk: input.bhk, days: input.days });
     recordAssistantSearchSuccess(tenantId(context));
+    recordSearchUsage(tenantId(context));
     const parts = [
       `${input.location || "Mumbai"}: ${result.listing_count} listings`,
       result.avg_price_cr != null ? `avg sale ${formatCurrencyCr(result.avg_price_cr)}` : null,
@@ -147,6 +150,7 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
     await logToolCall(id, "market_trends", input);
     const result = await getMarketSummary({ tenantId: tenantId(context), locality: input.location, city: input.city, days: input.days });
     recordAssistantSearchSuccess(tenantId(context));
+    recordSearchUsage(tenantId(context));
     const top = result.top_localities?.map((l: any) => `${l.locality} (${l.count})`).join(", ") || "";
     const parts = [
       `${input.location || "Mumbai"} over ${input.days}d: ${result.listing_count} listings`,

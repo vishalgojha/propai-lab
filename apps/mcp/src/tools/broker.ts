@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { findBrokers as findBrokersData, getBrokerActivity, getWorkspaceListings, logToolCall } from "../data.ts";
 import { recordAssistantSearchSuccess } from "../supabase.ts";
+import { recordSearchUsage } from "../usage.ts";
 import type { ToolContext } from "../types.js";
 
 function textResponse(text: string, structured?: unknown) {
@@ -47,6 +48,7 @@ export function registerBrokerTools(server: McpServer, context: ToolContext) {
       limit: input.limit,
     });
     recordAssistantSearchSuccess(requireTenantId(context));
+    recordSearchUsage(requireTenantId(context));
     if (!brokers.length) {
       return textResponse("No brokers found matching your search.", { brokers: [] });
     }

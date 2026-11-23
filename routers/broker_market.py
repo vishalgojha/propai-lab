@@ -9,7 +9,8 @@ import time
 from typing import Literal
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response, Header
+from usage_events import tracked_search
 from pydantic import BaseModel, ConfigDict, Field
 
 from broker_market_policy import (CONSENT_TEXT, CONSENT_VERSION, CONTACT_NOTICE, PROPERTY_PATTERN,
@@ -96,7 +97,8 @@ async def policy(user: dict = Depends(require_user)):
 
 
 @router.post("/search")
-async def search(body: PropertySearch, key: dict = Depends(market_key)):
+@tracked_search("assistant")
+async def search(body: PropertySearch, key: dict = Depends(market_key), x_propai_initiator: str | None = Header(default=None, alias="X-PropAI-Initiator")):
     await rate(key, "search")
     cursor = reference(body.cursor, "cursor", key) if body.cursor else None
     try:

@@ -4,6 +4,7 @@ import { getBuildingIntel, logToolCall } from "../data.ts";
 import type { ToolContext } from "../types.js";
 import { deprecatedAlias } from "../compat.ts";
 import { recordAssistantSearchSuccess } from "../supabase.ts";
+import { recordSearchUsage } from "../usage.ts";
 
 function textResponse(text: string, structured?: unknown) {
   return {
@@ -39,6 +40,7 @@ export function registerBuildingTools(server: McpServer, context: ToolContext) {
     await logToolCall(id, "building_search", input);
     const result = await getBuildingIntel({ tenantId, building_name: input.query, locality: input.location, days_back: 90 });
     recordAssistantSearchSuccess(tenantId);
+    recordSearchUsage(tenantId);
     if (!result.building_name) return textResponse(`"${input.query}" not found.`, { building: null });
     const ppsf = result.price_benchmarks?.sale;
     return textResponse(
@@ -60,6 +62,7 @@ export function registerBuildingTools(server: McpServer, context: ToolContext) {
     await logToolCall(id, "building_profile", input);
     const result = await getBuildingIntel({ tenantId, building_name: input.building_name, locality: input.location, days_back: input.days_back });
     recordAssistantSearchSuccess(tenantId);
+    recordSearchUsage(tenantId);
     if (!result.building_name) return textResponse(`No data for "${input.building_name}".`, null);
     const sale = result.price_benchmarks?.sale;
     const rent = result.price_benchmarks?.rent;
@@ -82,6 +85,7 @@ export function registerBuildingTools(server: McpServer, context: ToolContext) {
     await logToolCall(id, "get_building", input);
     const result = await getBuildingIntel({ tenantId, building_name: input.building_name, locality: input.location, days_back: input.days_back });
     recordAssistantSearchSuccess(tenantId);
+    recordSearchUsage(tenantId);
     if (!result.building_name) return textResponse(`No data for "${input.building_name}".`, null);
     const sale = result.price_benchmarks?.sale;
     const rent = result.price_benchmarks?.rent;
@@ -104,6 +108,7 @@ export function registerBuildingTools(server: McpServer, context: ToolContext) {
     await logToolCall(id, "building_inventory", input);
     const result = await getBuildingIntel({ tenantId, building_name: input.building_name, locality: input.location, days_back: input.days_back });
     recordAssistantSearchSuccess(tenantId);
+    recordSearchUsage(tenantId);
     if (!result.building_name) return textResponse(`No inventory for "${input.building_name}".`, null);
     const configs = result.configuration_map?.map((c: any) => `${c.configuration}: ${c.count} (${c.percentage_of_locality}%)`).join("\n") || "None";
     return textResponse(`Configurations in ${result.building_name}:\n${configs}`, result);
@@ -122,6 +127,7 @@ export function registerBuildingTools(server: McpServer, context: ToolContext) {
     await logToolCall(id, "building_requirements", input);
     const result = await getBuildingIntel({ tenantId, building_name: input.building_name, locality: input.location, days_back: input.days_back });
     recordAssistantSearchSuccess(tenantId);
+    recordSearchUsage(tenantId);
     if (!result.building_name) return textResponse(`No data for "${input.building_name}".`, null);
     const supply = result.locality_supply?.map((l: any) => `${l.locality}: ${l.listings} listings, ${l.requirements} requirements (${l.ratio})`).join("\n") || "None";
     return textResponse(`Supply-demand for ${result.building_name}:\n${supply}`, result);
@@ -140,6 +146,7 @@ export function registerBuildingTools(server: McpServer, context: ToolContext) {
     await logToolCall(id, "building_marketPulse", input);
     const intel = await getBuildingIntel({ tenantId, building_name: input.building_name, locality: input.location, days_back: input.days_back });
     recordAssistantSearchSuccess(tenantId);
+    recordSearchUsage(tenantId);
     if (!intel.building_name) return textResponse(`No pulse data for "${input.building_name}".`, null);
     const sale = intel.price_benchmarks?.sale;
     const rent = intel.price_benchmarks?.rent;

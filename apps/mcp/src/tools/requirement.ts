@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { logToolCall, matchRequirementToInventory, searchRequirements } from "../data.ts";
 import { recordAssistantSearchSuccess } from "../supabase.ts";
+import { recordSearchUsage } from "../usage.ts";
 import type { ToolContext } from "../types.js";
 
 function textResponse(text: string, structured?: unknown) {
@@ -57,6 +58,7 @@ export function registerRequirementTools(server: McpServer, context: ToolContext
       limit: input.limit,
     });
     recordAssistantSearchSuccess(tenantId);
+    recordSearchUsage(tenantId);
     return textResponse(
       requirements.length
         ? requirements.map((item, index) => `${index + 1}. ${item.requirement_type} — ${item.locality || "location not specified"} — ${item.bhk_options?.join(", ") || "any configuration"} — ${item.budget_min ?? "?"} to ${item.budget_max ?? "?"} INR`).join("\n")
@@ -99,6 +101,7 @@ export function registerRequirementTools(server: McpServer, context: ToolContext
       limit: input.limit,
     });
     recordAssistantSearchSuccess(tenantId);
+    recordSearchUsage(tenantId);
     return textResponse(
       result.items.length
         ? result.items.map((item, index) => `${index + 1}. ${item.title} — ${item.locality || "location not specified"} — ${item.price ?? "price on request"} — score ${item.score}`).join("\n")

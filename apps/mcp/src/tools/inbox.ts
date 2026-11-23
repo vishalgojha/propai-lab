@@ -1,3 +1,4 @@
+import { recordSearchUsage } from "../usage.ts";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getStoredThreadMessages, summarizeThread, logToolCall } from "../data.ts";
@@ -40,6 +41,7 @@ export function registerInboxTools(server: McpServer, context: ToolContext) {
     await logToolCall(id, "conversation_search", input);
     const messages = await getStoredThreadMessages({ brokerId: id, limit: input.limit });
     recordAssistantSearchSuccess(requireTenantId(context));
+      recordSearchUsage(requireTenantId(context));
     if (!messages.length) return textResponse("No stored conversations found.", { conversations: [] });
     const jids = [...new Set(messages.map((m) => m.remote_jid).filter(Boolean))];
     return textResponse(`${jids.length} conversation(s) found. Use conversation_timeline with a specific JID to view messages.`, { conversations: jids, message_count: messages.length });

@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { fetchListingById, findBrokers as findBrokersData, logToolCall } from "../data.ts";
 import { recordAssistantSearchSuccess } from "../supabase.ts";
+import { recordSearchUsage } from "../usage.ts";
 import type { ToolContext } from "../types.js";
 
 function textResponse(text: string, structured?: unknown) {
@@ -35,6 +36,7 @@ export function registerContactTools(server: McpServer, context: ToolContext) {
     await logToolCall(id, "contact_search", input);
     const brokers = await findBrokersData({ tenantId: requireTenantId(context), locality: input.location, city: input.city, specialization: input.specialization, limit: input.limit });
     recordAssistantSearchSuccess(requireTenantId(context));
+    recordSearchUsage(requireTenantId(context));
     if (!brokers.length) return textResponse("No contacts found.", { contacts: [] });
     const list = brokers.map((b: any) => `${b.full_name || "Unknown"}${b.phone ? ` · ${b.phone}` : ""}${b.locations?.length ? ` [${b.locations.join(", ")}]` : ""}`).join("\n");
     return textResponse(`${brokers.length} contact(s):\n${list}`, { contacts: brokers });

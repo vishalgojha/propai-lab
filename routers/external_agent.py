@@ -1,4 +1,5 @@
 """Small tenant-scoped REST surface for external agents such as Instinct."""
+from usage_events import tracked_search
 import asyncio
 from extraction_controls import extraction_allowed
 import base64
@@ -270,6 +271,18 @@ def _key_row(token: str) -> dict:
     return row
 
 
+
+def _record_assistant_search(key: dict, initiator: str | None = None) -> None:
+    """Count an assistant/API search. Only an explicit automation initiator is
+    recorded as automation; anything else stays assistant_unlabeled and is
+    never presented as human usage."""
+    from usage_events import record_search_usage
+    record_search_usage(
+        tenant_id=key.get("tenant_id"), surface="assistant",
+        origin="automation" if str(initiator or "").strip().lower() == "automation" else "assistant_unlabeled",
+    )
+
+
 async def external_auth(
     authorization: str | None = Header(default=None),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
@@ -490,6 +503,7 @@ async def external_trial_status(key: dict = Depends(external_auth)):
 
 
 @router.get("/messages/search")
+@tracked_search("assistant")
 async def external_raw_message_search(
     q: str = "",
     scope: str = Query("groups", pattern="^(groups|dms|all)$"),
@@ -498,6 +512,7 @@ async def external_raw_message_search(
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
     key: dict = Depends(external_auth),
+    x_propai_initiator: str | None = Header(default=None, alias="X-PropAI-Initiator"),
 ):
     _require_scope(key, "raw_messages:read")
     if scope in {"dms", "all"}:
@@ -695,6 +710,7 @@ def _typed_filter(
 
 
 @router.get("/listings/search")
+@tracked_search("assistant")
 async def external_listing_search(
     q: str = "",
     locality: str = "",
@@ -704,6 +720,7 @@ async def external_listing_search(
     limit: int = Query(20, ge=1, le=50),
     offset: int = Query(0, ge=0),
     key: dict = Depends(external_auth),
+    x_propai_initiator: str | None = Header(default=None, alias="X-PropAI-Initiator"),
 ):
     if "inventory:read" not in (key.get("scopes") or []):
         raise HTTPException(403, "Token does not have inventory:read scope")
@@ -754,7 +771,8 @@ async def external_listing_search(
 
 
 @router.get("/requirements")
-async def external_requirements(limit: int = Query(20, ge=1, le=50), offset: int = Query(0, ge=0), key: dict = Depends(external_auth)):
+@tracked_search("assistant")
+async def external_requirements(limit: int = Query(20, ge=1, le=50), offset: int = Query(0, ge=0), key: dict = Depends(external_auth), x_propai_initiator: str | None = Header(default=None, alias="X-PropAI-Initiator")):
     if "requirements:read" not in (key.get("scopes") or []):
         raise HTTPException(403, "Token does not have requirements:read scope")
     rows = await _tenant_parsed(limit=limit, offset=offset, kind="requirement")
@@ -763,6 +781,7 @@ async def external_requirements(limit: int = Query(20, ge=1, le=50), offset: int
 
 
 @router.get("/matches")
+@tracked_search("assistant")
 async def external_matches(q: str = "", limit: int = Query(20, ge=1, le=50), key: dict = Depends(external_auth)):
     if "matches:read" not in (key.get("scopes") or []):
         raise HTTPException(403, "Token does not have matches:read scope")
@@ -1061,6 +1080,7 @@ async def external_create_standing_search(
 
 
 @router.get("/standing-searches/{search_id}/run")
+@tracked_search("assistant", fixed_automation=True)
 async def external_run_standing_search(
     search_id: int, limit: int = Query(20, ge=1, le=100), key: dict = Depends(external_auth),
 ):
