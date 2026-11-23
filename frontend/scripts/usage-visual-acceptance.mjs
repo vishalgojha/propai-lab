@@ -32,6 +32,7 @@ try {
       if(url.pathname.startsWith('/auth/v1/user'))return route.fulfill({json:user});
       if(url.pathname==='/api/admin/usage/brokers'){
         if(state==='error')return route.fulfill({status:403,json:{detail:'Super admin access required'}});
+        if(state==='server_error')return route.fulfill({status:500,json:{detail:'database read failed'}});
         if(state==='empty')return route.fulfill({json:{...data,tenants:[]}});
         return route.fulfill({json:data});
       }
@@ -56,6 +57,7 @@ try {
       state='error';await page.getByRole('button',{name:'Refresh',exact:true}).click();
       await page.getByRole('alert').waitFor();assert.equal(await page.locator('article').count(),0);
       await page.screenshot({path:`${evidence}/propai-usage-error-390.png`,fullPage:true});
+      state='server_error';await page.getByRole('button',{name:'Retry',exact:true}).click();await page.getByText('Usage could not be loaded. Retry in a moment. No counts are being shown.').waitFor();assert.equal(await page.locator('article').count(),0);await page.screenshot({path:`${evidence}/propai-usage-500-390.png`,fullPage:true});
       state='empty';await page.getByRole('button',{name:'Retry',exact:true}).click();await page.getByText('No workspaces were returned.').waitFor();
       await page.screenshot({path:`${evidence}/propai-usage-empty-390.png`,fullPage:true});
       state='ok';

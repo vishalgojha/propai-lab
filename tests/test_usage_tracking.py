@@ -363,7 +363,7 @@ class _SummaryStorage:
         self._rows = rows
         self._connections = connections or []
         self.client = mock.Mock()
-        self.client.table.side_effect = lambda name: _SummaryQuery(self._rows)
+        self.client.table.side_effect = lambda name: _SummaryQuery(self._connections if name == "org_whatsapp_connections" else self._rows)
 
     def list_org_whatsapp_connections(self, tenant_id):
         return list(self._connections)
@@ -574,7 +574,7 @@ def test_placeholder_phone_is_not_a_linked_setup_milestone():
 
 def test_admin_usage_stage_includes_linked_and_never_used_workspaces(monkeypatch):
     storage = _AdminStorage([], [{"id": "org-linked", "name": "Linked"}, {"id": "org-new", "name": "New"}], {"owner-1"})
-    storage.list_all_whatsapp_connections = lambda: [{"organization_id": "org-linked", "is_active": True, "phone_number": "+919999999999"}]
+    storage._connections = [{"id": "connection-1", "organization_id": "org-linked", "is_active": True, "phone_number": "+919999999999"}]
     monkeypatch.setattr(usage_mod, "storage", storage)
     body = asyncio.run(usage_mod.admin_broker_usage(user={"id": "owner-1"}))
     by_id = {t["tenant_id"]: t for t in body["tenants"]}
@@ -769,3 +769,23 @@ def test_unauthenticated_chat_http_is_rejected_without_usage(monkeypatch):
         response = client.post("/api/ai/chat", json={"messages":[{"role":"user","content":"Bandra flats"}]})
     assert response.status_code == 401
     assert calls == []
+
+
+def test_admin_usage_avoids_ambiguous_global_connection_embed_and_pages(monkeypatch):
+    storage = _AdminStorage([], [{"id": "org-a", "name": "Alpha"}], {"owner-1"})
+    storage._connections = [{"id": str(n), "organization_id": "other", "is_active": True, "phone_number": "+919999999999"} for n in range(1200)]
+    storage._connections.append({"id": "zz-last", "organization_id": "org-a", "is_active": True, "phone_number": "+919999999999"})
+    storage.list_all_whatsapp_connections = mock.Mock(side_effect=RuntimeError("ambiguous embed"))
+    queries = []
+    def table(name):
+        q = _SummaryQuery(storage._connections if name == "org_whatsapp_connections" else [])
+        if name == "org_whatsapp_connections":
+            queries.append(q)
+        return q
+    storage.client.table.side_effect = table
+    monkeypatch.setattr(usage_mod, "storage", storage)
+    body = asyncio.run(usage_mod.admin_broker_usage(user={"id": "owner-1"}))
+    assert body["tenants"][0]["setup_stage"] == "whatsapp_connected"
+    assert [q._offset for q in queries] == [0, 500, 1000]
+    assert all(q._columns == "id,organization_id,phone_number,is_active" for q in queries)
+    storage.list_all_whatsapp_connections.assert_not_called()

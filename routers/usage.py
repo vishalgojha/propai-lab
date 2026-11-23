@@ -86,7 +86,16 @@ async def admin_broker_usage(user: dict = Depends(require_user)):
             orgs.extend(page)
             if len(page) < 500:
                 break
-        connections = storage.list_all_whatsapp_connections() or []
+        # Usage needs only setup facts, not the global admin helper's embedded
+        # organizations relation (which can be ambiguous with multiple FKs).
+        connections = []
+        for offset in range(0, 100000, 500):
+            page = storage.client.table("org_whatsapp_connections").select(
+                "id,organization_id,phone_number,is_active"
+            ).order("id").limit(500).offset(offset).execute().data or []
+            connections.extend(page)
+            if len(page) < 500:
+                break
         latest = {}
         for org in orgs:
             tid = str(org["id"])
@@ -140,7 +149,7 @@ async def admin_broker_usage(user: dict = Depends(require_user)):
         "generated_at": now.isoformat(),
         "window_days": WINDOW_DAYS,
         "tenants": tenants,
-        "partial": len(events) >= 100000 or len(orgs) >= 100000,
+        "partial": len(events) >= 100000 or len(orgs) >= 100000 or len(connections) >= 100000,
         "day_timezone": "Asia/Kolkata",
         "notes": [
             "App usage counts completed authenticated product search requests, not proven human initiation; automation and assistant_unlabeled are kept separate.",

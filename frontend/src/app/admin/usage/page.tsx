@@ -25,7 +25,10 @@ export default function BrokerUsagePage() {
   const load = useCallback(async () => {
     setLoading(true); setError(null); setData(null);
     try { setData(await fetchJSON<UsageData>("/admin/usage/brokers")); }
-    catch { setError("Usage could not be loaded. Super admin access is required. No counts are being shown."); }
+    catch (cause) {
+      const denied = cause instanceof Error && /^403\b/.test(cause.message);
+      setError(denied ? "Super admin access is required. No counts are being shown." : "Usage could not be loaded. Retry in a moment. No counts are being shown.");
+    }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);

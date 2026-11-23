@@ -43,7 +43,7 @@ def main():
         create table organizations(id uuid primary key,name text,slug text,is_active boolean,created_at timestamptz default now());
         create table organization_members(id serial primary key,organization_id uuid references organizations(id),user_id uuid,is_active boolean default true);
         create table super_admins(id serial primary key,user_id uuid);
-        create table org_whatsapp_connections(id serial primary key,organization_id uuid references organizations(id),phone_number text,is_active boolean,created_at timestamptz default now());
+        create table org_whatsapp_connections(id serial primary key,organization_id uuid references organizations(id),secondary_org_id uuid references organizations(id),phone_number text,is_active boolean,created_at timestamptz default now());
         create table org_whatsapp_phone_directory(id serial primary key,organization_id uuid,phone_number text,created_at timestamptz default now());
         create table buildings(id bigint,canonical_name text,address text,micro_market text,latitude numeric,longitude numeric);
         create table building_name_aliases(building_id bigint,alias text,canonical_name text);
