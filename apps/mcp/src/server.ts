@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpServer, MCP_TOOL_NAMES } from "./index.js";
+import { createRawMcpServer } from "./rawServer.js";
 import {
   deviceAuthorizeHandler,
   oauthAuthorizationServerMetadata,
@@ -123,6 +124,7 @@ app.get("/.well-known/mcp-server.json", (_req, res) => {
 
 app.get("/.well-known/oauth-authorization-server", oauthAuthorizationServerMetadata);
 app.get("/.well-known/oauth-protected-resource", oauthProtectedResourceMetadata);
+app.get("/.well-known/oauth-protected-resource/raw-mcp", oauthProtectedResourceMetadata);
 app.get("/authorize", oauthAuthorizeGetHandler);
 app.post("/authorize", oauthAuthorizePostHandler);
 app.post("/oauth/token", oauthTokenHandler);
@@ -221,9 +223,60 @@ app.all("/mcp", authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
+// Broker raw-message MCP: authenticated only and isolated from the public
+// market surface. A separate session map prevents a public /mcp session id
+// from being reused against this tenant-scoped endpoint.
+const rawSessions = new Map<string, McpSession>();
+async function rawAuthMiddleware(req: Request, res: Response, next: NextFunction) {
+  return authMiddleware(req, res, () => {
+    if (!req.user || req.publicOnly) {
+      setMcpUnauthorizedHeaders(req, res);
+      return res.status(401).json({ error: "Sign in to PropAI to use broker raw-message search" });
+    }
+    return next();
+  });
+}
+
+app.all("/raw-mcp", rawAuthMiddleware, async (req: Request, res: Response) => {
+  if (!["GET", "POST", "DELETE"].includes(req.method)) return res.status(405).json({ error: "Method not allowed" });
+  const sessionId = req.headers["mcp-session-id"];
+  let session = typeof sessionId === "string" ? rawSessions.get(sessionId) : undefined;
+  if (typeof sessionId === "string") await touchSessionRecord(sessionId).catch(() => {});
+  if (!session) {
+    const server = createRawMcpServer({ user: req.user });
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => crypto.randomUUID(),
+      onsessioninitialized: async (newSessionId) => {
+        rawSessions.set(newSessionId, { server, transport });
+        await createSessionRecord({ sessionId: newSessionId, userId: req.user?.id, userAgent: String(req.headers["user-agent"] || "") }).catch(() => {});
+      },
+      onsessionclosed: async (closedSessionId) => {
+        const closedSession = rawSessions.get(closedSessionId);
+        rawSessions.delete(closedSessionId);
+        await closeSessionRecord(closedSessionId).catch(() => {});
+        await closedSession?.server.close();
+      },
+    });
+    transport.onclose = async () => {
+      if (transport.sessionId) {
+        rawSessions.delete(transport.sessionId);
+        await closeSessionRecord(transport.sessionId).catch(() => {});
+      }
+    };
+    session = { server, transport };
+    await server.connect(transport);
+  }
+  try {
+    await session.transport.handleRequest(req, res, req.method === "POST" ? req.body : undefined);
+  } catch (error) {
+    console.error("Raw MCP request error:", error);
+    if (!res.headersSent) res.status(500).json({ jsonrpc: "2.0", error: { code: -32603, message: "Internal server error" }, id: null });
+  }
+});
+
 async function closeSessions() {
   await Promise.all(
-    [...sessions.values()].map(async (session) => {
+    [...sessions.values(), ...rawSessions.values()].map(async (session) => {
       await session.transport.close();
       await session.server.close();
     }),

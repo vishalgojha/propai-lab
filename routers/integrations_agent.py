@@ -24,7 +24,7 @@ from storage import AgentAuditLog, AgentBrowserSession, AgentBrowserStep
 
 router = APIRouter(prefix="/api/integrations/agent", tags=["integration_agent"])
 logger = logging.getLogger(__name__)
-MCP_ENDPOINT = "https://mcp.propai.live/mcp"
+MCP_ENDPOINT = "https://mcp.propai.live/raw-mcp"
 API_BASE_URL = "https://api.propai.live"
 ALLOWED_TASKS = {"instinct", "claude", "gemini", "verify"}
 

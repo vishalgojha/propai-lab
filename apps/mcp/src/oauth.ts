@@ -118,7 +118,8 @@ function cleanExpiredDeviceCodes() {
 }
 
 function resourceMetadataUrl(req: Request) {
-  return `${publicUrl(req)}/.well-known/oauth-protected-resource`;
+  const suffix = req.path.includes("raw-mcp") ? "/raw-mcp" : "";
+  return `${publicUrl(req)}/.well-known/oauth-protected-resource${suffix}`;
 }
 
 // POST /token - device code polling endpoint
@@ -238,8 +239,9 @@ export function oauthAuthorizationServerMetadata(req: Request, res: Response) {
 
 export function oauthProtectedResourceMetadata(req: Request, res: Response) {
   const issuer = publicUrl(req);
+  const resourcePath = req.path.includes("raw-mcp") ? "/raw-mcp" : "/mcp";
   return res.json({
-    resource: `${issuer}/mcp`,
+    resource: `${issuer}${resourcePath}`,
     authorization_servers: [issuer],
     bearer_methods_supported: ["header"],
   });

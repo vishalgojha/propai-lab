@@ -5,7 +5,7 @@ import { Bot, Check, Copy, ExternalLink, KeyRound, Play, Server } from "lucide-r
 import Link from "next/link";
 import { fetchJSON } from "@/lib/api";
 
-const MCP_ENDPOINT = "https://mcp.propai.live/mcp";
+const MCP_ENDPOINT = "https://mcp.propai.live/raw-mcp";
 const INSTINCT_WORKSPACE_URL = "https://app.instinct.com";
 
 type AgentStatus = {
@@ -194,7 +194,7 @@ export default function McpWorkspacePage() {
         </div>
 
         <div className="mt-6 rounded-xl border border-white/10 bg-black/20 p-4">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">MCP server URL</div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Broker raw-message MCP URL</div>
           <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center">
             <code className="min-w-0 flex-1 break-all text-sm text-emerald-200">{MCP_ENDPOINT}</code>
             <button type="button" onClick={() => void copyEndpoint()} className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-400/30 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-400/10">
@@ -207,11 +207,11 @@ export default function McpWorkspacePage() {
         <div className="mt-5 grid gap-3 text-sm text-zinc-300 sm:grid-cols-3">
           <div><div className="font-semibold text-white">1. Add URL</div><div className="mt-1 text-xs leading-5 text-zinc-500">Paste the server URL into Claude&apos;s Settings → Connectors.</div></div>
           <div><div className="font-semibold text-white">2. Sign in</div><div className="mt-1 text-xs leading-5 text-zinc-500">Approve the OAuth request with your PropAI account.</div></div>
-          <div><div className="font-semibold text-white">3. Ask Claude</div><div className="mt-1 text-xs leading-5 text-zinc-500">Search your captured WhatsApp groups, inventory, and CRM.</div></div>
+          <div><div className="font-semibold text-white">3. Ask Claude</div><div className="mt-1 text-xs leading-5 text-zinc-500">Search your workspace&apos;s captured WhatsApp group messages.</div></div>
         </div>
 
-        <a href="https://mcp.propai.live/" target="_blank" rel="noreferrer" className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-emerald-300 hover:text-emerald-200">
-          View MCP server details <ExternalLink className="h-4 w-4" aria-hidden="true" />
+        <a href={MCP_ENDPOINT} target="_blank" rel="noreferrer" className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-emerald-300 hover:text-emerald-200">
+          Check broker connector endpoint <ExternalLink className="h-4 w-4" aria-hidden="true" />
         </a>
       </div>
 
