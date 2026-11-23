@@ -1458,3 +1458,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Deployment/push status: Commit `5b059068` was pushed to `origin/main`. Coolify deployment `qatape20q424l1m3zkib97we` for `propai-lab:main-app` finished successfully from that commit.
 - Known limitations: Existing PropAI MCP/REST calls do not themselves send emails, export Excel files, browse the web, or edit videos. Those actions require Instinct-side tools or separately authorized connectors and should not be represented as available solely because the PropAI connection is approved.
 - Next action: If desired, add explicit connector-backed tools for email send, workbook generation/export, web research, and media processing, each with tenant/recipient confirmation and audit logging.
+
+### Position Instinct as the broker assistant
+
+- Requested outcome: Make clear that Instinct helps with the full realtor workflow and that PropAI is only one optional connected workspace, not the owner of Instinct&apos;s independent capabilities.
+- Files/services changed: `frontend/src/app/workspace/instinct/page.tsx`; `propai-lab:main-app` redeployed.
+- Behavior: The page now leads with “Broker assistant”, describes PropAI as permitted evidence/workspace access, and presents client work, visits, negotiation, paperwork, marketing, administration, web research, spreadsheets, email, and media work as the broader Instinct workflow.
+- Verification performed: `git diff --check` passed; changed-file TypeScript check reported no diagnostics. Independent task-verifier second pass: **PARTIAL** — copy and deployment are verified, but independent Instinct connector behavior is outside this PropAI repository and was not end-to-end tested.
+- Deployment/push status: Commit `32e41b96` was pushed to `origin/main`. Coolify deployment `u2zjocc9m8nk3yc0qeppylgv` for `propai-lab:main-app` finished successfully from that commit.
+- Known limitations: This change updates positioning only. It does not add email, web, spreadsheet, document, calendar, or video tools to PropAI; those remain Instinct-side or separately connected capabilities.
+- Next action: Keep future UI and assistant instructions organized around the same three layers: independent Instinct help, permitted PropAI reads, and separately approved PropAI writes/actions.
