@@ -182,3 +182,10 @@ Live preflight SELECT to_regclass('public.broker_usage_events') returned NULL on
 23 November at10:55IST. Recheck immediately before applying the migration. If a
 table appears or differs, stop, do not reconcile/delete it silently. No production
 schema mutation occurred during this preflight.
+
+Deployment permissions check: production new-object defaults include client-role
+privileges. The usage migration now explicitly restricts only its new table and
+ID sequence before granting service-role SELECT/INSERT and sequence USAGE/SELECT.
+Inherited-default regression passes14 checks, including unchanged database-wide
+defaults and unrelated table/sequence permissions. No production sample events
+are inserted for verification.

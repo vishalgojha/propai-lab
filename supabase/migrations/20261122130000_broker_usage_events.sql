@@ -27,6 +27,10 @@ create table public.broker_usage_events (
 create index broker_usage_events_tenant_created_idx on public.broker_usage_events (tenant_id, created_at desc);
 alter table public.broker_usage_events enable row level security;
 create policy service_role_all_broker_usage_events on public.broker_usage_events for ALL to service_role using (true) with check (true);
+-- Supabase defaults can grant new objects to client roles. Restrict only
+-- these two new objects, never database-wide default privileges.
+revoke all on table public.broker_usage_events from PUBLIC, anon, authenticated, service_role;
+revoke all on sequence public.broker_usage_events_id_seq from PUBLIC, anon, authenticated, service_role;
 grant select, insert on public.broker_usage_events to service_role;
 grant usage, select on sequence public.broker_usage_events_id_seq to service_role;
 commit;
