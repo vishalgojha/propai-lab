@@ -1,35 +1,27 @@
 import Link from "next/link";
-import { KeyRound } from "lucide-react";
+import { ArrowRight, CheckCircle2, ExternalLink, KeyRound, MessageCircle } from "lucide-react";
 
 export default function InstinctWorkspacePage() {
   return (
     <section className="mx-auto max-w-4xl px-4 pb-12 pt-8 lg:px-6">
-      <h1 className="mb-1 text-2xl font-semibold text-white">Instinct</h1>
-      <p className="mb-6 text-sm text-zinc-500">Connect Instinct to this workspace through the tenant-scoped REST API.</p>
-
-      <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.05] p-6">
-        <div className="flex items-start gap-4">
-          <div className="rounded-xl border border-amber-300/25 bg-amber-300/10 p-3 text-amber-200"><KeyRound className="h-5 w-5" aria-hidden="true" /></div>
-          <div><h2 className="text-lg font-semibold text-white">Connect Instinct</h2><p className="mt-1 text-sm leading-6 text-zinc-400">To connect Instinct, ask your assistant to connect to PropAI. Open the connection link it sends, sign in with your usual PropAI email and password, check the code and tap Approve. That&apos;s the whole setup: no API key to create or copy, and no token ever appears in chat. Access is read-only by default; private CRM writes require separate approval.</p></div>
-        </div>
-        <p className="mt-4 text-sm leading-6 text-zinc-400">Private WhatsApp messages are not ingested or available to the PropAI connection. It uses selected group evidence and tenant-private CRM records only.</p>
-        <p className="mt-4 text-sm leading-6 text-zinc-400">Manual setup remains available as a fallback: it uses a separate API key created on the Integrations page, not your PropAI password. Your PropAI email and password alone are not an API connection, and saving them in a vault does not connect anything. Save the one-time key securely, never in chat. Existing connections keep working.</p>
-        <h3 className="mt-5 text-sm font-semibold text-white">Manual setup</h3>
-        <div className="mt-3 grid gap-3 text-sm text-zinc-300 sm:grid-cols-3"><div><div className="font-semibold text-white">Base URL</div><code className="mt-1 block text-xs text-amber-200">https://api.propai.live</code></div><div><div className="font-semibold text-white">Inventory</div><code className="mt-1 block text-xs text-zinc-400">/api/external/v1/listings/search</code></div><div><div className="font-semibold text-white">Matches</div><code className="mt-1 block text-xs text-zinc-400">/api/external/v1/matches</code></div></div>
-        <p className="mt-4 text-xs leading-5 text-zinc-400">Manual setup: save the one-time token in Instinct Vault as a password/secret named <code className="text-amber-200">PROPAI_API_KEY</code>. Use endpoint <code className="text-amber-200">https://api.propai.live/api/external/v1</code> and send it as <code className="text-amber-200">X-API-Key</code> or <code className="text-amber-200">Authorization: Bearer</code>.</p>
-        <Link href="/workspace/mcp" className="mt-5 inline-flex items-center gap-2 rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10">Create a token manually on the Integrations page</Link>
+      <div className="max-w-2xl">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">Assistant connection</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Connect Instinct to PropAI</h1>
+        <p className="mt-3 text-base leading-7 text-zinc-400">Ask Instinct to connect, approve the request once, and then search your selected WhatsApp groups from Instinct.</p>
       </div>
-
-      <div className="mt-6 rounded-2xl border border-amber-300/20 bg-amber-300/[0.05] p-6">
-        <h2 className="text-lg font-semibold text-white">Watch the connection walkthrough</h2>
-        <p className="mt-1 text-sm leading-6 text-zinc-400">68 seconds: save your PropAI login in Instinct Vault, ask Instinct to connect, then approve access. Private account details are hidden.</p>
-        <div className="mx-auto mt-4 max-w-xs overflow-hidden rounded-xl border border-amber-300/20">
-          <video controls preload="metadata" playsInline className="block w-full" aria-label="PropAI Instinct connection walkthrough">
-            <source src="/videos/propai-connect-v2.mp4" type="video/mp4" />
-            Your browser does not support the Instinct connection walkthrough video.
-          </video>
-        </div>
+      <div className="mt-8 rounded-2xl border border-emerald-400/25 bg-emerald-400/[0.07] p-6 sm:p-7">
+        <div className="flex items-start gap-4"><div className="rounded-xl border border-emerald-300/25 bg-emerald-300/10 p-3 text-emerald-200"><MessageCircle className="h-6 w-6" aria-hidden="true" /></div><div><h2 className="text-xl font-semibold text-white">Three quick steps</h2><p className="mt-1 text-sm leading-6 text-zinc-400">You do not need to create, copy, or paste an API key for the normal connection.</p></div></div>
+        <ol className="mt-6 grid gap-3 sm:grid-cols-3">
+          {[["1", "Open Instinct", "Open Instinct and say: “Connect my PropAI workspace.”"], ["2", "Open its link", "Instinct will send a secure PropAI connection link."], ["3", "Approve access", "Sign in to PropAI, check the code, and tap Approve."]].map(([number, title, copy]) => <li key={number} className="rounded-xl border border-white/10 bg-black/20 p-4"><div className="flex items-center gap-3"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-300 text-sm font-bold text-black">{number}</span><span className="font-semibold text-white">{title}</span></div><p className="mt-3 text-sm leading-6 text-zinc-400">{copy}</p></li>)}
+        </ol>
+        <a href="https://app.instinct.com" target="_blank" rel="noreferrer" className="mt-6 inline-flex items-center gap-2 rounded-lg bg-emerald-300 px-4 py-2.5 text-sm font-semibold text-black hover:bg-emerald-200">Open Instinct <ExternalLink className="h-4 w-4" aria-hidden="true" /></a>
       </div>
+      <div className="mt-5 grid gap-5 sm:grid-cols-2">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5"><div className="flex items-center gap-2 text-sm font-semibold text-white"><CheckCircle2 className="h-4 w-4 text-emerald-300" aria-hidden="true" /> Instinct can help with</div><p className="mt-3 text-sm leading-6 text-zinc-400">Searching listings, reading captured messages from your selected groups, finding matches, and working with your PropAI workspace data.</p></div>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5"><div className="flex items-center gap-2 text-sm font-semibold text-white"><CheckCircle2 className="h-4 w-4 text-emerald-300" aria-hidden="true" /> Your data stays scoped</div><p className="mt-3 text-sm leading-6 text-zinc-400">Instinct uses this workspace and its selected WhatsApp groups. Private WhatsApp chats are not captured or exposed.</p></div>
+      </div>
+      <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5"><h2 className="text-base font-semibold text-white">Try this after connecting</h2><p className="mt-2 rounded-lg border border-white/10 bg-black/20 px-4 py-3 text-sm text-emerald-200">“Find me a 2 BHK for rent in Bandra West from my WhatsApp groups.”</p></div>
+      <details className="mt-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5"><summary className="flex cursor-pointer list-none items-center gap-3 text-sm font-semibold text-zinc-300"><KeyRound className="h-4 w-4 text-zinc-500" aria-hidden="true" /> Advanced/manual connection settings</summary><div className="mt-4 border-t border-white/10 pt-4 text-sm leading-6 text-zinc-400"><p>Manual API-key setup is only for technical integrations or troubleshooting. It is not required for the normal Instinct approval flow.</p><Link href="/workspace/mcp" className="mt-4 inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/[0.06]">Open advanced integrations <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link></div></details>
     </section>
   );
 }

@@ -186,15 +186,15 @@ export default function McpWorkspacePage() {
             <Server className="h-5 w-5" aria-hidden="true" />
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-semibold text-white">PropAI integrations</h2>
+            <h2 className="text-lg font-semibold text-white">Connect your assistant</h2>
             <p className="mt-1 text-sm leading-6 text-zinc-400">
-              Connect Claude through MCP or Instinct through the tenant-scoped REST API. Shared-market listings are separate from private workspace evidence, and neither integration can see another tenant&apos;s private data.
+              Instinct is the easiest option for brokers. Open the Instinct setup, approve PropAI once, and start asking for listings. Claude can connect through the broker connector below.
             </p>
           </div>
         </div>
 
         <div className="mt-6 rounded-xl border border-white/10 bg-black/20 p-4">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Broker raw-message MCP URL</div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Claude connector</div>
           <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center">
             <code className="min-w-0 flex-1 break-all text-sm text-emerald-200">{MCP_ENDPOINT}</code>
             <button type="button" onClick={() => void copyEndpoint()} className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-400/30 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-400/10">
@@ -205,9 +205,9 @@ export default function McpWorkspacePage() {
         </div>
 
         <div className="mt-5 grid gap-3 text-sm text-zinc-300 sm:grid-cols-3">
-          <div><div className="font-semibold text-white">1. Add URL</div><div className="mt-1 text-xs leading-5 text-zinc-500">Paste the server URL into Claude&apos;s Settings → Connectors.</div></div>
-          <div><div className="font-semibold text-white">2. Sign in</div><div className="mt-1 text-xs leading-5 text-zinc-500">Approve the OAuth request with your PropAI account.</div></div>
-          <div><div className="font-semibold text-white">3. Ask Claude</div><div className="mt-1 text-xs leading-5 text-zinc-500">Search your workspace&apos;s captured WhatsApp group messages.</div></div>
+          <div><div className="font-semibold text-white">1. Copy the URL</div><div className="mt-1 text-xs leading-5 text-zinc-500">Use the button above.</div></div>
+          <div><div className="font-semibold text-white">2. Add it to Claude</div><div className="mt-1 text-xs leading-5 text-zinc-500">Settings → Connectors → Add custom connector.</div></div>
+          <div><div className="font-semibold text-white">3. Sign in and ask</div><div className="mt-1 text-xs leading-5 text-zinc-500">Approve PropAI, then ask Claude to search your groups.</div></div>
         </div>
 
         <a href={MCP_ENDPOINT} target="_blank" rel="noreferrer" className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-emerald-300 hover:text-emerald-200">
@@ -215,7 +215,9 @@ export default function McpWorkspacePage() {
         </a>
       </div>
 
-      <div className="mt-5 rounded-2xl border border-amber-300/20 bg-amber-300/[0.05] p-6">
+      <details className="mt-5 rounded-2xl border border-white/10 bg-white/[0.02] p-6">
+        <summary className="cursor-pointer list-none text-base font-semibold text-zinc-300">Advanced: API keys, CRM write access, and approvals</summary>
+        <div className="mt-5 rounded-2xl border border-amber-300/20 bg-amber-300/[0.05] p-6">
         <div className="flex items-start gap-4">
           <div className="rounded-xl border border-amber-300/25 bg-amber-300/10 p-3 text-amber-200"><KeyRound className="h-5 w-5" aria-hidden="true" /></div>
           <div><h2 className="text-lg font-semibold text-white">Connect an external agent</h2><p className="mt-1 text-sm leading-6 text-zinc-400">Create a tenant-scoped REST token for Instinct or another assistant. Keep it read-only, or explicitly allow private CRM writes. Never paste it into WhatsApp chat. A token is the manual route; your PropAI email and password are not an API key and do not work as one.</p></div>
@@ -260,9 +262,12 @@ export default function McpWorkspacePage() {
         <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4"><div className="text-sm font-semibold text-white">Private message boundary</div><p className="mt-1 text-xs leading-5 text-zinc-400">Private WhatsApp messages are not ingested, stored, searchable, or available to external agents. PropAI connections use selected group evidence and tenant-private CRM records only.</p></div>
         {externalToken && <div className="mt-4 rounded-xl border border-amber-300/20 bg-black/20 p-4"><div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">One-time PropAI connection secret</div><code className="mt-2 block break-all text-xs text-amber-100">{externalToken}</code><button type="button" onClick={() => void navigator.clipboard.writeText(externalToken)} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200"><Copy className="h-3.5 w-3.5" /> Copy secret</button></div>}
         {keyMessage && <p className="mt-3 text-xs leading-5 text-zinc-400">{keyMessage}</p>}
-      </div>
+        </div>
+      </details>
 
-      <div className="mt-5 rounded-2xl border border-cyan-300/20 bg-cyan-300/[0.05] p-6">
+      <details className="mt-5 rounded-2xl border border-white/10 bg-white/[0.02] p-6">
+        <summary className="cursor-pointer list-none text-base font-semibold text-zinc-300">Other assistants and technical checks</summary>
+        <div className="mt-5 rounded-2xl border border-cyan-300/20 bg-cyan-300/[0.05] p-6">
         <div className="flex items-start gap-4">
           <div className="rounded-xl border border-cyan-300/25 bg-cyan-300/10 p-3 text-cyan-200"><Bot className="h-5 w-5" aria-hidden="true" /></div>
           <div className="min-w-0 flex-1">
@@ -341,7 +346,8 @@ export default function McpWorkspacePage() {
           <span>Browser {agentStatus?.browser?.ok ? "ready" : "needs deployment"}</span>
         </div>
         {agentMessage && <p className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3 text-xs leading-5 text-zinc-300">{agentMessage}</p>}
-      </div>
+        </div>
+      </details>
     </section>
   );
 }

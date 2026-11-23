@@ -1545,9 +1545,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       {loading && <div className="mt-3 text-xs text-zinc-500">Loading group directory...</div>}
       {error && (
         <div className={`mt-3 text-xs ${data ? "text-amber-200" : "text-red-400"}`}>
-          {data
-            ? "Group settings refresh was temporarily unavailable; the loaded selection is still active."
-            : error}
+          {error}
         </div>
       )}
       {message && <div className="mt-3 text-xs text-emerald-300">{message}</div>}
@@ -1605,7 +1603,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
           {selectionConfirmed && (
             <div className="mt-3 flex items-center gap-2 border-l-2 border-emerald-400/50 bg-emerald-400/[0.04] px-3 py-2 text-[11px] text-emerald-200">
               <Check className="h-3.5 w-3.5 shrink-0" />
-              {persistedSelectedCount} group{persistedSelectedCount === 1 ? " is" : "s are"} confirmed and ready for optional extraction.
+              {persistedSelectedCount} group{persistedSelectedCount === 1 ? " is" : "s are"} confirmed for Instinct and MCP extraction.
             </div>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
