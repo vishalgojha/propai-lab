@@ -12,6 +12,7 @@ type ConnectPreview = {
   label: string;
   write_access: boolean;
   scopes: string[];
+  workspace_id: string;
 };
 
 type PageStatus = "checking" | "ready" | "deciding" | "approved" | "denied" | "error";
@@ -50,10 +51,19 @@ export default function ConnectAgentPage() {
 
   async function decide(approve: boolean) {
     if (!code) return;
+    if (approve && !preview?.workspace_id) {
+      setStatus("error");
+      setMessage("Workspace could not be verified. Reload and review the connection before approving.");
+      return;
+    }
     setStatus("deciding");
     try {
       await fetchJSON(`/external/v1/connect/sessions/by-code/${encodeURIComponent(code)}/${approve ? "approve" : "deny"}`, {
         method: "POST",
+        ...(approve ? {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workspace_id: preview!.workspace_id }),
+        } : {}),
       });
       setStatus(approve ? "approved" : "denied");
     } catch (error) {
