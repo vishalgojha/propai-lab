@@ -1448,3 +1448,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Deployment/push status: Commit `0a68b7be` was pushed to `origin/main`. Coolify deployment `zcnulelmzebwfjims9w36jw1` for `propai-lab:main-app` finished successfully from that commit. The earlier raw MCP deployment completed from `34516f2e`; the earlier group-selection fix completed from `68596c40`.
 - Known limitations: The deployment record proves rollout, not an interactive broker click-through. Razorpay website approval for `app.propai.live` was observed in the user-provided dashboard screenshot; no Razorpay payment-button or webhook code was changed because placement and payment behavior were not specified.
 - Next action: Open the deployed Instinct page and WhatsApp group page, confirm the selected-group count, then use Instinct with a selected-group listing request. Treat any cross-tenant/source-boundary change as a backend authorization change, not an assistant instruction change.
+
+### Expand the Instinct capability description
+
+- Requested outcome: Describe Instinct as a general broker operations and analysis assistant, not only as a listing-search assistant.
+- Files/services changed: `frontend/src/app/workspace/instinct/page.tsx`; `propai-lab:main-app` redeployed.
+- Behavior: The page now describes source investigation, extraction, CRM work, matching, follow-ups, ad drafting, web/project research, spreadsheet and Excel-ready analysis, broker email workflows, and property photo/video work. It explicitly explains that email, web, file, and media access comes from Instinct or its connected services, while PropAI access remains tenant- and group-scoped.
+- Verification performed: `git diff --check` passed; the changed-file TypeScript check reported no diagnostics; independent task-verifier second pass: **PARTIAL** — the user-facing capability model is updated and deployed, but no new email, spreadsheet, web-research, or video-editing connector was implemented in PropAI during this pass.
+- Deployment/push status: Commit `5b059068` was pushed to `origin/main`. Coolify deployment `qatape20q424l1m3zkib97we` for `propai-lab:main-app` finished successfully from that commit.
+- Known limitations: Existing PropAI MCP/REST calls do not themselves send emails, export Excel files, browse the web, or edit videos. Those actions require Instinct-side tools or separately authorized connectors and should not be represented as available solely because the PropAI connection is approved.
+- Next action: If desired, add explicit connector-backed tools for email send, workbook generation/export, web research, and media processing, each with tenant/recipient confirmation and audit logging.
