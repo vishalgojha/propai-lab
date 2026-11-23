@@ -68,45 +68,53 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl p-6 lg:p-8">
-      <div className="flex items-center gap-4 mb-6">
+    <div className="mx-auto w-full min-w-0 max-w-5xl p-4 sm:p-6 lg:p-8">
+      <div className="mb-6 flex min-w-0 items-start gap-3 sm:gap-4">
         <Link href="/" className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
           <ArrowLeft className="w-5 h-5" />
         </Link>
-        <div>
+        <div className="min-w-0">
           <p className="propai-kicker text-[10px] font-semibold">Platform operations</p>
           <h1 className="mt-1 text-2xl font-semibold leading-tight tracking-[-0.03em] text-[var(--text-primary)] sm:text-3xl sm:tracking-[-0.035em]">Admin</h1>
           <p className="text-sm text-[var(--text-secondary)]">Super admin management and platform operations</p>
         </div>
       </div>
 
+      <Link href="/admin/users" className="propai-panel mb-6 block rounded-2xl border border-[var(--border)] p-6 hover:border-[var(--signal-lime)]">
+        <h2 className="font-semibold">Signups &amp; users →</h2>
+        <p className="mt-1 text-sm text-[var(--text-secondary)]">Private, read-only workspace signups and registered user accounts.</p>
+      </Link>
+
       {/* Super Admins */}
-      <section className="propai-panel mb-6 rounded-2xl p-6">
-        <div className="flex items-center justify-between mb-4">
+      <section className="propai-panel mb-6 min-w-0 rounded-2xl p-4 sm:p-6">
+        <div className="mb-4 flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--text-primary)]">
             <Shield className="h-5 w-5 text-[var(--signal-lime)]" />
             Super Admins
           </h2>
-          <form onSubmit={handleAdd} className="flex items-center gap-2">
+          <form onSubmit={handleAdd} className="grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] xl:w-auto" aria-label="Add super admin">
             <input
               value={newUserId}
               onChange={(e) => setNewUserId(e.target.value)}
               placeholder="User ID (UUID)"
-              className="w-48 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] focus:border-[var(--monsoon-teal)]"
+              aria-label="User ID (UUID)"
+              className="w-full min-w-0 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] focus:border-[var(--monsoon-teal)]"
               required
             />
             <input
               value={newPhone}
               onChange={(e) => setNewPhone(e.target.value)}
               placeholder="Phone (optional)"
-              className="w-40 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] focus:border-[var(--monsoon-teal)]"
+              aria-label="Phone (optional)"
+              className="w-full min-w-0 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] focus:border-[var(--monsoon-teal)]"
             />
             <button
               type="submit"
+              aria-label="Add super admin"
               disabled={adding}
               className="rounded-lg bg-[var(--signal-lime)] px-3 py-2 text-sm font-bold text-[var(--asphalt)] disabled:opacity-50"
             >
-              {adding ? "Adding..." : <Plus className="w-4 h-4" />}
+              {adding ? "Adding..." : <span className="inline-flex items-center justify-center gap-2"><Plus className="w-4 h-4" />Add admin</span>}
             </button>
           </form>
         </div>
@@ -118,8 +126,8 @@ export default function AdminPage() {
         ) : admins.length === 0 ? (
           <div className="py-8 text-center text-[var(--text-secondary)]">No super admins configured</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="w-full min-w-0 max-w-full overflow-x-auto" tabIndex={0} role="region" aria-label="Super admins table, scroll horizontally to view all columns">
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)]">
                   <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">User ID</th>
@@ -163,7 +171,7 @@ export default function AdminPage() {
       </section>
 
       {/* Platform operations */}
-      <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
+      <section className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-6">
         <h2 className="mb-4 flex items-center gap-2 text-lg font-bold text-[var(--text-primary)]">
           <Wrench className="h-5 w-5 text-[var(--taxi-amber)]" />
           Platform Operations

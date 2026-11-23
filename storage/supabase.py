@@ -3559,6 +3559,52 @@ class SupabaseStorage(Storage):
         res = self.client.table("organizations").select("*").eq("slug", slug).limit(1).execute()
         return res.data[0] if res.data else None
 
+    def admin_user_directory(self, kind: str, page: int, page_size: int) -> dict:
+        """Server-only projection for the gated admin directory, with no secrets.
+
+        Workspace creation and authentication registration are different events.
+        Auth ordering is provider-defined; workspace rows are newest first.
+        """
+        if not (1 <= page <= 10000 and 1 <= page_size <= 100):
+            raise ValueError("Invalid directory page bounds")
+        if kind == "accounts":
+            response = self._client._http.get(
+                f"{self._client._base_url}/auth/v1/admin/users",
+                params={"page": page, "per_page": page_size},
+                timeout=20,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            users = payload.get("users")
+            if not isinstance(users, list):
+                raise ValueError("Unexpected authentication directory response")
+            rows = []
+            for account in users:
+                metadata = account.get("user_metadata") or {}
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                name = " ".join(str(metadata.get(k) or "").strip() for k in ("first_name", "last_name")).strip()
+                rows.append({
+                    "id": account.get("id"), "name": name or str(metadata.get("full_name") or metadata.get("name") or ""),
+                    "email": account.get("email"), "phone": account.get("phone"),
+                    "created_at": account.get("created_at"), "last_sign_in_at": account.get("last_sign_in_at"),
+                    "email_confirmed_at": account.get("email_confirmed_at"),
+                    "phone_confirmed_at": account.get("phone_confirmed_at"),
+                })
+            # Do not invent a total from a partial provider page.
+            return {"kind": kind, "rows": rows, "page": page, "page_size": page_size,
+                    "has_more": len(rows) == page_size, "total": None}
+        if kind != "workspaces":
+            raise ValueError("Invalid directory kind")
+        result = self.client.table("organizations").select(
+            "id,name,owner_user_id,owner_phone,created_at,is_active", count="exact"
+        ).order("created_at.desc,id", desc=True).limit(page_size).offset((page - 1) * page_size).execute()
+        rows = result.data or []
+        total = result.count
+        return {"kind": kind, "rows": rows, "page": page, "page_size": page_size,
+                "has_more": (page * page_size < total) if total is not None else len(rows) == page_size,
+                "total": total}
+
     def list_organizations_after(self, after_ts: str | None = None, after_id: str | None = None, limit: int = 100) -> list[dict]:
         """Keyset-paginated organizations, ascending by (created_at, id).
 

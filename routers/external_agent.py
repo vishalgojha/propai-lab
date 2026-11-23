@@ -34,7 +34,7 @@ EXTERNAL_AGENT_CONTRACT = Path(__file__).resolve().parents[1] / "docs" / "EXTERN
 BROKER_AGENT_KNOWLEDGE = Path(__file__).resolve().parents[1] / "docs" / "BROKER_AGENT_KNOWLEDGE.md"
 EXTERNAL_AGENT_CONTRACT_NAME = "propai.external-agent"
 EXTERNAL_AGENT_CONTRACT_VERSION = "1.0"
-EXTERNAL_AGENT_CONTRACT_REVISION = "2026-11-23.1"
+EXTERNAL_AGENT_CONTRACT_REVISION = "2026-11-23.2"
 EXTERNAL_AGENT_CONTRACT_MIN_CLIENT_REVISION = "1"
 EXTERNAL_AGENT_SCHEMA_REVISION = "external-v1"
 WRITE_SCOPES = {"inventory:write", "requirements:write"}
@@ -384,7 +384,7 @@ async def external_agent_contract_manifest():
         "schema_revision": EXTERNAL_AGENT_SCHEMA_REVISION,
         "digest": f"sha256:{digest}",
         "contract_url": "https://api.propai.live/api/external/v1/contract",
-        "change_summary": "Unified REST and MCP tenant, evidence, write, privacy, and confirmation rules; direct messages and media remain unavailable.",
+        "change_summary": "Optional separately consented source contacts with results; legacy grants stay masked. Individual flat entries, source-specific offers and optional Excel guidance.",
     }
 
 

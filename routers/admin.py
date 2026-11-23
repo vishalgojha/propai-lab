@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 import httpx
 import re
 
@@ -176,6 +176,27 @@ async def admin_update_whatsapp_session(
                 "POST", "/disconnect", timeout=10, headers={"X-Broker-Id": broker_id}
             )
     return await _admin_whatsapp_session(result or phone)
+
+
+@router.get("/api/admin/user-directory")
+async def admin_user_directory(
+    response: Response, kind: str = "workspaces", page: int = 1, page_size: int = 25,
+    user: dict = Depends(require_user),
+):
+    """Read-only platform directory. Never available to ordinary broker accounts."""
+    response.headers["Cache-Control"] = "private, no-store"
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin access required")
+    if kind not in {"workspaces", "accounts"}:
+        raise HTTPException(400, "kind must be workspaces or accounts")
+    if page < 1 or page > 10000 or page_size < 1 or page_size > 100:
+        raise HTTPException(400, "Invalid page or page_size")
+    try:
+        result = await asyncio.to_thread(storage.admin_user_directory, kind, page, page_size)
+    except Exception:
+        logging.getLogger(__name__).exception("Admin user directory read failed")
+        raise HTTPException(502, "User directory could not be loaded. Please retry.")
+    return {**result, "as_of": datetime.now(timezone.utc).isoformat()}
 
 
 @router.get("/api/admin/orgs")

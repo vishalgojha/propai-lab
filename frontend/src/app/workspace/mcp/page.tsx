@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Bot, Check, Copy, ExternalLink, KeyRound, Play, Server } from "lucide-react";
 import Link from "next/link";
+import ContactSourceConsent from "@/components/ContactSourceConsent";
 import { fetchJSON } from "@/lib/api";
 
 const MCP_ENDPOINT = "https://mcp.propai.live/raw-mcp";
@@ -179,7 +180,7 @@ export default function McpWorkspacePage() {
   }
 
   return (
-    <section id="how-to-connect" className="mx-auto max-w-4xl px-4 pb-12 lg:px-6">
+    <><section id="how-to-connect" className="mx-auto max-w-4xl px-4 pb-12 lg:px-6">
       <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] p-6">
         <div className="flex items-start gap-4">
           <div className="rounded-xl border border-emerald-400/25 bg-emerald-400/10 p-3 text-emerald-300">
@@ -348,6 +349,6 @@ export default function McpWorkspacePage() {
         {agentMessage && <p className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3 text-xs leading-5 text-zinc-300">{agentMessage}</p>}
         </div>
       </details>
-    </section>
+    </section><div className="mx-auto max-w-4xl px-4 pb-8"><ContactSourceConsent /></div></>
   );
 }

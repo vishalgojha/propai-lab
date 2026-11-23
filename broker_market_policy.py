@@ -21,6 +21,17 @@ CONSENT_TEXT = (
     "groups stay private. Remove a group here to stop future cross-search access. Contact numbers are "
     "hidden until a broker chooses a specific option."
 )
+CONTACT_CONSENT_VERSION = "broker-property-contact-results-v1"
+CONTACT_CONSENT_TEXT = (
+    "Include contact numbers written in future property posts from these selected groups "
+    "with matching results for authenticated PropAI brokers and their assistants. "
+    "A result is a whole original post and may contain several flats and unrelated numbers. "
+    "All supported in-post numbers appear as source-post contacts with nearby labels, not "
+    "verified brokers for a matched flat. Flat association and ownership are unverified. Private property "
+    "shortlists, including requested Excel files, are allowed. Do not publish numbers, "
+    "build contact directories or use them for bulk outreach. Turn this off at any time "
+    "for future requests. Existing group privacy controls still apply."
+)
 CONTACT_NOTICE = (
     "Numbers are hidden to avoid bulk exposure and unwanted calls. This is not a paywall. "
     "Choose one specific option to request its contact."

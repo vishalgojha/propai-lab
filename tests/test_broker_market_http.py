@@ -6,14 +6,21 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from psycopg2.extras import RealDictCursor
 
-from tests.test_broker_market_realpg import db,seeded
+from tests.test_independent_raw_sharing import db, seeded, grant, message
 from routers import broker_market as market
 from broker_market_policy import PropertySearch
 
 
 @pytest.fixture
 def client(seeded,monkeypatch):
-    connection,_=seeded
+    # HTTP compatibility suite exercises current independent raw consent and
+    # additive contact wrappers. The separate realpg module preserves v1 SQL
+    # regression coverage; v1 rows must never be promoted into current consent.
+    connection, tenant, *_ = seeded
+    with connection.cursor() as q:
+        q.execute("insert into organization_group_connections(id,organization_id,whatsapp_connection_id,group_jid,is_active,opted_out,public_market_source) values(11,%s,1,'123@g.us',true,false,true)", (tenant,))
+    grant(seeded)
+    message(seeded)
     monkeypatch.setenv('SUPABASE_SERVICE_KEY','local-test-signing-only')
     monkeypatch.setattr(market,'_record_assistant_trial_start',lambda tenant:None)
     monkeypatch.setenv('BROKER_PROPERTY_CROSS_SEARCH_ENABLED','true')

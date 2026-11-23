@@ -365,3 +365,13 @@ available and no old credential is changed by this validation rule.
 The same scope builder drives the pending disclosure and newly minted key.
 Unknown or empty scope disclosure blocks Allow in the new UI.
 The normal start action stays disabled until fresh-assistant acceptance passes.
+
+## Source-opted-in contact results (release candidate)
+
+Automatic contacts require a separate explicit source-owner grant for future selected-group posts. Existing raw-sharing consent is not upgraded. Each result with `contact_policy=source_opted_in_automatic` has a `contacts` array of all supported in-post numbers and redacted contextual labels, ownership unverified. Missing policy means the existing masked/selected-option flow still applies. Do not fabricate interest quotes or loop legacy labels. Source re-reads recheck permission; cached output cannot prove current authorization. Contacts remain private to the requesting broker's property work, including a requested private shortlist Excel, never public/client-facing contact exports or bulk outreach.
+
+The owner-only `/market/contact-sources` GET returns the draft version/text and defaults disabled. PUT requires exact group identities, current version and explicit confirmation for enable. It changes only the new contact-disclosure grant, not extraction or raw source consent. The deployment itself grants nothing.
+
+Present individual flat entries with all evidenced source-specific broker offers underneath. Do not merge by building alone. Preserve each quote, date and uncertainty. Always offer Excel after results, but create it only if requested.
+
+Source-post contact scope: each API option is a whole original message, not a parsed flat. `contact_scope=source_post` and per-contact `association=unverified` preserve that boundary. A digest may contain several flats and unrelated numbers. Show ambiguous numbers once in a separate "Source-post contacts" section with their original redacted context. Put a broker under an individual flat only when the post explicitly links them; state that this is a source claim, not verified ownership. Never copy all post numbers under each matched flat. Excel must preserve the same distinction. Nearby labels alone are not a semantic association.

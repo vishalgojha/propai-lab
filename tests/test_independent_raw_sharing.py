@@ -37,6 +37,7 @@ def db():
         ''')
         q.execute(Path('supabase/migrations/20261119090000_broker_property_cross_search.sql').read_text())
         q.execute(Path('supabase/migrations/20261120100000_independent_raw_group_sharing.sql').read_text())
+        q.execute(Path('supabase/migrations/20261123150000_optional_source_contact_disclosure.sql').read_text())
     yield c
     c.close()
     with admin.cursor() as q:q.execute('drop database '+name+' with (force)')

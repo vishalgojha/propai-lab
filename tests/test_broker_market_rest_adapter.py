@@ -126,16 +126,16 @@ def test_actual_adapter_search_and_option_rows_masked_then_revoked(rig):
     row = {'raw_id': 42, 'body': 'Juhu 3 bhk for rent call 9820056180',
            'posted_at': '2026-11-20T10:00:00Z', 'sender_phone': '9820056180', 'sender_jid': ''}
     state['by_name'] = {'broker_market_take_rate': True,
-                        'broker_market_search': [row], 'broker_market_get': [row]}
+                        'broker_market_search_with_contacts': [row], 'broker_market_get_with_contacts': [row]}
     found = c.post('/api/external/v1/market/search', json={'locality': 'Juhu'})
     assert found.status_code == 200, found.text
     assert '9820056180' not in found.text
     option = found.json()['results'][0]['option']
     reread = c.post('/api/external/v1/market/option', json={'option': option})
     assert reread.status_code == 200 and '9820056180' not in reread.text
-    state['by_name']['broker_market_get'] = []
+    state['by_name']['broker_market_get_with_contacts'] = []
     assert c.post('/api/external/v1/market/option', json={'option': option}).status_code == 404
-    state['by_name']['broker_market_search'] = []
+    state['by_name']['broker_market_search_with_contacts'] = []
     empty = c.post('/api/external/v1/market/search', json={'locality': 'Juhu'})
     assert empty.status_code == 200 and empty.json()['results'] == []
     assert state['writes'] == 0

@@ -61,3 +61,15 @@ Suggested explanation: "I can suggest property-related groups from their names, 
 
 ## Check the source
 Field names and exact meanings can differ between data sources. When a connected source documents a field, read that documentation before relying on this page for it.
+
+## Search-result presentation
+
+Return each evidence-supported flat as an individual entry, with all evidenced broker offers underneath. Keep the source-specific quoted rent, furnishing, restrictions and last-advertised date attached to each offer. A shared building name does not prove the same flat; keep different flats separate and mark uncertain duplicates. Never invent broker identity or verified availability.
+
+Contacts may accompany a private property result only when that result's current source policy permits it. New opt-in sources return labelled in-post numbers together; preserve every label and ownership uncertainty, without picking a random primary contact. Legacy sources retain their existing option-interest/contact-choice limits. Do not publish broker contacts in public or client-facing material. A broker-requested private property-shortlist Excel may include contacts that were lawfully returned for those specific offers; it is not permission to harvest or export a general contact directory.
+
+After delivering results, always offer: "Would you like this in Excel too?" Do not create the Excel merely because this guidance says to offer it. The user's decision controls creation.
+
+Source-post contact scope: each API option is a whole original message, not a parsed flat. `contact_scope=source_post` and per-contact `association=unverified` preserve that boundary. A digest may contain several flats and unrelated numbers. Show ambiguous numbers once in a separate "Source-post contacts" section with their original redacted context. Put a broker under an individual flat only when the post explicitly links them; state that this is a source claim, not verified ownership. Never copy all post numbers under each matched flat. Excel must preserve the same distinction. Nearby labels alone are not a semantic association.
+
+Use "Also listed with X, Y and Z" under a flat only when source evidence supports the same individual unit. Keep each broker claim, returned phone, quote and advertised date attached to that specific source offer. Unknown identity stays unknown. Uncertain same-unit matches and unlinked source-post contacts stay separately labelled. Always ask whether the requesting broker needs Excel; create it only on request.

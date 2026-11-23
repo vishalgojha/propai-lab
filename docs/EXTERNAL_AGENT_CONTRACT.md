@@ -2,7 +2,7 @@
 
 Contract name: `propai.external-agent`
 Contract version: `1.0`
-Contract revision: `2026-11-23.1`
+Contract revision: `2026-11-23.2`
 Published: `2026-11-23T00:00:00Z`
 Minimum client revision: `1`
 Schema revision: `external-v1`
@@ -142,3 +142,11 @@ An integration is conformant only when it passes the shared checks for:
 
 The server remains the enforcement point. Documentation and prompts guide the
 client, but they never grant access or override a failed authorization check.
+
+## Property-result presentation and optional contacts
+
+Present one entry per evidence-supported flat, with each source-specific broker offer, quote and last-advertised date underneath. Building-level similarity alone is not flat identity; mark uncertain duplicates. Always offer Excel after results, creating it only when requested.
+
+Automatic labelled in-post contacts are permitted only for results carrying a current separate source-owner contact-disclosure grant. Existing source grants are never widened. Legacy sources retain their selected-option interest/label flow. Keep contacts private to the requesting broker's property work; requested private shortlist Excel is allowed, public/client-facing disclosure and contact harvesting are not. Ownership remains unverified.
+
+Source-post contact scope: each API option is a whole original message, not a parsed flat. `contact_scope=source_post` and per-contact `association=unverified` preserve that boundary. A digest may contain several flats and unrelated numbers. Show ambiguous numbers once in a separate "Source-post contacts" section with their original redacted context. Put a broker under an individual flat only when the post explicitly links them; state that this is a source claim, not verified ownership. Never copy all post numbers under each matched flat. Excel must preserve the same distinction. Nearby labels alone are not a semantic association.
