@@ -1500,7 +1500,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
           <div className="text-sm font-semibold text-white">WhatsApp message processing</div>
         </div>
         <div className="mt-2 text-xs text-zinc-500">
-          Pair this phone to capture new group and direct messages. Message extraction is controlled separately below.
+          Pair this phone to capture new WhatsApp group messages. Private messages are not ingested; message extraction is controlled separately below.
         </div>
       </div>
     );
@@ -1546,8 +1546,8 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         </div>
         <p className="mt-1 leading-5">
           {captureConnected
-            ? "New messages from this phone’s groups and direct chats are saved as raw evidence for chat search."
-            : "Reconnect this phone to resume saving new group and direct messages for chat search."}
+            ? "New messages from this phone’s groups are saved as raw evidence for chat search. Private messages are not captured."
+            : "Reconnect this phone to resume saving new group messages for chat search. Private messages are not captured."}
           {" "}The group choices below do not limit raw capture. Starting extraction does not import chat history.
         </p>
       </div>
@@ -1630,7 +1630,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
 
       {data && data.groups.length > 0 && (
         <div className="mt-3 border-y border-cyan-500/20 bg-cyan-500/[0.03] px-3 py-2 text-[11px] text-cyan-100">
-          Confirm group choices to configure extraction. This does not limit live raw capture from groups or direct chats, and it does not request a history import. Groups already covered by another active connection are unavailable for this extraction selection.
+          Confirm group choices to configure extraction. This does not request a history import and applies only to group messages. Private messages are not captured. Groups already covered by another active connection are unavailable for this extraction selection.
         </div>
       )}
 
@@ -1848,7 +1848,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
               </div>
               <div className="min-w-0">
                 <h2 id="confirm-selection-title" className="text-sm font-semibold text-white">Confirm group selection</h2>
-                <p className="mt-1 text-xs leading-5 text-zinc-400">New group messages captured after pairing, and your direct chats, keep being saved privately either way. Confirming these {selectedGroups.size} group{selectedGroups.size === 1 ? "" : "s"} turns their listings into shared-market listings that other brokers can search. Unchecked groups and your direct chats always stay private to your workspace.</p>
+                <p className="mt-1 text-xs leading-5 text-zinc-400">New group messages captured after pairing stay saved privately either way. Confirming these {selectedGroups.size} group{selectedGroups.size === 1 ? "" : "s"} turns their listings into shared-market listings that other brokers can search. Unchecked groups stay private to your workspace; private messages are not captured.</p>
               </div>
               <button type="button" onClick={() => setSelectionConfirmationOpen(false)} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close selection confirmation">
                 <X className="h-4 w-4" />

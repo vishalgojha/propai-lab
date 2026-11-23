@@ -802,7 +802,7 @@ export async function searchSourceBackedListings(input: {
   sort?: "recency" | "rent" | "relevance";
   since?: string;
   until?: string;
-  scope?: "groups" | "all";
+  scope?: "groups";
   limit?: number;
 }) {
   if (!input.tenantId) throw new Error("Tenant scope is required for source-backed listing search");
@@ -817,7 +817,7 @@ export async function searchSourceBackedListings(input: {
     .lte("timestamp", until.toISOString())
     .order("timestamp", { ascending: false, nullsFirst: false })
     .limit(limit);
-  if (input.scope !== "all") query = query.eq("is_group", true);
+  query = query.eq("is_group", true);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   const queryTerms = String(input.query || "").toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length >= 3);
@@ -1717,6 +1717,7 @@ export async function getBrokerActivity(input: { brokerId: string; days?: number
       .from("raw_messages")
       .select("sender_jid, group_name, message, sender, timestamp, created_at")
       .eq("tenant_id", input.brokerId)
+      .eq("is_group", true)
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(200),
@@ -2119,6 +2120,7 @@ export async function getStoredThreadMessages(input: {
     .from("raw_messages")
     .select("sender_jid, group_name, message, sender, timestamp, created_at")
     .eq("tenant_id", input.brokerId)
+    .eq("is_group", true)
     .order("timestamp", { ascending: false, nullsFirst: false })
     .limit(clampLimit(input.limit, 40, 200));
 
@@ -2209,9 +2211,8 @@ export function normalizeRawMessageSearchInput(input: RawMessageSearchInput) {
     query: String(input.query || "").trim(),
     groupName: String(input.groupName || "").trim(),
     sender: String(input.sender || "").trim(),
-    // Private DMs are opt-in because group inventory is the normal workspace
-    // search surface and DMs may contain unrelated personal conversations.
-    scope: input.scope === "all" ? "all" as const : "groups" as const,
+    // Direct messages are not ingested and are unavailable to MCP clients.
+    scope: "groups" as const,
     since: since.toISOString(),
     until: until.toISOString(),
     limit,
@@ -2231,7 +2232,7 @@ export async function searchRawMessages(input: RawMessageSearchInput) {
     .order("timestamp", { ascending: false, nullsFirst: false })
     .range(normalized.offset, normalized.offset + normalized.limit);
 
-  if (normalized.scope === "groups") query = query.eq("is_group", true);
+  query = query.eq("is_group", true);
   if (normalized.groupName) query = query.ilike("group_name", `%${normalized.groupName}%`);
   if (normalized.sender) query = query.ilike("sender", `%${normalized.sender}%`);
   if (normalized.query) {
@@ -2277,7 +2278,7 @@ export async function searchRawMessagesSemantic(input: RawMessageSearchInput & {
       .gte("timestamp", normalized.since)
       .lte("timestamp", normalized.until)
       .range(normalized.offset, normalized.offset + normalized.limit);
-    if (normalized.scope === "groups") query = query.eq("is_group", true);
+    query = query.eq("is_group", true);
     if (normalized.groupName) query = query.ilike("group_name", `%${normalized.groupName}%`);
     if (normalized.sender) query = query.ilike("sender", `%${normalized.sender}%`);
     const { data, error } = await query;
@@ -2326,6 +2327,7 @@ export async function getRawMessageById(input: { tenantId: string; rawMessageId:
     .select(RAW_MESSAGE_SEARCH_COLUMNS)
     .eq("tenant_id", input.tenantId)
     .eq("id", input.rawMessageId)
+    .eq("is_group", true)
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data ? ({ ...(data as RawMessageSearchResult), chat_jid: (data as any).chat_jid || ((data as any).is_group ? (data as any).group_name : null) }) : null;
@@ -2367,7 +2369,7 @@ export async function getRawMessageContext(input: {
     p_after: normalized.after,
   });
   if (error) throw new Error(error.message);
-  return { ...normalized, items: (data || []) as RawMessageContextItem[] };
+  return { ...normalized, items: (data || []).filter((row: RawMessageContextItem) => row.is_group) as RawMessageContextItem[] };
 }
 
 export async function getMarketSummary(input: {

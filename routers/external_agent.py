@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
 from domain_glossary import build_ai_domain_context
@@ -30,13 +30,20 @@ KEY_PREFIX = "ppai_"
 logger = logging.getLogger(__name__)
 RAW_MESSAGE_COLUMNS = "id,group_name,sender,sender_jid,sender_phone,message,message_type,timestamp,source,is_group,processed"
 EXTERNAL_AGENT_DOCS = Path(__file__).resolve().parents[1] / "docs" / "EXTERNAL_AGENT_API.md"
+EXTERNAL_AGENT_CONTRACT = Path(__file__).resolve().parents[1] / "docs" / "EXTERNAL_AGENT_CONTRACT.md"
 BROKER_AGENT_KNOWLEDGE = Path(__file__).resolve().parents[1] / "docs" / "BROKER_AGENT_KNOWLEDGE.md"
+EXTERNAL_AGENT_CONTRACT_NAME = "propai.external-agent"
+EXTERNAL_AGENT_CONTRACT_VERSION = "1.0"
+EXTERNAL_AGENT_CONTRACT_REVISION = "2026-11-23.1"
+EXTERNAL_AGENT_CONTRACT_MIN_CLIENT_REVISION = "1"
+EXTERNAL_AGENT_SCHEMA_REVISION = "external-v1"
 WRITE_SCOPES = {"inventory:write", "requirements:write"}
 TOOL_READ_SCOPES = {
     "standing_searches:read", "automatch:read", "workspace:attention", "followups:read",
 }
 EXTRACTION_SCOPE = "raw_messages:extract"
 TOOL_WRITE_SCOPES = {"standing_searches:write", "followups:write"}
+RETIRED_EXTERNAL_SCOPES = {"raw_messages:dms"}
 DEFAULT_READ_SCOPES = {
     "inventory:read", "requirements:read", "matches:read", "raw_messages:read",
     # New credentials can read the explicitly consented shared broker pool by
@@ -47,6 +54,10 @@ DEFAULT_READ_SCOPES = {
 }
 SENSITIVE_INVENTORY_FIELDS = {"contact_number", "owner_name", "contact_name", "quote"}
 SENSITIVE_REQUIREMENT_FIELDS = {"phone", "budget_min", "budget_max"}
+
+
+def _effective_external_scopes(scopes) -> list[str]:
+    return sorted({str(scope) for scope in (scopes or []) if str(scope).strip() and str(scope) not in RETIRED_EXTERNAL_SCOPES})
 
 # --- Private DM identifier privacy -------------------------------------------
 # DM rows cross the external boundary without peer identifiers: no phone, no
@@ -264,9 +275,10 @@ def _key_row(token: str) -> dict:
     row["external_agent_dms_enabled"] = bool(
         ((consent.data or [{}])[0] or {}).get("external_agent_dms_enabled")
     )
-    # Persisted scopes are authoritative. Workspace DM consent is a separate
-    # owner-controlled gate and is synchronized to keys by the consent route.
-    row["scopes"] = sorted(set(row.get("scopes") or []))
+    # Persisted scopes are authoritative. Legacy DM grants are removed at the
+    # external boundary because direct messages are no longer ingested.
+    row["scopes"] = _effective_external_scopes(row.get("scopes"))
+    row["external_agent_dms_enabled"] = False
     set_tenant_id(str(row["tenant_id"]))
     return row
 
@@ -329,6 +341,105 @@ async def external_agent_docs():
     return PlainTextResponse(content, headers={"Cache-Control": "public, max-age=300"})
 
 
+def _read_external_agent_contract() -> tuple[str, str]:
+    try:
+        content = EXTERNAL_AGENT_CONTRACT.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.exception("External agent contract is unavailable")
+        raise HTTPException(503, "External agent contract is temporarily unavailable") from exc
+    return content, hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _contract_headers(digest: str) -> dict[str, str]:
+    return {
+        "Cache-Control": "public, max-age=300, must-revalidate",
+        "ETag": f'"{digest}"',
+        "X-PropAI-Contract": EXTERNAL_AGENT_CONTRACT_NAME,
+        "X-PropAI-Contract-Version": EXTERNAL_AGENT_CONTRACT_VERSION,
+        "X-PropAI-Contract-Revision": EXTERNAL_AGENT_CONTRACT_REVISION,
+        "X-PropAI-Contract-Digest": f"sha256:{digest}",
+    }
+
+
+@router.get("/contract", response_class=PlainTextResponse)
+async def external_agent_contract(request: Request):
+    """Public shared contract used by REST and MCP external agents."""
+    content, digest = _read_external_agent_contract()
+    headers = _contract_headers(digest)
+    if request.headers.get("if-none-match") == headers["ETag"]:
+        return Response(status_code=304, headers=headers)
+    return PlainTextResponse(content, headers=headers)
+
+
+@router.get("/contract/manifest")
+async def external_agent_contract_manifest():
+    """Machine-readable revision and digest for client freshness checks."""
+    _content, digest = _read_external_agent_contract()
+    return {
+        "contract": EXTERNAL_AGENT_CONTRACT_NAME,
+        "version": EXTERNAL_AGENT_CONTRACT_VERSION,
+        "revision": EXTERNAL_AGENT_CONTRACT_REVISION,
+        "published_at": "2026-11-23T00:00:00Z",
+        "minimum_client_revision": EXTERNAL_AGENT_CONTRACT_MIN_CLIENT_REVISION,
+        "schema_revision": EXTERNAL_AGENT_SCHEMA_REVISION,
+        "digest": f"sha256:{digest}",
+        "contract_url": "https://api.propai.live/api/external/v1/contract",
+        "change_summary": "Unified REST and MCP tenant, evidence, write, privacy, and confirmation rules; direct messages and media remain unavailable.",
+    }
+
+
+@router.get("/capabilities")
+async def external_agent_capabilities(key: dict = Depends(external_auth)):
+    """Return the authoritative capabilities for one authenticated key."""
+    scopes = _effective_external_scopes(key.get("scopes"))
+    _content, digest = _read_external_agent_contract()
+    read_operations = [
+        ("health", None),
+        ("search_listings", "inventory:read"),
+        ("list_requirements", "requirements:read"),
+        ("list_matches", "matches:read"),
+        ("search_group_messages", "raw_messages:read"),
+        ("get_group_message", "raw_messages:read"),
+    ]
+    write_operations = [
+        ("create_inventory", "inventory:write"),
+        ("create_requirement", "requirements:write"),
+    ]
+    return {
+        "contract": EXTERNAL_AGENT_CONTRACT_NAME,
+        "version": EXTERNAL_AGENT_CONTRACT_VERSION,
+        "revision": EXTERNAL_AGENT_CONTRACT_REVISION,
+        "contract_digest": f"sha256:{digest}",
+        "minimum_client_revision": EXTERNAL_AGENT_CONTRACT_MIN_CLIENT_REVISION,
+        "schema_revision": EXTERNAL_AGENT_SCHEMA_REVISION,
+        "transport": "rest",
+        "docs_url": "https://api.propai.live/api/external/v1/docs",
+        "contract_url": "https://api.propai.live/api/external/v1/contract",
+        "manifest_url": "https://api.propai.live/api/external/v1/contract/manifest",
+        "mcp_endpoint": "https://mcp.propai.live/mcp",
+        "workspace_scoped": True,
+        "scopes": scopes,
+        "operations": {
+            "read": [{"name": operation, "scope": required_scope} for operation, required_scope in read_operations if required_scope is None or required_scope in scopes],
+            "write": [{"name": operation, "scope": required_scope} for operation, required_scope in write_operations if required_scope in scopes],
+        },
+        "boundaries": {
+            "direct_messages": False,
+            "whatsapp_history_sync": False,
+            "media_ingestion": False,
+            "public_publish": False,
+            "outbound_whatsapp": False,
+            "delete_records": False,
+            "change_permissions": False,
+        },
+        "limits": {
+            "raw_message_scope": "groups",
+            "raw_message_max_window_days": 90,
+            "raw_message_max_page_size": 100,
+        },
+    }
+
+
 
 @router.get("/knowledge", response_class=PlainTextResponse)
 async def external_agent_knowledge():
@@ -347,12 +458,10 @@ def _require_scope(key: dict, scope: str):
 
 
 def _require_dm_consent(key: dict):
-    if not key.get("external_agent_dms_enabled"):
-        raise HTTPException(
-            403,
-            "Private DM access is disabled. The workspace owner must explicitly enable it in Account → MCP.",
-        )
-    _require_scope(key, "raw_messages:dms")
+    raise HTTPException(
+        403,
+        "Private DM access is not supported; direct messages are not ingested and are unavailable to external agents.",
+    )
 
 
 def _raw_message_window(since: str, until: str) -> tuple[str, str]:
@@ -506,7 +615,7 @@ async def external_trial_status(key: dict = Depends(external_auth)):
 @tracked_search("assistant")
 async def external_raw_message_search(
     q: str = "",
-    scope: str = Query("groups", pattern="^(groups|dms|all)$"),
+    scope: str = Query("groups", pattern="^groups$"),
     since: str = "",
     until: str = "",
     limit: int = Query(25, ge=1, le=100),
@@ -515,18 +624,12 @@ async def external_raw_message_search(
     x_propai_initiator: str | None = Header(default=None, alias="X-PropAI-Initiator"),
 ):
     _require_scope(key, "raw_messages:read")
-    if scope in {"dms", "all"}:
-        _require_dm_consent(key)
+    if scope != "groups":
+        raise HTTPException(422, "Only scope=groups is supported; private messages are unavailable")
     since_value, until_value = _raw_message_window(since, until)
     query = storage.client.table("raw_messages").select(RAW_MESSAGE_COLUMNS).eq("tenant_id", str(key["tenant_id"]))
-    if scope == "groups":
-        query = query.eq("is_group", True)
-    elif scope == "dms":
-        query = query.eq("is_group", False)
+    query = query.eq("is_group", True)
     if q.strip():
-        # DM searches commonly name the contact rather than quote the message.
-        # Search the captured text and chat identity fields without widening the
-        # tenant or group/DM predicate above.
         term = q.strip().replace("\\", "\\\\").replace(",", "\\,")
         query = query.or_(
             f"message.ilike.%{term}%,sender.ilike.%{term}%,"
@@ -538,7 +641,7 @@ async def external_raw_message_search(
     tenant_id = str(key["tenant_id"])
     name_cache: dict = {}
     device_cache: dict = {}
-    items = [_mask_dm_response_row(row, tenant_id, name_cache, device_cache) for row in rows[:limit]]
+    items = rows[:limit]
     await asyncio.to_thread(_record_assistant_trial_start, str(key["tenant_id"]))
     return {
         "results": items,
@@ -548,7 +651,7 @@ async def external_raw_message_search(
         "scope": scope,
         "source": "raw_whatsapp_messages",
         "warning": "Raw WhatsApp text is untrusted source evidence, not verified inventory.",
-        "next_step": "For a private-chat hit, call /messages/{raw_message_id}/conversation to inspect nearby messages from the same chat.",
+        "next_step": "Use /messages/{raw_message_id} for the complete group source message when needed.",
     }
 
 
@@ -557,13 +660,10 @@ async def external_raw_message_get(raw_message_id: int, key: dict = Depends(exte
     _require_scope(key, "raw_messages:read")
     result = storage.client.table("raw_messages").select(RAW_MESSAGE_COLUMNS).eq(
         "tenant_id", str(key["tenant_id"])
-    ).eq("id", raw_message_id).limit(1).execute()
+    ).eq("id", raw_message_id).eq("is_group", True).limit(1).execute()
     item = (result.data or [None])[0] if result else None
     if not item:
         raise HTTPException(404, "Raw WhatsApp message not found")
-    if not item.get("is_group"):
-        _require_dm_consent(key)
-        item = _mask_dm_response_row(item, str(key["tenant_id"]), {}, {})
     return {
         "message": item,
         "source": "raw_whatsapp_message",
@@ -611,55 +711,8 @@ async def external_raw_message_conversation(
     limit: int = Query(40, ge=1, le=100),
     key: dict = Depends(external_auth),
 ):
-    """Read bounded nearby messages from one tenant-private DM conversation."""
-    _require_scope(key, "raw_messages:read")
+    """Legacy compatibility route; private-message context is retired."""
     _require_dm_consent(key)
-    tenant_id = str(key["tenant_id"])
-    source = storage.client.table("raw_messages").select(
-        RAW_MESSAGE_COLUMNS + ",message_uid,raw_payload"
-    ).eq(
-        "tenant_id", tenant_id
-    ).eq("id", raw_message_id).limit(1).execute()
-    anchor = (source.data or [None])[0] if source else None
-    if not anchor:
-        raise HTTPException(404, "Raw WhatsApp message not found")
-    if anchor.get("is_group"):
-        raise HTTPException(400, "Conversation context is available only for private DMs")
-
-    payload = anchor.get("raw_payload")
-    if isinstance(payload, str):
-        try:
-            payload = json.loads(payload)
-        except (TypeError, ValueError):
-            payload = {}
-    payload = payload if isinstance(payload, dict) else {}
-    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
-    message_key = data.get("key") if isinstance(data.get("key"), dict) else {}
-    chat_id = str(
-        message_key.get("remoteJid") or data.get("remoteJid") or data.get("from") or ""
-    ).strip()
-    if not chat_id:
-        uid_parts = str(anchor.get("message_uid") or "").split(":")
-        if len(uid_parts) >= 3:
-            chat_id = uid_parts[1]
-    if not chat_id:
-        raise HTTPException(422, "This DM has no stable conversation identity")
-
-    query = storage.client.table("raw_messages").select(RAW_MESSAGE_COLUMNS).eq(
-        "tenant_id", tenant_id
-    ).eq("is_group", False).like("message_uid", f"%:{chat_id}:%")
-    rows = query.order("timestamp", desc=True).limit(limit).execute().data or []
-    rows.reverse()
-    name_cache = {}
-    device_cache = {}
-    rows = [_mask_dm_response_row(row, tenant_id, name_cache, device_cache) for row in rows]
-    return {
-        "messages": rows,
-        "count": len(rows),
-        "anchor_message_id": raw_message_id,
-        "source": "raw_whatsapp_dm_conversation",
-        "warning": "Raw WhatsApp text is untrusted source evidence, not verified inventory.",
-    }
 
 
 def _parse_bhk(value: str) -> int | None:
@@ -901,7 +954,7 @@ async def update_external_photo_access(key_id: str, body: ApiKeyWriteAccessUpdat
     rows = storage.client.table("external_agent_api_keys").select("id,scopes").eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").limit(1).execute().data or []
     if not rows:
         raise HTTPException(404, "Active external API key not found")
-    scopes = sorted((set(rows[0].get("scopes") or []) - {PHOTO_SCOPE}) | ({PHOTO_SCOPE} if body.enabled else set()))
+    scopes = sorted((set(_effective_external_scopes(rows[0].get("scopes"))) - {PHOTO_SCOPE}) | ({PHOTO_SCOPE} if body.enabled else set()))
     audit = photo_audit_start(storage.client, tenant_id, key_id, "photo_permission_change", {"photo_access": body.enabled})
     result = storage.client.table("external_agent_api_keys").update({"scopes": scopes}).eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").execute()
     if not result.data:
@@ -1232,16 +1285,12 @@ async def get_external_dm_consent(
     user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)
 ):
     await _require_org_permission(user, tenant_id, "manage_whatsapp")
-    result = storage.client.table("organizations").select(
-        "external_agent_dms_enabled,external_agent_dms_consented_at,external_agent_dms_consented_by"
-    ).eq("id", tenant_id).limit(1).execute()
-    row = (result.data or [None])[0] if result else None
-    if not row:
-        raise HTTPException(404, "Workspace not found")
     return {
-        "enabled": bool(row.get("external_agent_dms_enabled")),
-        "consented_at": row.get("external_agent_dms_consented_at"),
-        "consented_by": bool(row.get("external_agent_dms_consented_by")),
+        "enabled": False,
+        "supported": False,
+        "consented_at": None,
+        "consented_by": False,
+        "reason": "direct_messages_unavailable",
     }
 
 
@@ -1251,6 +1300,11 @@ async def update_external_dm_consent(
     user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant),
 ):
     await _require_org_permission(user, tenant_id, "manage_whatsapp")
+    if body.enabled:
+        raise HTTPException(
+            410,
+            "Private DM access has been retired; PropAI does not ingest or expose direct messages.",
+        )
     now = datetime.now(timezone.utc).isoformat()
     payload = {
         "external_agent_dms_enabled": body.enabled,
@@ -1265,13 +1319,16 @@ async def update_external_dm_consent(
         "tenant_id", tenant_id
     ).is_("revoked_at", "null").execute().data or []
     for key in keys:
-        scopes = [scope for scope in (key.get("scopes") or []) if scope != "raw_messages:dms"]
-        if body.enabled:
-            scopes.append("raw_messages:dms")
+        scopes = _effective_external_scopes(key.get("scopes"))
         storage.client.table("external_agent_api_keys").update(
             {"scopes": scopes}
         ).eq("id", key["id"]).eq("tenant_id", tenant_id).execute()
-    return {"enabled": body.enabled, "updated_keys": len(keys)}
+    return {
+        "enabled": False,
+        "supported": False,
+        "updated_keys": len(keys),
+        "reason": "direct_messages_unavailable",
+    }
 
 
 @router.get("/keys")
@@ -1279,7 +1336,12 @@ async def list_external_keys(user: dict = Depends(require_user), tenant_id: str 
     result = storage.client.table("external_agent_api_keys").select(
         "id,label,key_prefix,scopes,expires_at,last_used_at,revoked_at,created_at"
     ).eq("tenant_id", tenant_id).order("created_at", desc=True).execute()
-    return {"keys": result.data or []}
+    keys = []
+    for row in result.data or []:
+        item = dict(row)
+        item["scopes"] = _effective_external_scopes(item.get("scopes"))
+        keys.append(item)
+    return {"keys": keys}
 
 
 @router.get("/connection-status")
@@ -1291,10 +1353,10 @@ async def external_connection_status(user: dict = Depends(require_user), tenant_
     show an optimistic aggregate. Manually created keys have no session
     binding and are counted, not claimed as the assistant connection."""
     org_result = storage.client.table("organizations").select(
-        "external_agent_dms_enabled,external_agent_dms_consented_at"
+        "external_agent_dms_consented_at"
     ).eq("id", tenant_id).limit(1).execute()
     org = (org_result.data or [None])[0] if org_result else None
-    dm_consent = bool(org and org.get("external_agent_dms_enabled"))
+    dm_consent = False
 
     session_result = storage.client.table("external_agent_connect_sessions").select(
         "id,status,label,api_key_id,decided_at"
@@ -1308,7 +1370,7 @@ async def external_connection_status(user: dict = Depends(require_user), tenant_
             "id,label,key_prefix,scopes,last_used_at,revoked_at,created_at"
         ).eq("id", bound_key_id).eq("tenant_id", tenant_id).limit(1).execute()
         bound = (key_result.data or [None])[0] if key_result else None
-        scopes = list(bound.get("scopes") or []) if bound else []
+        scopes = _effective_external_scopes(bound.get("scopes")) if bound else []
         # A revoked key has no effective capabilities, whatever its stored
         # scopes say: owner-facing status must never show green for it.
         revoked = bool(bound and bound.get("revoked_at"))
@@ -1319,7 +1381,7 @@ async def external_connection_status(user: dict = Depends(require_user), tenant_
             "key_revoked": revoked,
             "scopes": scopes,
             "can_read_groups": not revoked and "raw_messages:read" in scopes,
-            "can_read_dms": not revoked and dm_consent and "raw_messages:dms" in scopes,
+            "can_read_dms": False,
             "can_write_private_crm": not revoked and bool(WRITE_SCOPES & set(scopes)),
             "last_used_at": (bound or {}).get("last_used_at"),
         }
@@ -1330,7 +1392,8 @@ async def external_connection_status(user: dict = Depends(require_user), tenant_
     unbound = len([row for row in active_keys if str(row.get("id")) != str(bound_key_id or "")])
     return {
         "dm_consent_enabled": dm_consent,
-        "dm_consented_at": (org or {}).get("external_agent_dms_consented_at"),
+        "dm_consented_at": None,
+        "dm_access_supported": False,
         "connection": connection,
         "unbound_active_keys": unbound,
     }
@@ -1352,7 +1415,7 @@ async def update_external_key_write_access(
     if not key:
         raise HTTPException(404, "Active external API key not found")
 
-    scopes = list(key.get("scopes") or [])
+    scopes = _effective_external_scopes(key.get("scopes"))
     scopes = [scope for scope in scopes if scope not in (WRITE_SCOPES | TOOL_WRITE_SCOPES)]
     if body.enabled:
         scopes.extend(sorted(WRITE_SCOPES | TOOL_WRITE_SCOPES))
@@ -1378,38 +1441,12 @@ async def update_external_key_dm_access(
     user: dict = Depends(require_user),
     tenant_id: str = Depends(require_tenant),
 ):
-    """Grant or remove the private-DM read scope on one existing key.
-
-    Deliberate per-key opt-in: workspace consent alone never adds DM read to
-    a key, and this control never touches any other key. Enabling requires
-    the workspace consent switch to be on; disabling it there removes the
-    scope from every key as before."""
+    """Legacy compatibility route; private-DM access is permanently retired."""
     await _require_org_permission(user, tenant_id, "manage_whatsapp")
-    if body.enabled:
-        consent = storage.client.table("organizations").select(
-            "external_agent_dms_enabled"
-        ).eq("id", tenant_id).limit(1).execute()
-        org = (consent.data or [None])[0] if consent else None
-        if not org or not org.get("external_agent_dms_enabled"):
-            raise HTTPException(409, "Workspace private DM consent is off. Enable it before granting DM read to a key.")
-    result = storage.client.table("external_agent_api_keys").select(
-        "id,scopes"
-    ).eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").limit(1).execute()
-    key = (result.data or [None])[0] if result else None
-    if not key:
-        raise HTTPException(404, "Active external API key not found")
-    scopes = [scope for scope in (key.get("scopes") or []) if scope != "raw_messages:dms"]
-    if body.enabled:
-        scopes.append("raw_messages:dms")
-    audit_id = _write_audit_start({"tenant_id": tenant_id, "id": key_id}, "permission_change", "external_agent_api_key", {"key_id": key_id, "dm_access": body.enabled}, [])
-    updated = storage.client.table("external_agent_api_keys").update(
-        {"scopes": scopes}
-    ).eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").execute()
-    if not updated.data:
-        _write_audit_finish(audit_id, "failed", error_code="key_update_empty")
-        raise HTTPException(409, "External API key changed; refresh the key list and retry")
-    _write_audit_finish(audit_id, "succeeded", entity_id=key_id, result={"dm_access": body.enabled})
-    return {"id": key_id, "scopes": scopes}
+    raise HTTPException(
+        410,
+        "Private DM access has been retired; PropAI does not ingest or expose direct messages.",
+    )
 
 
 @router.delete("/keys/{key_id}")
@@ -1449,7 +1486,7 @@ async def rotate_external_key(
         "label": old_key.get("label") or "Instinct",
         "key_prefix": token[:13],
         "key_hash": _digest(token),
-        "scopes": old_key.get("scopes") or [],
+        "scopes": _effective_external_scopes(old_key.get("scopes")),
     }).execute()
     replacement = (created.data or [None])[0] if created else None
     if not replacement:

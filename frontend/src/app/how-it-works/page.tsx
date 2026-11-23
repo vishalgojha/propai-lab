@@ -72,7 +72,7 @@ const steps = [
       icon: Lock,
       title: "Shared market by default",
       description:
-        "PropAI is built as a broker network. Real-estate group intelligence contributes by default, while DMs, personal chats, client groups, friends and family groups, and opted-out groups stay out of extraction.",
+        "PropAI is built as a broker network. Real-estate group intelligence contributes by default, while private WhatsApp messages, personal chats, friends and family groups, and opted-out groups are not captured.",
       modes: [
         {
           label: "Shared Market (Default)",

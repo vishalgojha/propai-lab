@@ -54,10 +54,10 @@ class Client:
         return self.query
 
 
-def test_dms_search_requires_consent_before_query(monkeypatch):
+def test_dms_search_is_rejected_before_query(monkeypatch):
     client = Client()
     monkeypatch.setattr(external_agent, "storage", type("Storage", (), {"client": client})())
-    with pytest.raises(HTTPException, match="Private DM access is disabled"):
+    with pytest.raises(HTTPException, match="private messages are unavailable"):
         asyncio.run(external_agent.external_raw_message_search(
             scope="dms", limit=25, offset=0,
             key={"tenant_id": "tenant-1", "scopes": ["raw_messages:read", "raw_messages:dms"]},
@@ -65,49 +65,47 @@ def test_dms_search_requires_consent_before_query(monkeypatch):
     assert client.query.filters == []
 
 
-def test_dms_search_applies_tenant_and_private_filter(monkeypatch):
+def test_dms_search_cannot_query_legacy_rows(monkeypatch):
     client = Client()
     monkeypatch.setattr(external_agent, "storage", type("Storage", (), {"client": client})())
-    result = asyncio.run(external_agent.external_raw_message_search(
-        scope="dms", limit=25, offset=0,
-        key={
-            "tenant_id": "tenant-1",
-            "scopes": ["raw_messages:read", "raw_messages:dms"],
-            "external_agent_dms_enabled": True,
-        },
-    ))
-    assert ("tenant_id", "tenant-1") in client.query.filters
-    assert ("is_group", False) in client.query.filters
-    assert result["scope"] == "dms"
+    with pytest.raises(HTTPException, match="private messages are unavailable"):
+        asyncio.run(external_agent.external_raw_message_search(
+            scope="dms", limit=25, offset=0,
+            key={
+                "tenant_id": "tenant-1",
+                "scopes": ["raw_messages:read", "raw_messages:dms"],
+                "external_agent_dms_enabled": True,
+            },
+        ))
+    assert client.query.filters == []
 
 
 def test_group_search_remains_group_only(monkeypatch):
     client = Client()
     monkeypatch.setattr(external_agent, "storage", type("Storage", (), {"client": client})())
-    asyncio.run(external_agent.external_raw_message_search(
+    monkeypatch.setattr(external_agent, "_record_assistant_trial_start", lambda _tenant_id: None)
+    async def no_thread(_func, *_args, **_kwargs):
+        return None
+    monkeypatch.setattr(external_agent.asyncio, "to_thread", no_thread)
+    monkeypatch.setattr("usage_events.record_search_usage", lambda **_kwargs: None)
+    asyncio.run(external_agent.external_raw_message_search.__wrapped__(
         scope="groups", limit=25, offset=0,
         key={"tenant_id": "tenant-1", "scopes": ["raw_messages:read"]},
     ))
     assert ("is_group", True) in client.query.filters
 
 
-def test_search_matches_contact_identity_as_well_as_message(monkeypatch):
+def test_dm_identity_search_is_rejected(monkeypatch):
     client = Client()
     monkeypatch.setattr(external_agent, "storage", type("Storage", (), {"client": client})())
-    asyncio.run(external_agent.external_raw_message_search(
-        q="Sheetal", scope="dms", limit=25, offset=0,
-        key={
-            "tenant_id": "tenant-1",
-            "scopes": ["raw_messages:read", "raw_messages:dms"],
-            "external_agent_dms_enabled": True,
-        },
-    ))
-    assert "message.ilike.%Sheetal%" in client.query.or_expression
-    assert "sender.ilike.%Sheetal%" in client.query.or_expression
-    assert "sender_phone.ilike.%Sheetal%" in client.query.or_expression
+    with pytest.raises(HTTPException, match="private messages are unavailable"):
+        asyncio.run(external_agent.external_raw_message_search(
+            q="Sheetal", scope="dms", limit=25, offset=0,
+            key={"tenant_id": "tenant-1", "scopes": ["raw_messages:read"]},
+        ))
 
 
-def test_dm_conversation_context_stays_tenant_and_chat_scoped(monkeypatch):
+def test_dm_conversation_context_is_rejected(monkeypatch):
     class ConversationQuery(Query):
         calls = 0
 
@@ -120,17 +118,12 @@ def test_dm_conversation_context_stays_tenant_and_chat_scoped(monkeypatch):
     query = ConversationQuery()
     client = type("Client", (), {"query": query, "table": lambda self, _: query})()
     monkeypatch.setattr(external_agent, "storage", type("Storage", (), {"client": client})())
-    result = asyncio.run(external_agent.external_raw_message_conversation(
-        raw_message_id=42,
-        key={
-            "tenant_id": "tenant-1",
-            "scopes": ["raw_messages:read", "raw_messages:dms"],
-            "external_agent_dms_enabled": True,
-        },
-    ))
-    assert ("tenant_id", "tenant-1") in client.query.filters
-    assert ("is_group", False) in client.query.filters
-    assert result["count"] == 0
+    with pytest.raises(HTTPException, match="not supported"):
+        asyncio.run(external_agent.external_raw_message_conversation(
+            raw_message_id=42,
+            key={"tenant_id": "tenant-1", "scopes": ["raw_messages:read"]},
+        ))
+    assert client.query.filters == []
 
 
 def test_search_rejects_unknown_scope(monkeypatch):
@@ -141,7 +134,7 @@ def test_search_rejects_unknown_scope(monkeypatch):
         for parameter in app.openapi()["paths"]["/api/external/v1/messages/search"]["get"]["parameters"]
         if parameter["name"] == "scope"
     )
-    assert scope_parameter["schema"]["pattern"] == "^(groups|dms|all)$"
+    assert scope_parameter["schema"]["pattern"] == "^groups$"
 
 
 def test_raw_message_window_defaults_to_recent_30_days_and_caps_history():
@@ -167,8 +160,8 @@ def test_public_agent_guide_is_fetchable_without_a_key():
     normalized_guide = " ".join(guide.split())
     assert response.media_type == "text/plain"
     assert "GET https://api.propai.live/api/external/v1/docs" in guide
-    assert "scope=dms" in guide
-    assert "Do not retry with `scope=all`" in normalized_guide
+    assert "contract/manifest" in guide
+    assert "Private messages are" in normalized_guide
     assert "ppai_" not in guide
 
 

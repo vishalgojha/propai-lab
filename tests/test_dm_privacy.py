@@ -318,40 +318,32 @@ def _dm_key():
     return {"tenant_id": "t1", "scopes": ["raw_messages:read", "raw_messages:dms"], "external_agent_dms_enabled": True}
 
 
-def test_search_masks_dm_rows_but_not_group_rows(monkeypatch):
-    tables = _install(monkeypatch, {
-        "raw_messages": [_dm_row(), {**_dm_row(), "id": 8, "is_group": True, "group_name": "Kandivali Brokers"}],
-        "whatsmeow_contacts": [],
-    })
-    result = asyncio.run(external_agent.external_raw_message_search(q="", scope="dms", since="", until="", limit=25, offset=0, key=_dm_key()))
-    for item in result["results"]:
-        assert item["sender"] == UNNAMED_DM_CONTACT
-        assert "9820012345" not in str(item)
+def test_search_rejects_private_messages_even_with_legacy_scope(monkeypatch):
+    _install(monkeypatch, {"raw_messages": [_dm_row()], "whatsmeow_contacts": []})
+    with pytest.raises(HTTPException, match="private messages are unavailable"):
+        asyncio.run(external_agent.external_raw_message_search(q="", scope="dms", since="", until="", limit=25, offset=0, key=_dm_key()))
 
 
-def test_search_still_matches_phone_server_side(monkeypatch):
+def test_private_message_identity_search_is_not_available(monkeypatch):
     _install(monkeypatch, {"raw_messages": [], "whatsmeow_contacts": []})
     del _OR_LOG[:]
-    asyncio.run(external_agent.external_raw_message_search(q="9820012345", scope="dms", since="", until="", limit=25, offset=0, key=_dm_key()))
-    assert any("sender_phone.ilike" in expression for expression in _OR_LOG)
+    with pytest.raises(HTTPException, match="private messages are unavailable"):
+        asyncio.run(external_agent.external_raw_message_search(q="9820012345", scope="dms", since="", until="", limit=25, offset=0, key=_dm_key()))
+    assert not _OR_LOG
 
 
-def test_get_dm_message_masked(monkeypatch):
+def test_get_dm_message_is_not_returned(monkeypatch):
     _install(monkeypatch, {"raw_messages": [_dm_row()], "whatsmeow_contacts": []})
-    result = asyncio.run(external_agent.external_raw_message_get(7, key=_dm_key()))
-    assert result["message"]["sender"] == UNNAMED_DM_CONTACT
-    assert result["message"]["sender_phone"] is None
+    with pytest.raises(HTTPException, match="not found"):
+        asyncio.run(external_agent.external_raw_message_get(7, key=_dm_key()))
 
 
-def test_conversation_rows_masked(monkeypatch):
+def test_conversation_rows_are_not_available(monkeypatch):
     anchor = dict(_dm_row())
     anchor.update({"message_uid": "b1:919820012345@s.whatsapp.net:1", "raw_payload": {"data": {"key": {"remoteJid": "919820012345@s.whatsapp.net"}}}})
     _install(monkeypatch, {"raw_messages": [anchor], "whatsmeow_contacts": []})
-    result = asyncio.run(external_agent.external_raw_message_conversation(7, limit=40, key=_dm_key()))
-    assert result["messages"]
-    for row in result["messages"]:
-        assert row["sender_phone"] is None
-        assert "9820012345" not in str(row)
+    with pytest.raises(HTTPException, match="not supported"):
+        asyncio.run(external_agent.external_raw_message_conversation(7, limit=40, key=_dm_key()))
 
 
 # --- per-key DM access grant ---------------------------------------------------
@@ -374,40 +366,40 @@ def _grant_setup(monkeypatch):
     return tables
 
 
-def test_dm_access_grant_adds_scope_to_one_key_only(monkeypatch):
+def test_dm_access_grant_is_retired(monkeypatch):
     tables = _grant_setup(monkeypatch)
-    result = asyncio.run(external_agent.update_external_key_dm_access(
-        "k1", external_agent.ApiKeyDmAccessUpdate(enabled=True), user={"id": "u1"}, tenant_id="t1"))
-    assert "raw_messages:dms" in result["scopes"]
+    with pytest.raises(HTTPException, match="retired"):
+        asyncio.run(external_agent.update_external_key_dm_access(
+            "k1", external_agent.ApiKeyDmAccessUpdate(enabled=True), user={"id": "u1"}, tenant_id="t1"))
     keys = {row["id"]: row for row in tables["external_agent_api_keys"]}
-    assert "raw_messages:dms" in keys["k1"]["scopes"]
+    assert "raw_messages:dms" not in keys["k1"]["scopes"]
     assert "raw_messages:dms" not in keys["k2"]["scopes"]
 
 
-def test_dm_access_grant_requires_workspace_consent(monkeypatch):
+def test_dm_access_grant_does_not_reopen_legacy_consent(monkeypatch):
     tables = _grant_setup(monkeypatch)
     tables["organizations"][0]["external_agent_dms_enabled"] = False
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(external_agent.update_external_key_dm_access(
             "k1", external_agent.ApiKeyDmAccessUpdate(enabled=True), user={"id": "u1"}, tenant_id="t1"))
-    assert excinfo.value.status_code == 409
-    assert "consent is off" in excinfo.value.detail
+    assert excinfo.value.status_code == 410
+    assert "retired" in excinfo.value.detail
 
 
-def test_dm_access_removal_is_per_key(monkeypatch):
+def test_dm_access_removal_route_is_retired(monkeypatch):
     tables = _grant_setup(monkeypatch)
     tables["external_agent_api_keys"][0]["scopes"].append("raw_messages:dms")
-    result = asyncio.run(external_agent.update_external_key_dm_access(
-        "k1", external_agent.ApiKeyDmAccessUpdate(enabled=False), user={"id": "u1"}, tenant_id="t1"))
-    assert "raw_messages:dms" not in result["scopes"]
+    with pytest.raises(HTTPException, match="retired"):
+        asyncio.run(external_agent.update_external_key_dm_access(
+            "k1", external_agent.ApiKeyDmAccessUpdate(enabled=False), user={"id": "u1"}, tenant_id="t1"))
 
 
-def test_dm_access_grant_missing_key_404(monkeypatch):
+def test_dm_access_grant_missing_key_does_not_reopen_route(monkeypatch):
     _grant_setup(monkeypatch)
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(external_agent.update_external_key_dm_access(
             "k9", external_agent.ApiKeyDmAccessUpdate(enabled=True), user={"id": "u1"}, tenant_id="t1"))
-    assert excinfo.value.status_code == 404
+    assert excinfo.value.status_code == 410
 
 
 # --- bound connection status ---------------------------------------------------
@@ -424,7 +416,7 @@ def test_connection_status_binds_latest_decided_session(monkeypatch):
         ],
     })
     result = asyncio.run(external_agent.external_connection_status(user={"id": "u1"}, tenant_id="t1"))
-    assert result["dm_consent_enabled"] is True
+    assert result["dm_consent_enabled"] is False
     connection = result["connection"]
     assert connection["key_id"] == "k1"
     assert connection["can_read_groups"] is True

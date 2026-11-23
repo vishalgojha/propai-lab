@@ -245,8 +245,11 @@ tenant-scoped, revocable bearer token stored only as a SHA-256 digest in
 Account → MCP page and shown once. The default v1 contract is read-only and intentionally
 small: `/api/external/v1/listings/search`, `/requirements`, `/matches`, and
 `/health`. Every request resolves its tenant from the token before reading
-typed rows; the token cannot select another tenant or access raw DMs by
-default. Owner-enabled `inventory:write` and `requirements:write` scopes may
+typed rows; the token cannot select another tenant or access raw DMs. The
+versioned `docs/EXTERNAL_AGENT_CONTRACT.md` is the shared behavior contract
+for REST and authenticated MCP; `/contract/manifest` exposes its revision and
+digest, and `/capabilities` reports the current key's applicable operations.
+Owner-enabled `inventory:write` and `requirements:write` scopes may
 create only tenant-private CRM inventory and requirements. They cannot create
 source-backed market listings, publish, delete, send WhatsApp messages,
 activate ads, or change budgets. Token creation and revocation remain
@@ -280,10 +283,11 @@ evidence. Raw search is group-only because DMs are rejected before persistence.
 Instinct/MCP may write only tenant-private broker inventory and requirements
 through the explicit `inventory:write` and `requirements:write` scopes.
 
-The public `GET /api/external/v1/docs` endpoint serves the versioned
-`docs/EXTERNAL_AGENT_API.md` bootstrap guide for new external-agent sessions.
-It contains endpoint, authentication, consent, and evidence-handling rules but
-no tenant data or credential values. The machine-readable OpenAPI schema remains
+The public `GET /api/external/v1/docs` endpoint serves the REST transport guide
+for new external-agent sessions. The public `/contract` and `/contract/manifest`
+endpoints are the shared rulebook and freshness source; authenticated MCP also
+offers it as `propai://external-agent/contract`. These surfaces contain no
+tenant data or credential values. The machine-readable OpenAPI schema remains
 available separately.
 
 WhatsApp history sync is ignored. No direct-chat history is persisted, and no
@@ -1330,8 +1334,8 @@ not permit deleting or rewriting source message evidence.
 
 The PropAI MCP exposes this boundary through `raw_message_search`,
 `raw_message_semantic_search`, and `raw_message_context`: explicitly separate,
-read-only, tenant-scoped tools for original WhatsApp messages. Search defaults
-to groups and private DMs, caps result count and lookback window, omits
+    read-only, tenant-scoped tools for original WhatsApp group messages. Search
+is group-only, caps result count and lookback window, omits
 transport payload blobs, and includes the original message text and source
 attribution in MCP text content as well as structured data, so clients that do
 not surface `structuredContent` can still inspect the evidence. Search covers

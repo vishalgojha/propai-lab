@@ -11,6 +11,8 @@ import {
 import type { ToolContext } from "./types.js";
 import { LISTING_CARDS_URI, MCP_APP_MIME_TYPE, listingCardsHtml } from "./uiResources.ts";
 
+const EXTERNAL_AGENT_CONTRACT_URL = process.env.PROPAI_CONTRACT_URL || "https://api.propai.live/api/external/v1/contract";
+
 function brokerId(context?: ToolContext) {
   return context?.user?.broker_id || context?.user?.id;
 }
@@ -48,6 +50,27 @@ function listResourceUris(items: Array<{ remote_jid: string }>) {
 }
 
 export function registerMcpResources(server: McpServer, context: ToolContext = {}) {
+  server.registerResource(
+    "external-agent-contract",
+    "propai://external-agent/contract",
+    {
+      title: "PropAI External-Agent Contract",
+      description: "The current shared REST and MCP behavior contract. Read before protected work; permissions remain server-enforced.",
+      mimeType: "text/markdown",
+    },
+    async (uri: URL) => {
+      const response = await fetch(EXTERNAL_AGENT_CONTRACT_URL, { headers: { Accept: "text/plain" } });
+      if (!response.ok) throw new Error(`PropAI contract unavailable (${response.status})`);
+      return {
+        contents: [{
+          uri: uri.toString(),
+          mimeType: "text/markdown",
+          text: await response.text(),
+        }],
+      };
+    },
+  );
+
   server.registerResource(
     "listing-cards-ui",
     LISTING_CARDS_URI,

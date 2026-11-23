@@ -3,6 +3,16 @@
 Version: v1
 Base URL: `https://api.propai.live/api/external/v1`
 
+The shared behavior contract for REST and MCP is
+[`EXTERNAL_AGENT_CONTRACT.md`](EXTERNAL_AGENT_CONTRACT.md). Read it first;
+this file is the REST transport mapping. The live contract endpoints are:
+
+```http
+GET https://api.propai.live/api/external/v1/contract
+GET https://api.propai.live/api/external/v1/contract/manifest
+GET https://api.propai.live/api/external/v1/capabilities
+```
+
 ## Start here
 
 Fetch this guide first whenever you start a new PropAI integration:
@@ -67,7 +77,7 @@ Account → MCP). Uncollected tokens are stored sealed with a server-side key,
 never in plaintext, and are cleared on first delivery. Every minted key also includes `broker_market:read`: read-only access to
 the shared broker market pool (property-group messages other brokers
 explicitly chose to share) plus the key's own shared-source review
-metadata. It never shares this account's own groups, adds DMs, or
+metadata. It never shares this account's own groups, adds private messages, or
 enables writes, and the owner can remove it per key in Account > MCP
 at any time. New sessions are
 read-only by default: `write_access:true` must be requested explicitly by the
@@ -95,8 +105,7 @@ Read endpoints:
 | `GET /followups` | List private follow-ups | None |
 | `GET /messages/search` | Search captured WhatsApp source messages | `q`, `scope`, `since`, `until`, `limit`, `offset` |
 | `GET /messages/{raw_message_id}` | Fetch one full source message | `raw_message_id` from search results |
-| `GET /messages/{raw_message_id}/conversation` | Fetch nearby messages from the same private DM chat | `raw_message_id`, `limit` |
-| `GET /connection-status` | Owner UI: workspace DM consent plus the bound assistant connection's effective capabilities | owner app session |
+| `GET /connection-status` | Owner UI: bound assistant connection's effective capabilities | owner app session |
 
 `GET /connection-status` binds to the latest decided connect session's key,
 never an aggregate of every key on the workspace. `connection` is null when no
@@ -139,7 +148,7 @@ Do not silently treat nearby areas as exact matches or loosen a requirement.
 Inventory and original WhatsApp evidence are distinct: when the owner requests
 source evidence, use the separately permissioned message endpoints and label it
 as unverified source text. Locality knowledge never widens tenant access,
-private-DM consent, publication audience, or the requested data source.
+private-message access, publication audience, or the requested data source.
 
 MCP and public-market search are separate implementations. This REST contract
 does not establish that they support identical hierarchy filtering; verify
@@ -182,43 +191,15 @@ writes** control; this enables the two existing CRM write scopes plus the
 standing-search and follow-up write scopes. The authenticated owner endpoint is
 `PUT /api/external/v1/keys/{key_id}/write-access` with
 `{"enabled":true}`. Setting `enabled` to `false` removes those four private
-write scopes. Other scopes, including `raw_messages:dms`, are preserved; DM
-reads still require the separate workspace consent switch.
-
-Private DM read is a deliberate per-key opt-in on top of workspace consent.
-The consent switch alone never adds DM read to a key, and a new connection
-never includes it automatically. To grant DM read to one existing key without
-rotating it, use `PUT /api/external/v1/keys/{key_id}/dm-access` with
-`{"enabled":true}`; it requires the workspace consent switch to be on and
-changes no other key. `{"enabled":false}` removes DM read from that key only.
-Turning the workspace switch off still removes DM read from every key.
-
-Private DM responses hide the other person's identifiers. On every DM row
-returned by `/messages/search`, `/messages/{raw_message_id}` and
-`/messages/{raw_message_id}/conversation`, `sender` is the workspace owner's
-saved contact name, resolved only from that workspace's own connected devices
-(or `Unnamed contact` when there is none, never the public pushname and never
-a number), and `sender_phone` and `sender_jid` are returned as null. Phone-like
-digit runs inside DM message text are replaced with `[number hidden]`,
-including adjacent numbers separated only by spaces and `00`-prefixed
-international formats. Dates and times are preserved.
-
-This masking is a bounded best effort, never a guarantee that no number can
-appear. Numbers written as words ("nine eight two zero...") are not detected.
-Media payloads and contact cards are not returned by these endpoints at all
-(`raw_payload` and `message_uid` stay internal to the service), so nothing
-inside an image, voice note or vCard crosses the boundary, but this also means
-no claim is made about their contents. Searching a number still matches the
-stored raw value server-side, so a query can confirm a message exists even
-when the response hides it. Group-message responses are unchanged and still
-carry sender details for the owner's own broker attribution.
+write scopes. Other unrelated scopes are preserved. There is no private-message
+read scope.
 
 Pending sensitive changes are visible only to authenticated workspace owners
 at `GET /approvals`. Approve or reject one with
 `POST /approvals/{approval_id}/decision` and `{"approved":true|false}`.
 
-The default and only message-search scope is `groups`. Private DMs are rejected
-before persistence and are unavailable to external agents.
+The default and only message-search scope is `groups`. Private messages are
+rejected before persistence and are unavailable to external agents.
 
 If `since` and `until` are omitted, the API searches the most recent 30 days.
 An explicit window may not exceed 90 calendar days; invalid or reversed
@@ -231,10 +212,6 @@ GET /api/external/v1/messages/search?scope=groups&q=Sheetal&limit=25
 X-API-Key: <value retrieved from PROPAI_API_KEY>
 ```
 
-After a private-message search returns a relevant row, use its
-`raw_message_id` with `/messages/{raw_message_id}/conversation` to retrieve a
-bounded chronological window from the same private chat. Property details may
-be in a neighboring message rather than the message that matched the search
 term.
 
 Example group-message search:
@@ -262,10 +239,8 @@ page. The response's `scope` identifies which chat category was searched.
 - WhatsApp history sync is ignored. Direct-chat history is not persisted or
   exposed; group evidence continues through live group ingestion.
 - Return only the information needed to answer the owner's request. Do not
-  expose sender phone numbers unless the owner specifically requests the source
-  contact and the API response includes it. DM responses remove the peer's
-  number at the API boundary as described above; do not try to recover it from
-  other endpoints or by matching content.
+  expose phone numbers in arbitrary output; use the approved contact action
+  when the owner explicitly requests source contact.
 - Never invent results. If the API returns no matching rows, say none were found
   in the captured workspace data.
 
@@ -274,8 +249,9 @@ page. The response's `scope` identifies which chat category was searched.
 - `401`: the key is missing, invalid, revoked, or expired. Ask the owner to
   create or replace it in PropAI Account → MCP; never ask them to send it in
   WhatsApp.
-- `403`: the key lacks the requested permission, or private-DM consent is off.
-  For DMs, have the owner enable private-DM access in Account → MCP.
+- `403`: the key lacks the requested permission, or the operation is outside
+  the contract. Do not retry with a broader scope or attempt to use a private
+  message route.
 - `422`: a query parameter is invalid. Check the documented path and parameter
   values, then retry once with a corrected request.
 
@@ -301,7 +277,7 @@ cross-account search interface. The existing key can receive an explicit
 `broker_market:read` grant in Account > Integrations > Existing external API
 keys > Enable property cross-search. No token rotation is needed. This grants
 reader access only. It does not consent the broker's own groups for sharing,
-add DMs, or enable writes. The health response lists the current scopes.
+add private messages, or enable writes. The health response lists the current scopes.
 A 503 means this separately released feature is not enabled; do not work around
 it with private endpoints or unscoped database access.
 
@@ -348,14 +324,15 @@ MCP property cross-search reader permission in Account > Integrations.
 Refresh that connection's tool list. This reader grant is separate from the
 REST key toggle, source-group sharing confirmation and existing private tools.
 Anonymous public MCP is never upgraded by either switch. Existing legacy
-`/mcp` is not the broker raw endpoint; do not claim this changes its DM access.
+`/mcp` is not the broker raw endpoint; both REST and authenticated MCP use the
+same group-only raw evidence boundary.
 
 
 ## Connection verification (local candidate, not yet released)
 
 `GET /api/external/v1/connection-check` requires `raw_messages:read`.
 It runs a tenant-bound, groups-only database query and returns no message
-content. It does not start the assistant trial, include private direct messages,
+content. It does not start the assistant trial, include private messages,
 verify pool access, prove recent capture, or prove the assistant saved anything.
 An empty groups result still verifies the query, not capture completeness.
 

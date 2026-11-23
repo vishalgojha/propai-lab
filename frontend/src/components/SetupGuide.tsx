@@ -117,21 +117,21 @@ export default function SetupGuide({ variant = "page" }: { variant?: "page" | "c
     {
       id: "whatsapp",
       title: "Connect your WhatsApp",
-      body: "Pair the WhatsApp number you use for broker groups. PropAI privately saves the text of new group messages it captures, along with your direct chats, into your workspace. Direct chats are for you alone: an assistant can read them only if you explicitly turn on DM access later.",
+      body: "Pair the WhatsApp number you use for broker groups. PropAI privately saves the text of new group messages it captures into your workspace. Private WhatsApp messages are not ingested or available to assistants.",
       state: stepState(whatsappConnected, statusKnown),
       cta: { href: "/whatsapp?tab=numbers", label: whatsappConnected ? "Manage numbers" : "Connect WhatsApp" },
     },
     {
       id: "groups",
       title: "Choose your market groups",
-      body: "Captured group messages stay saved privately either way. Checking a group here means its listings join the shared market that other brokers search. Unchecked groups and your direct chats always stay private to your workspace.",
+      body: "Captured group messages stay saved privately either way. Checking a group here means its listings join the shared market that other brokers search. Unchecked groups stay private to your workspace; private WhatsApp messages are not captured.",
       state: stepState(groupsConfirmed, statusKnown && whatsappConnected),
       cta: { href: "/whatsapp?tab=groups", label: "Choose groups" },
     },
     {
       id: "assistant",
       title: "Approve your assistant's access",
-      body: "Ask Instinct to connect to PropAI. It shows you an access request: sign in with your usual PropAI account, check what is being asked and approve. The connection key is created and stored behind the scenes - you never handle it. Once approved, the key shows here as available; the last step proves the connection with a real answer. Direct messages stay off unless you explicitly allow DM access. You approve every connection.",
+      body: "Ask Instinct to connect to PropAI. It shows you an access request: sign in with your usual PropAI account, check what is being asked and approve. The PropAI connection is created and stored behind the scenes - you never handle it. Once approved, it shows here as available; the last step proves the connection with a real answer. Private messages are not ingested or available. You approve every connection.",
       // assistantConnected === null means the key read failed, so the step
       // stays neutral instead of urging a connection that may already exist.
       state: stepState(assistantDone, statusKnown && whatsappConnected && assistantConnected !== null),

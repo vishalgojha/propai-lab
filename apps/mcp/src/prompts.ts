@@ -28,7 +28,7 @@ export function registerMcpPrompts(server: McpServer) {
     "search_whatsapp_chats",
     {
       title: "Search WhatsApp Chats",
-      description: "Search stored WhatsApp groups and private DMs, then report source-attributed evidence without inventing listing details.",
+      description: "Search stored WhatsApp groups, then report source-attributed evidence without inventing listing details. Private messages are unavailable.",
       argsSchema: {
         brief: z.string().describe("Property, buyer requirement, sender, building, or other information to find"),
         since: z.string().optional().describe("Optional ISO date/time lower bound"),
