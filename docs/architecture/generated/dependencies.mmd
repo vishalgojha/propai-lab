@@ -41,6 +41,7 @@ flowchart LR
         routers_self_chat["routers.self_chat"]
         routers_send["routers.send"]
         routers_social_flow["routers.social_flow"]
+        routers_usage["routers.usage"]
         routers_whatsapp_group_controls["routers.whatsapp_group_controls"]
         routers_whatsapp_sync["routers.whatsapp_sync"]
         routers_workspace["routers.workspace"]
@@ -63,6 +64,7 @@ flowchart LR
         route__admin_providers["/admin/providers"]
         route__admin_semantic_embeddings["/admin/semantic-embeddings"]
         route__admin_super_admin_database["/admin/super-admin/database"]
+        route__admin_usage["/admin/usage"]
         route__admin_whatsapp["/admin/whatsapp"]
         route__architecture["/architecture"]
         route__audit_groups__jid_["/audit/groups/[jid]"]
@@ -197,6 +199,7 @@ flowchart LR
     routers_send --> extraction
     routers_send --> routers
     routers_social_flow --> routers
+    routers_usage --> routers
     routers_whatsapp_group_controls --> extraction
     routers_whatsapp_group_controls --> routers
     routers_whatsapp_sync --> routers
@@ -226,6 +229,7 @@ flowchart LR
     route__admin_super_admin_database -.-> api__admin_ops_sessions["/admin/ops/sessions"]
     route__admin_super_admin_database -.-> api__admin_ops_status["/admin/ops/status"]
     route__admin_super_admin_database -.-> api__admin_supabase_observability["/admin/supabase-observability"]
+    route__admin_usage -.-> api__admin_usage_brokers["/admin/usage/brokers"]
     route__architecture -.-> api__architecture["/architecture"]
     route__connections -.-> api__dashboard_whatsapp_status["/dashboard/whatsapp-status"]
     route__connections -.-> api__extraction_progress["/extraction/progress"]
