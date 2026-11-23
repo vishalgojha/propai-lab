@@ -41,7 +41,6 @@ import {
   Menu,
   Search,
   LoaderCircle,
-  History,
   SlidersHorizontal,
 } from "lucide-react";
 import { useLayout } from "@/hooks/useLayout";
@@ -2938,18 +2937,11 @@ function UnifiedMarketInbox() {
             <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--text-secondary)]">View</span>
             <div className="flex min-w-0 items-center gap-2">
               {backfillMessage && <span role="status" className="max-w-[40rem] truncate text-[10px] text-[var(--text-secondary)]">{backfillMessage}</span>}
-              {triageFilter === "raw" && rawScope === "dms" && (
-                <button type="button" onClick={() => void handleBackfillDMs()} disabled={backfilling} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--signal-lime)]/40 bg-[var(--signal-lime)]/10 px-2.5 py-1.5 text-[10px] font-semibold text-[var(--signal-lime)] transition hover:bg-[var(--signal-lime)]/20 disabled:opacity-50">
-                  <History className="h-3 w-3" aria-hidden="true" />
-                  {backfilling ? "Requesting…" : "Backfill old DMs"}
-                </button>
-              )}
             </div>
           </div>
           <div className="mt-2 inline-flex w-fit max-w-full overflow-x-auto rounded-lg border border-[var(--zone-light-border)] bg-[var(--zone-light-background)] p-1" role="tablist" aria-label="Market Inbox data views">
           {([
             ["groups", "Groups", triageCounts.groups],
-            ["dms", "DMs", triageCounts.dms],
           ] as ["groups" | "dms" | TriageFilter, string, number | null][]).map(([value, label, count]) => {
             const selected = value === "extracted"
               ? triageFilter === "extracted"

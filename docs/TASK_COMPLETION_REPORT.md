@@ -1429,3 +1429,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Deployment/push status: Commit `88b9710e` was pushed to `origin/main` after rebasing onto the then-current remote tip. No production data deletion or deployment was performed. Relevant Coolify services needing redeployment: `ingestor` and `api`; do not redeploy until explicitly requested.
 - Known limitations: Existing DM rows are not deleted by this change; they remain subject to normal retention. The owner self-chat transcript remains separate for assistant commands, and group text/captions remain eligible source evidence. No media backfill or cleanup was run.
 - Next action: Review the commit and redeploy `ingestor` and `api` when authorized; if existing DM cleanup is desired, approve a separate scoped retention/deletion operation.
+
+### Remove the DM tab from Market Inbox
+
+- Requested outcome: Remove the DMs tab from the internal Market Inbox UI because direct messages are no longer ingested.
+- Files/services changed: `frontend/src/app/inbox/page.tsx`.
+- Behavior: Market Inbox now exposes only the Groups source tab and no longer shows the DM backfill control.
+- Verification performed: UI source inspection and `git diff --check` passed. The local Next production build was attempted but stopped on an environment-level Turbopack process/port permission error (`Operation not permitted`); no application compilation error was reported.
+- Deployment/push status: Pending commit and redeployment of `propai-lab:main-app`; the API and `ingestor` redeploys for the backend boundary are already in progress.
+- Known limitations: Existing non-UI raw-message API compatibility code remains server-side but is no longer reachable from the Market Inbox tab.
+- Next action: Verify the dashboard deployment and confirm the Market Inbox renders only the Groups tab.
