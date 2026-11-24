@@ -43,22 +43,45 @@ export function setActiveTenantId(tenantId: string | null | undefined) {
 // No result cache, mutation retry or cross-account reuse. Caller-owned signals
 // are isolated so cancelling one view cannot abort another consumer's request.
 const pendingReads = new Map<string, Promise<unknown>>();
+let readGeneration = 0;
+function invalidatePendingReads() {
+  readGeneration += 1;
+  pendingReads.clear();
+}
 
 export async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = API_TIMEOUT_MS): Promise<T> {
   const normalizedUrl = url.replace(/^\/api(?:\/|$)/, "/");
   const method = (init?.method || "GET").toUpperCase();
-  if (method !== "GET" || init?.signal || init?.body) {
+  if (method !== "GET") {
+    invalidatePendingReads();
+    try { return await fetchJSONWithRetry<T>(normalizedUrl, init, timeoutMs, false); }
+    finally { invalidatePendingReads(); }
+  }
+  if (init?.signal || init?.body) {
     return fetchJSONWithRetry<T>(normalizedUrl, init, timeoutMs, false);
   }
-  const token = await getAccessToken();
+  const generation = readGeneration;
+  const startedAt = Date.now();
+  let identityTimer: ReturnType<typeof setTimeout> | undefined;
+  let token: string | null;
+  try {
+    token = await Promise.race([
+      getAccessToken(),
+      new Promise<never>((_, reject) => {
+        identityTimer = setTimeout(() => reject(new Error(`Request timed out: ${normalizedUrl}`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(identityTimer);
+  }
   const tenantId = readActiveTenantId();
   const headers = Array.from(new Headers(init?.headers).entries()).sort();
-  const key = JSON.stringify([normalizedUrl, token, tenantId, timeoutMs, { ...init, headers }]);
+  const key = JSON.stringify([generation, normalizedUrl, token, tenantId, timeoutMs, { ...init, headers }]);
   const existing = pendingReads.get(key);
-  if (existing) return existing as Promise<T>;
-  const request = fetchJSONWithRetry<T>(normalizedUrl, init, timeoutMs, false, BASE, { token, tenantId });
+  if (existing) return structuredClone(await existing) as T;
+  const request = fetchJSONWithRetry<T>(normalizedUrl, init, Math.max(1, timeoutMs - (Date.now() - startedAt)), false, BASE, { token, tenantId });
   pendingReads.set(key, request);
-  try { return await request; }
+  try { return structuredClone(await request); }
   finally { if (pendingReads.get(key) === request) pendingReads.delete(key); }
 }
 
@@ -250,6 +273,12 @@ export function selectOnboardingGroups(whatsappConnectionId: number, groupJids: 
 }
 
 export async function fetchFormData<T>(url: string, formData: FormData, timeoutMs = API_TIMEOUT_MS): Promise<T> {
+  invalidatePendingReads();
+  try { return await fetchFormDataUnshared<T>(url, formData, timeoutMs); }
+  finally { invalidatePendingReads(); }
+}
+
+async function fetchFormDataUnshared<T>(url: string, formData: FormData, timeoutMs: number): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
