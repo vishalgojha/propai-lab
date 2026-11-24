@@ -459,8 +459,8 @@ def audit_groups_v2(
                 "COUNT(DISTINCT CASE WHEN UPPER(po.intent) IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS requirements, "
                 "COUNT(DISTINCT CASE WHEN po.id IS NOT NULL AND UPPER(po.intent) NOT IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS listings, "
                 "COUNT(DISTINCT CASE WHEN po.micro_market IS NOT NULL AND po.micro_market != '' THEN po.micro_market END) AS markets_count, "
-                "COUNT(DISTINCT CASE WHEN (po.location_raw IS NOT NULL AND po.location_raw != '') AND (po.micro_market IS NULL OR po.micro_market = '') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS unknown_locations, "
-                "COUNT(DISTINCT COALESCE(NULLIF(po.broker_name, ''), NULLIF(po.profile_name, ''), NULLIF(rm.sender, ''))) AS identities "
+                "COUNT(DISTINCT CASE WHEN (po.locality_raw IS NOT NULL AND po.locality_raw != '') AND (po.micro_market IS NULL OR po.micro_market = '') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS unknown_locations, "
+                "COUNT(DISTINCT COALESCE(NULLIF(po.broker_name, ''), NULLIF(po.raw_sender, ''), NULLIF(rm.sender, ''))) AS identities "
                 "FROM parsed_output_unified po "
                 "JOIN raw_messages rm ON po.raw_message_id = rm.id "
                 "WHERE rm.tenant_id = ? AND rm.group_name IS NOT NULL AND rm.group_name != '' "
@@ -489,7 +489,7 @@ def audit_groups_v2(
         if has_parsed:
             sender_row = _audit_rows(
                 "SELECT COUNT(DISTINCT COALESCE(NULLIF(po.broker_name, ''), "
-                "NULLIF(po.profile_name, ''), NULLIF(rm.sender, ''))) "
+                "NULLIF(po.raw_sender, ''), NULLIF(rm.sender, ''))) "
                 "AS total_unique_senders "
                 "FROM parsed_output_unified po "
                 "JOIN raw_messages rm ON po.raw_message_id = rm.id "
@@ -928,7 +928,7 @@ def audit_capture_health(
         try:
             fb = storage.db.execute(
                 "SELECT COUNT(DISTINCT COALESCE(NULLIF(po.broker_name, ''), "
-                "NULLIF(po.profile_name, ''), NULLIF(rm.sender, ''))) "
+                "NULLIF(po.raw_sender, ''), NULLIF(rm.sender, ''))) "
                 "FROM parsed_output_unified po "
                 "JOIN raw_messages rm ON po.raw_message_id = rm.id "
                 "WHERE rm.tenant_id = ?",

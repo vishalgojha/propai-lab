@@ -144,7 +144,7 @@ def _select_workspace_whatsapp_status(phones: list[dict], statuses: list[dict]) 
 
 def _dashboard_count(table: str, tenant_id: str, start_date: str | None = None, end_date: str | None = None, **filters) -> int:
     """Count current typed evidence without going through the retired SQLite bridge."""
-    query = storage.client.table(table).select("id", count="exact").eq("tenant_id", tenant_id)
+    query = storage.client.table(table).select("id", count="exact").limit(0).eq("tenant_id", tenant_id)
     if start_date:
         query = query.gte("created_at", f"{start_date}T00:00:00Z")
     if end_date:
@@ -201,9 +201,16 @@ async def dashboard_time_window(
         listing_tables_sale = listing_tables[0]
         listing_tables_rent = listing_tables[1]
 
-        async def count_tables(tables: tuple[str, ...], **filters) -> int:
+        counts_in_flight = {}
+        async def count_once(table, start=None, end=None, **filters):
+            key = (table, start, end, tuple(sorted(filters.items())))
+            if key not in counts_in_flight:
+                counts_in_flight[key] = asyncio.create_task(_dashboard_count_async(table, tenant_id, start, end, **filters))
+            return await counts_in_flight[key]
+
+        async def count_tables(tables: tuple[str, ...], all_time=False, **filters) -> int:
             counts = await asyncio.gather(*(
-                _dashboard_count_async(table, tenant_id, start_date, end_date, **filters)
+                count_once(table, None if all_time else start_date, None if all_time else end_date, **filters)
                 for table in tables
             ))
             return sum(counts)
@@ -221,17 +228,17 @@ async def dashboard_time_window(
             needs_review_requirements,
             total_needs_review,
         ) = await asyncio.gather(
-            _dashboard_count_async("raw_messages", tenant_id, start_date, end_date),
-            _dashboard_count_async("raw_messages", tenant_id),
+            count_once("raw_messages", start_date, end_date),
+            count_once("raw_messages"),
             count_tables(listing_tables_sale),
             count_tables(requirement_tables),
             count_tables(listing_tables_rent),
-            count_tables(listing_tables_sale),
-            count_tables(requirement_tables),
-            count_tables(listing_tables_rent),
+            count_tables(listing_tables_sale, all_time=True),
+            count_tables(requirement_tables, all_time=True),
+            count_tables(listing_tables_rent, all_time=True),
             count_tables(listing_tables_all, needs_review=True),
             count_tables(requirement_tables, needs_review=True),
-            count_tables(listing_tables_all + requirement_tables, needs_review=True),
+            count_tables(listing_tables_all + requirement_tables, all_time=True, needs_review=True),
         )
         needs_review = needs_review_listings + needs_review_requirements
     except Exception as exc:
@@ -323,65 +330,38 @@ async def dashboard_coverage(
 
 
 @router.get("/api/action/dashboard")
-async def action_dashboard(user: dict = Depends(require_user)):
-    stats = storage.get_stats()
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    unresolved_count = stats.get("unresolved", 0)
-    suggestions_pending = storage.db.execute(
-        "SELECT COUNT(*) AS c FROM ai_suggestions WHERE status = 'pending'"
-    ).fetchone()["c"]
-    new_buildings_today = storage.db.execute("""
-        SELECT COUNT(*) AS c FROM (
-            SELECT DISTINCT rd.building_name
-            FROM resolver_decisions rd
-            JOIN parsed_output_unified p ON p.id = rd.parsed_id
-            WHERE DATE(p.created_at) = ? AND rd.building_name IS NOT NULL
-        )
-    """, (today,)).fetchone()["c"]
-    dup_brokers = storage.db.execute("""
-        SELECT COUNT(*) AS c FROM ai_suggestions
-        WHERE agent = 'merge_broker' AND status IN ('pending', 'approved')
-    """).fetchone()["c"]
-    dup_listings = storage.db.execute("""
-        SELECT COUNT(*) AS c FROM ai_suggestions
-        WHERE suggestion_type = 'duplicate' AND status IN ('pending', 'approved')
-    """).fetchone()["c"]
-    low_confidence = storage.db.execute("""
-        SELECT COUNT(*) AS c FROM parsed_output_unified
-        WHERE confidence < 0.5
-    """).fetchone()["c"]
-    disconnected_groups = storage.db.execute("""
-        SELECT COUNT(*) AS c FROM sync_checkpoints
-        WHERE status IN ('error', 'disconnected')
-    """).fetchone()["c"]
-    unknown_locations = storage.db.execute("""
-        SELECT COUNT(*) AS c FROM resolver_decisions
-        WHERE method = 'unresolved'
-    """).fetchone()["c"]
-    pending_buildings = storage.db.execute("""
-        SELECT COUNT(*) AS c FROM ai_suggestions
-        WHERE agent = 'building' AND status = 'pending'
-    """).fetchone()["c"]
-    top_failures = [dict(r) for r in storage.db.execute("""
-        SELECT failure_category, COUNT(*) AS c
-        FROM resolver_decisions
-        WHERE failure_category IS NOT NULL AND failure_category != ''
-        GROUP BY failure_category
-        ORDER BY c DESC
-        LIMIT 5
-    """).fetchall()]
-    return {
-        "pending_review_unresolved": unresolved_count,
-        "pending_ai_suggestions": suggestions_pending,
-        "new_buildings_today": new_buildings_today,
-        "duplicate_brokers_detected": dup_brokers,
-        "duplicate_listings_detected": dup_listings,
-        "low_confidence_parses": low_confidence,
-        "disconnected_groups": disconnected_groups,
-        "unknown_locations": unknown_locations,
-        "buildings_pending_approval": pending_buildings,
-        "top_parser_failures": top_failures,
-    }
+def action_dashboard(user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    # A sync route runs in FastAPI's thread pool. Do not block the event loop
+    # with SQL or rescan global stats that this response never uses.
+    row = storage.db.execute("""
+        WITH typed AS (
+          SELECT extraction_confidence, needs_review FROM residential_sale_listings WHERE tenant_id = $1
+          UNION ALL SELECT extraction_confidence, needs_review FROM residential_rent_listings WHERE tenant_id = $1
+          UNION ALL SELECT extraction_confidence, needs_review FROM commercial_sale_listings WHERE tenant_id = $1
+          UNION ALL SELECT extraction_confidence, needs_review FROM commercial_rent_listings WHERE tenant_id = $1
+          UNION ALL SELECT extraction_confidence, needs_review FROM residential_sale_requirements WHERE tenant_id = $1
+          UNION ALL SELECT extraction_confidence, needs_review FROM residential_rent_requirements WHERE tenant_id = $1
+          UNION ALL SELECT extraction_confidence, needs_review FROM commercial_sale_requirements WHERE tenant_id = $1
+          UNION ALL SELECT extraction_confidence, needs_review FROM commercial_rent_requirements WHERE tenant_id = $1
+        ), suggestions AS (SELECT * FROM ai_suggestions WHERE tenant_id = $1),
+        decisions AS (SELECT * FROM resolver_decisions WHERE tenant_id = $1)
+        SELECT
+          (SELECT count(*) FROM decisions WHERE method = 'unresolved') AS pending_review_unresolved,
+          (SELECT count(*) FROM suggestions WHERE status = 'pending') AS pending_ai_suggestions,
+          (SELECT count(DISTINCT building_name) FROM decisions WHERE created_at >= CURRENT_DATE AND building_name IS NOT NULL) AS new_buildings_today,
+          (SELECT count(*) FROM suggestions WHERE agent = 'merge_broker' AND status IN ('pending','approved')) AS duplicate_brokers_detected,
+          (SELECT count(*) FROM suggestions WHERE suggestion_type = 'duplicate' AND status IN ('pending','approved')) AS duplicate_listings_detected,
+          (SELECT count(*) FROM typed WHERE extraction_confidence = 'low') AS low_confidence_parses,
+          (SELECT count(*) FROM sync_checkpoints sc WHERE sc.status IN ('error','disconnected') AND EXISTS
+            (SELECT 1 FROM org_whatsapp_connections ow WHERE ow.organization_id = $1 AND ow.is_active AND ow.instance_name = sc.instance_name)) AS disconnected_groups,
+          (SELECT count(*) FROM decisions WHERE method = 'unresolved') AS unknown_locations,
+          (SELECT count(*) FROM suggestions WHERE agent = 'building' AND status = 'pending') AS buildings_pending_approval,
+          (SELECT coalesce(json_agg(f), '[]'::json) FROM
+            (SELECT failure_category, count(*) AS c FROM decisions WHERE failure_category IS NOT NULL AND failure_category != '' GROUP BY failure_category ORDER BY c DESC LIMIT 5) f) AS top_parser_failures
+    """, (tenant_id,)).fetchone()
+    if row is None:
+        raise HTTPException(503, "Dashboard actions are temporarily unavailable")
+    return dict(row)
 
 
 @router.get("/api/dashboard/live-window")

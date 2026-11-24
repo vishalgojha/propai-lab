@@ -16,6 +16,7 @@ from routers.common import (
     storage,
     get_current_user,
     require_user,
+    require_tenant,
     get_tenant_context,
     get_current_team_member,
     get_current_member,
@@ -950,8 +951,7 @@ _business_api_get_config_value = lambda key, env_key="": ""
 
 
 # ── Chat Suggestion Cache ──────────────────────────────────────────
-_chip_cache: dict = {}
-_chip_cache_at: float = 0.0
+_chip_cache: dict[str, tuple[float, dict]] = {}
 
 
 # ── Capabilities constants ─────────────────────────────────────────
@@ -1370,12 +1370,15 @@ async def market_access_status(
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     """Access gate for shared market intelligence."""
-    details = await asyncio.to_thread(_connection_details)
+    details, trial, groups_confirmed, waba_configured = await asyncio.gather(
+        asyncio.to_thread(_connection_details),
+        asyncio.to_thread(assistant_trial_state, tenant_id),
+        asyncio.to_thread(_market_groups_confirmed, tenant_id),
+        asyncio.to_thread(_business_api_get_config_value, "access_token", "WABA_ACCESS_TOKEN"),
+    )
     connected = bool(details.get("connected"))
     sync_ready = await asyncio.to_thread(_market_sync_ready, details)
     paid_active = False
-    trial = await asyncio.to_thread(assistant_trial_state, tenant_id)
-    groups_confirmed = await asyncio.to_thread(_market_groups_confirmed, tenant_id)
     # Access semantics unchanged: synced data alone unlocks the market.
     # Trial fields below are display state only - no enforcement.
     unlocked = paid_active or sync_ready
@@ -1392,7 +1395,7 @@ async def market_access_status(
         reason = "sync_pending"
         message = "WhatsApp is connected. PropAI is waiting for the first sync record before opening Market Inbox."
 
-    waba_configured = bool(await asyncio.to_thread(_business_api_get_config_value, "access_token", "WABA_ACCESS_TOKEN"))
+    waba_configured = bool(waba_configured)
 
     return {
         "authenticated": bool(user),
@@ -1514,113 +1517,46 @@ def _market_groups_confirmed(tenant_id: str | None):
 # ── Chat Suggestion Chips ──────────────────────────────────────────
 
 @router.get("/api/chat/suggestions")
-async def chat_suggestions(user: dict = Depends(require_user)):
+def chat_suggestions(user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
     now = time.time()
-    if _chip_cache and (now - _chip_cache_at) < 3600:
-        return _chip_cache
-
-    week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    top_building = storage.db.execute("""
-        SELECT p.building_name, COUNT(*) AS cnt FROM parsed_output_unified p
-        JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE p.building_name IS NOT NULL AND p.building_name != ''
-          AND r.timestamp >= ?
-        GROUP BY p.building_name ORDER BY cnt DESC LIMIT 1
-    """, (week_ago,)).fetchone()
-
-    top_supply_market = storage.db.execute("""
-        SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output_unified p
-        JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE p.intent IN ('SELL','RENT','COMMERCIAL')
-          AND p.micro_market IS NOT NULL AND p.micro_market != ''
-          AND r.timestamp >= ?
-        GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1
-    """, (week_ago,)).fetchone()
-
-    top_demand_market = storage.db.execute("""
-        SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output_unified p
-        JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE p.intent IN ('BUY','RENTAL_SEEKER')
-          AND p.micro_market IS NOT NULL AND p.micro_market != ''
-          AND r.timestamp >= ?
-        GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1
-    """, (week_ago,)).fetchone()
-
-    top_commercial_market = storage.db.execute("""
-        SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output_unified p
-        JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE p.intent = 'COMMERCIAL'
-          AND p.micro_market IS NOT NULL AND p.micro_market != ''
-          AND r.timestamp >= ?
-        GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1
-    """, (week_ago,)).fetchone()
-
-    top_rental_market = storage.db.execute("""
-        SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output_unified p
-        JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE p.intent = 'RENT'
-          AND p.micro_market IS NOT NULL AND p.micro_market != ''
-          AND r.timestamp >= ?
-        GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1
-    """, (week_ago,)).fetchone()
-
-    def _val(row):
-        return row[0] if row else None
-
-    def _with_fallback(seven_day_result, fallback_query, params=()):
-        v = _val(seven_day_result)
-        if v is not None:
-            return v
-        row = storage.db.execute(fallback_query, params).fetchone()
-        return row[0] if row else None
-
-    result = {
-        "top_building": _with_fallback(
-            top_building,
-            "SELECT p.building_name, COUNT(*) AS cnt FROM parsed_output_unified p "
-            "JOIN raw_messages r ON r.id = p.raw_message_id "
-            "WHERE p.building_name IS NOT NULL AND p.building_name != '' "
-            "GROUP BY p.building_name ORDER BY cnt DESC LIMIT 1"
-        ),
-        "top_supply_market": _with_fallback(
-            top_supply_market,
-            "SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output_unified p "
-            "JOIN raw_messages r ON r.id = p.raw_message_id "
-            "WHERE p.intent IN ('SELL','RENT','COMMERCIAL') "
-            "AND p.micro_market IS NOT NULL AND p.micro_market != '' "
-            "GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1"
-        ),
-        "top_demand_market": _with_fallback(
-            top_demand_market,
-            "SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output_unified p "
-            "JOIN raw_messages r ON r.id = p.raw_message_id "
-            "WHERE p.intent IN ('BUY','RENTAL_SEEKER') "
-            "AND p.micro_market IS NOT NULL AND p.micro_market != '' "
-            "GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1"
-        ),
-        "top_commercial_market": _with_fallback(
-            top_commercial_market,
-            "SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output_unified p "
-            "JOIN raw_messages r ON r.id = p.raw_message_id "
-            "WHERE p.intent = 'COMMERCIAL' "
-            "AND p.micro_market IS NOT NULL AND p.micro_market != '' "
-            "GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1"
-        ),
-        "top_rental_market": _with_fallback(
-            top_rental_market,
-            "SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output_unified p "
-            "JOIN raw_messages r ON r.id = p.raw_message_id "
-            "WHERE p.intent = 'RENT' "
-            "AND p.micro_market IS NOT NULL AND p.micro_market != '' "
-            "GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1"
-        ),
-    }
+    cached = _chip_cache.get(tenant_id)
+    if cached and now - cached[0] < 60:
+        return cached[1]
+    # One scoped aggregate replaces ten serial legacy queries. Recent evidence
+    # is preferred, falling back to older evidence only within this workspace.
+    row = storage.db.execute("""
+      WITH evidence AS (
+        SELECT building_name, micro_market, 'sale' AS tx, 'supply' AS kind, 'residential' AS asset, created_at FROM residential_sale_listings WHERE tenant_id = $1
+        UNION ALL SELECT building_name, micro_market, 'rent', 'supply', 'residential', created_at FROM residential_rent_listings WHERE tenant_id = $1
+        UNION ALL SELECT building_name, micro_market, 'sale', 'supply', 'commercial', created_at FROM commercial_sale_listings WHERE tenant_id = $1
+        UNION ALL SELECT building_name, micro_market, 'rent', 'supply', 'commercial', created_at FROM commercial_rent_listings WHERE tenant_id = $1
+        UNION ALL SELECT building_name, micro_market, 'sale', 'demand', 'residential', created_at FROM residential_sale_requirements WHERE tenant_id = $1
+        UNION ALL SELECT building_name, micro_market, 'rent', 'demand', 'residential', created_at FROM residential_rent_requirements WHERE tenant_id = $1
+        UNION ALL SELECT building_name, micro_market, 'sale', 'demand', 'commercial', created_at FROM commercial_sale_requirements WHERE tenant_id = $1
+        UNION ALL SELECT building_name, micro_market, 'rent', 'demand', 'commercial', created_at FROM commercial_rent_requirements WHERE tenant_id = $1
+      ), values_by_kind AS (
+        SELECT 'top_building' AS key, building_name AS value, created_at FROM evidence
+        UNION ALL SELECT 'top_supply_market', micro_market, created_at FROM evidence WHERE kind = 'supply'
+        UNION ALL SELECT 'top_demand_market', micro_market, created_at FROM evidence WHERE kind = 'demand'
+        UNION ALL SELECT 'top_commercial_market', micro_market, created_at FROM evidence WHERE asset = 'commercial' AND kind = 'supply'
+        UNION ALL SELECT 'top_rental_market', micro_market, created_at FROM evidence WHERE tx = 'rent' AND kind = 'supply'
+      ), ranked AS (
+        SELECT key, value, row_number() OVER (PARTITION BY key ORDER BY
+          (count(*) FILTER (WHERE created_at >= now() - interval '7 days') > 0) DESC,
+          count(*) FILTER (WHERE created_at >= now() - interval '7 days') DESC,
+          count(*) DESC, value) AS rank
+        FROM values_by_kind WHERE nullif(trim(value), '') IS NOT NULL GROUP BY key, value
+      ) SELECT coalesce(json_object_agg(key, value) FILTER (WHERE rank = 1), '{}'::json) AS chips,
+        (SELECT count(*) FROM ai_suggestions WHERE tenant_id = $1 AND status = 'pending') AS pending
+      FROM ranked
+    """, (tenant_id,)).fetchone()
+    if row is None:
+        raise HTTPException(503, "Suggestions are temporarily unavailable")
+    result = {key: None for key in ("top_building", "top_supply_market", "top_demand_market", "top_commercial_market", "top_rental_market")}
+    result.update(row["chips"] or {})
     result["top_broker_building"] = result["top_building"]
-
-    _chip_cache.clear()
-    _chip_cache.update(result)
-    _chip_cache_at = now
+    result["pending"] = row["pending"]
+    _chip_cache[tenant_id] = (now, result)
     return result
 
 

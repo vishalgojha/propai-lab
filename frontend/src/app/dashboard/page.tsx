@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import * as api from "@/lib/api";
 import { useEventStream } from "@/lib/useEventStream";
@@ -53,41 +53,39 @@ export default function DashboardPage() {
     }
   }, [user, loading, router]);
 
+  const requestGeneration = useRef(0);
+  const activeLoad = useRef<string | null>(null);
+  const lastLoad = useRef({ key: "", at: 0 });
   const loadAll = useCallback(async () => {
     if (!user) return;
+    const key = `${user.id}:${window}`;
+    if (activeLoad.current === key || (lastLoad.current.key === key && Date.now() - lastLoad.current.at < 5000)) return;
+    lastLoad.current = { key, at: Date.now() };
+    activeLoad.current = key;
+    const generation = ++requestGeneration.current;
+    const current = () => generation === requestGeneration.current;
     setLoadingData(true);
     setDataError(null);
     try {
-      const [metricsResult, feedResult, actionResult, suggestionsResult, insightsResult, groupsResult] = await Promise.allSettled([
-        api.getTimeWindowMetrics(window),
-        api.getDashboardFeed(10),
-        api.getActionDashboard(),
-        api.getChatSuggestions(),
-        api.getAuditInsights(),
-        api.getAuditGroups("", "live"),
-      ]);
-
-      if (metricsResult.status === "rejected") {
-        throw metricsResult.reason;
-      }
-
-      setMetrics(metricsResult.value);
-      if (feedResult.status === "fulfilled") setFeed(feedResult.value);
-      if (actionResult.status === "fulfilled") setActionCards(actionResult.value);
-      if (suggestionsResult.status === "fulfilled") setSuggestionCounts(suggestionsResult.value);
-      if (insightsResult.status === "fulfilled") setInsights(insightsResult.value);
-      if (groupsResult.status === "fulfilled") setGroups(groupsResult.value.groups);
-
-      const auxiliaryFailures = [feedResult, actionResult, suggestionsResult, insightsResult, groupsResult]
-        .filter((result) => result.status === "rejected").length;
-      if (auxiliaryFailures > 0) {
-        console.warn(`[dashboard] ${auxiliaryFailures} auxiliary request(s) failed; core metrics remain visible`);
-      }
+      // Auxiliary sections render independently. A slow chart must not hide
+      // already-loaded core metrics or launch another entire load on each event.
+      const optional = (request: Promise<any>, apply: (value: any) => void) => {
+        void request.then(value => { if (current()) apply(value); }).catch(error => {
+          console.warn("[dashboard] auxiliary request failed", error);
+        });
+      };
+      optional(api.getDashboardFeed(10), setFeed);
+      optional(api.getActionDashboard(), setActionCards);
+      optional(api.getChatSuggestions(), setSuggestionCounts);
+      optional(api.getAuditInsights(), setInsights);
+      optional(api.getAuditGroups("", "live"), value => setGroups(value.groups));
+      const result = await api.getTimeWindowMetrics(window);
+      if (current()) setMetrics(result);
     } catch (e) {
       console.error(e);
-      setDataError("Market activity could not be loaded. Check your connection and try again.");
+      if (current()) setDataError("Market activity could not be loaded. Check your connection and try again.");
     } finally {
-      setLoadingData(false);
+      if (current()) { setLoadingData(false); activeLoad.current = null; }
     }
   }, [user, window]);
 
