@@ -21,6 +21,17 @@ erDiagram
         timestamp_with_time_zone last_seen_at
         uuid tenant_id FK
     }
+    broker_market_contact_consents {
+        uuid organization_id
+        bigint whatsapp_connection_id
+        text group_jid
+        text broker_id
+        timestamp_with_time_zone raw_confirmed_at
+        text version
+        uuid confirmed_by
+        timestamp_with_time_zone confirmed_at
+        timestamp_with_time_zone revoked_at
+    }
     broker_market_raw_source_consents {
         uuid organization_id
         bigint whatsapp_connection_id
@@ -1824,6 +1835,20 @@ erDiagram
         jsonb payload
         timestamp_with_time_zone occurred_at
         timestamp_with_time_zone created_at
+    }
+    whatsapp_group_selection_receipts {
+        uuid organization_id
+        bigint whatsapp_connection_id
+        uuid request_id
+        uuid actor_id
+        ARRAY selected_group_jids
+        text state_fingerprint
+        timestamp_with_time_zone completed_at
+        integer visibility_rows
+    }
+    whatsapp_group_selection_requests {
+        uuid request_id
+        bigint whatsapp_connection_id
     }
     whatsapp_webhook_outbox {
         bigint id PK
