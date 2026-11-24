@@ -96,6 +96,7 @@ const adminNavSection = {
 function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isFocusedWorkspace = pathname === "/inbox";
+  const isWhatsAppWorkspace = pathname === "/whatsapp" || pathname === "/connections";
   const isDenseDataRoute = pathname === "/extractions"
     || pathname === "/observations"
     || pathname.startsWith("/admin")
@@ -458,11 +459,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
     }, 0);
     const load = async () => {
       const [phonesRes, status, extraction] = await Promise.all([
-        getPhones(true, 15000).catch(() => null),
+        getPhones(!isWhatsAppWorkspace, isWhatsAppWorkspace ? 8000 : 15000).catch(() => null),
         // Focused workspaces do not use the dashboard status probe. Avoid
         // making inbox/group pages wait on a slow WhatsMeow status request.
-        isFocusedWorkspace ? Promise.resolve(null) : getWhatsAppStatus().catch(() => null),
-        fetchJSON<{
+        (isFocusedWorkspace || isWhatsAppWorkspace) ? Promise.resolve(null) : getWhatsAppStatus().catch(() => null),
+        isWhatsAppWorkspace ? Promise.resolve(null) : fetchJSON<{
           pending?: number;
           eligible_pending?: number;
           recently_processed?: number;
@@ -502,7 +503,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       clearInterval(t);
       window.removeEventListener("propai_whatsapp_status_updated", onStatusUpdate);
     };
-  }, [authLoading, user, isFocusedWorkspace]);
+  }, [authLoading, user?.id, isFocusedWorkspace, isWhatsAppWorkspace]);
 
   // PWA manifest link (static in RootLayout, this is for dynamic fallback)
   useEffect(() => {

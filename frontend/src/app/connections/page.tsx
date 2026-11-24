@@ -1973,7 +1973,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
     } finally {
       setPhonesLoading(false);
     }
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -2153,7 +2153,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
       }
       return next;
     });
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
       if (!authLoading && user) {
@@ -2170,17 +2170,18 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
         window.removeEventListener("propai_whatsapp_status_updated", onStatusUpdate);
       };
     }
-  }, [authLoading, user, refreshData]);
+  }, [authLoading, user?.id, refreshData]);
 
   useEffect(() => {
     if (authLoading || !user) return;
+    if (phonesLoading) return;
     void fetchStats();
     // The worker polls every few seconds, but exact progress is deliberately
     // cached server-side. Refreshing this dashboard every 30 seconds keeps
     // the panel current without making every open admin tab scan the queue.
     const interval = setInterval(() => void fetchStats(), 30000);
     return () => clearInterval(interval);
-  }, [authLoading, user, fetchStats]);
+  }, [authLoading, user?.id, phonesLoading, fetchStats]);
 
   if (authLoading || !user) return null;
 

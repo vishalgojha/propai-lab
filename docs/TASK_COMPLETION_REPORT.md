@@ -1468,3 +1468,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Deployment/push status: Commit `32e41b96` was pushed to `origin/main`. Coolify deployment `u2zjocc9m8nk3yc0qeppylgv` for `propai-lab:main-app` finished successfully from that commit.
 - Known limitations: This change updates positioning only. It does not add email, web, spreadsheet, document, calendar, or video tools to PropAI; those remain Instinct-side or separately connected capabilities.
 - Next action: Keep future UI and assistant instructions organized around the same three layers: independent Instinct help, permitted PropAI reads, and separately approved PropAI writes/actions.
+
+## 2026-11-24: Startup read coordination (release candidate)
+
+Outcome requested: fix intermittent WhatsApp workspace startup/loading without touching capture, saved selections, publication or extraction state.
+
+Changed only frontend reads: stable user-id effect dependencies; no repeated tenant reset for same-user validation; exact identity/workspace/request scoped in-flight GET sharing with no result cache, no mutation deduplication and isolated caller signals; WhatsApp shell shares the durable phone read instead of duplicating live-ingestor/progress probes; advisory counts wait for the initial phone attempt. API and ingestor unchanged.
+
+Verification: real transpiled API-module concurrency tests pass (same reads, tenant split, post-completion fresh reads, independent mutations/signals, failure cleanup). Actual Groups component tests pass at390/1280px, legacy confirmation remains blocked, lost response recovers by one receipt GET, one POST, no extraction Start. Touched TypeScript files have no compiler errors; repository baseline errors remain elsewhere. Diff whitespace check clean. Live running-release startup trace is still required after deployment, so this is not a completed loading outcome yet.
+
+Source: directly on main, reviewed candidate pending commit/push. Only dashboard deployment required. Capture automatic deployment remains OFF and its running version is unchanged. No production group confirmation/replay or data writes were used for testing.

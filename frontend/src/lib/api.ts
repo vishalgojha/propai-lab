@@ -39,11 +39,27 @@ export function setActiveTenantId(tenantId: string | null | undefined) {
   }
 }
 
+// Share only simultaneous identical reads under the exact same auth/workspace.
+// No result cache, mutation retry or cross-account reuse. Caller-owned signals
+// are isolated so cancelling one view cannot abort another consumer's request.
+const pendingReads = new Map<string, Promise<unknown>>();
+
 export async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = API_TIMEOUT_MS): Promise<T> {
-  // Callers should pass paths relative to the API proxy. Normalize legacy
-  // callers too so a stale page cannot turn /api/foo into /api/api/foo.
   const normalizedUrl = url.replace(/^\/api(?:\/|$)/, "/");
-  return fetchJSONWithRetry<T>(normalizedUrl, init, timeoutMs, false);
+  const method = (init?.method || "GET").toUpperCase();
+  if (method !== "GET" || init?.signal || init?.body) {
+    return fetchJSONWithRetry<T>(normalizedUrl, init, timeoutMs, false);
+  }
+  const token = await getAccessToken();
+  const tenantId = readActiveTenantId();
+  const headers = Array.from(new Headers(init?.headers).entries()).sort();
+  const key = JSON.stringify([normalizedUrl, token, tenantId, timeoutMs, { ...init, headers }]);
+  const existing = pendingReads.get(key);
+  if (existing) return existing as Promise<T>;
+  const request = fetchJSONWithRetry<T>(normalizedUrl, init, timeoutMs, false, BASE, { token, tenantId });
+  pendingReads.set(key, request);
+  try { return await request; }
+  finally { if (pendingReads.get(key) === request) pendingReads.delete(key); }
 }
 
 export interface AutoMatchedResponse {
@@ -271,6 +287,7 @@ async function fetchJSONWithRetry<T>(
   timeoutMs: number,
   retried: boolean,
   requestBase = BASE,
+  identity?: { token: string | null; tenantId: string | null },
 ): Promise<T> {
   const controller = new AbortController();
   let timedOut = false;
@@ -287,8 +304,8 @@ async function fetchJSONWithRetry<T>(
   }
   
   try {
-    const token = await getAccessToken();
-    const tenantId = readActiveTenantId();
+    const token = identity ? identity.token : await getAccessToken();
+    const tenantId = identity ? identity.tenantId : readActiveTenantId();
     const res = await fetch(`${requestBase}${url}`, {
       ...init,
       cache: "no-store",

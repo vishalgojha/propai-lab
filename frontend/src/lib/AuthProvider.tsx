@@ -87,7 +87,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .then((userData) => {
               if (!mounted) return;
               setUser(userData ?? sessionData?.user ?? null);
-              void syncActiveTenant(userData ?? sessionData?.user ?? null);
+              // Validation returns a new object for the same account. Do not
+              // clear and re-fetch its tenant while startup reads are in flight.
+              if (userData?.id && userData.id !== sessionData?.user?.id) {
+                void syncActiveTenant(userData);
+              }
             })
             .catch((error) => {
               // A transport failure can be transient, but an explicit 401 is
@@ -136,7 +140,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       void withTimeout(getUser(), 10000, "user")
         .then((userData) => {
           setUser(userData ?? sessionData?.user ?? null);
-          void syncActiveTenant(userData ?? sessionData?.user ?? null);
+          // Validation returns a new object for the same account. Do not
+          // clear and re-fetch its tenant while startup reads are in flight.
+          if (userData?.id && userData.id !== sessionData?.user?.id) {
+            void syncActiveTenant(userData);
+          }
         })
         .catch(async (error) => {
           if (!isUnauthorizedAuthError(error)) return;
