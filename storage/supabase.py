@@ -2508,6 +2508,10 @@ class _NotFilterBuilder:
         self._query._filters.append((column, "not.is", value))
         return self._query
 
+    def in_(self, column: str, values: list[Any]):
+        self._query._filters.append((column, "not.in", values))
+        return self._query
+
 
 class _QueryBuilder:
     def __init__(self, client: "_RestClient", table: str):
@@ -2773,6 +2777,11 @@ class _RestClient:
             if op == "in":
                 rendered = ",".join(str(v) for v in value)
                 params.append((column, f"in.({rendered})"))
+            elif op == "not.in":
+                # PostgREST list syntax needs quoting independently of URL
+                # encoding. Keep commas, quotes and parentheses inside values.
+                rendered = ",".join(json.dumps(str(v)) for v in value)
+                params.append((column, f"not.in.({rendered})"))
             elif op == "not.is":
                 params.append((column, f"not.is.{value}"))
             else:
