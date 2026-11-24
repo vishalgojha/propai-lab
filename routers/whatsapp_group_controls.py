@@ -1257,23 +1257,31 @@ async def onboarding_groups(
                 timeout=5,
             )
         await _require_org_permission(user, org_id, "manage_whatsapp")
-        connection = await asyncio.to_thread(_connection, org_id, whatsapp_connection_id)
-        is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
+        connection, is_super_admin, unlimited = await asyncio.gather(
+            asyncio.to_thread(_connection, org_id, whatsapp_connection_id),
+            asyncio.to_thread(storage.is_super_admin, user["id"]),
+            asyncio.to_thread(_organization_has_unlimited_group_access, org_id),
+        )
         # This endpoint is on the connections page's critical path. Do not
         # block directory rendering on advisory overlap work. The cap state is
         # derived from the connection control plane and identifies raw-only
         # secondary numbers.
-        groups = await asyncio.wait_for(asyncio.to_thread(
-            _group_directory,
-            org_id,
-            str(connection.get("broker_id") or ""),
-            whatsapp_connection_id,
-            include_overlap=False,
-            allow_managed_selection=is_super_admin,
-        ), timeout=8)
-        cap = _cap_state(org_id, whatsapp_connection_id, unlimited=await asyncio.to_thread(
-            _organization_has_unlimited_group_access, org_id
-        ))
+        # Both reads are independent once permission and connection identity
+        # are checked. Keep synchronous database work off the API event loop;
+        # a slow cap lookup must not stall unrelated phones/status requests.
+        groups, cap = await asyncio.gather(
+            asyncio.wait_for(asyncio.to_thread(
+                _group_directory,
+                org_id,
+                str(connection.get("broker_id") or ""),
+                whatsapp_connection_id,
+                include_overlap=False,
+                allow_managed_selection=is_super_admin,
+            ), timeout=8),
+            asyncio.to_thread(
+                _cap_state, org_id, whatsapp_connection_id, unlimited=unlimited
+            ),
+        )
         return {
             "groups": groups,
             "extraction_status": connection.get("extraction_status") or "stopped",
