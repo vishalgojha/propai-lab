@@ -114,8 +114,8 @@ export default function AdminWhatsAppPage() {
         </button>
       </div>
 
-      {error && <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}
-      {metricsError && <div className="mb-5 rounded-lg border border-amber-300 bg-amber-100 px-4 py-3 text-sm font-medium text-amber-950">{metricsError}. Sessions are still shown.</div>}
+      {error && <div role="alert" className="mb-5 break-words rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">Could not load sessions. Try Refresh. This does not mean your WhatsApp connections were removed.{sessions.length > 0 ? " Showing the last loaded sessions." : ""}</div>}
+      {metricsError && <div className="mb-5 rounded-lg border border-amber-300 bg-amber-100 px-4 py-3 text-sm font-medium text-amber-950">Identity counts are temporarily unavailable.{!error && !loading ? " Session loading is separate from these counts." : ""}</div>}
       {metrics ? (
         <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="WhatsApp identity metrics">
           {[
@@ -143,11 +143,13 @@ export default function AdminWhatsAppPage() {
             className="h-10 w-full rounded-lg border border-white/10 bg-zinc-950 !pl-9 pr-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-500/60"
           />
         </label>
-        <div className="text-xs text-zinc-500">{filteredSessions.length} of {sessions.length} sessions</div>
+        <div className="text-xs text-zinc-500">{error && sessions.length === 0 ? "Sessions unavailable" : `${filteredSessions.length} of ${sessions.length} sessions`}</div>
       </div>
 
       {loading && sessions.length === 0 ? (
         <div className="rounded-xl border border-white/10 p-12 text-center text-zinc-500">Loading sessions…</div>
+      ) : error && sessions.length === 0 ? (
+        <div className="rounded-xl border border-white/10 p-12 text-center text-zinc-400">Your session list could not be loaded. Use Refresh to try again.</div>
       ) : filteredSessions.length === 0 ? (
         <div className="rounded-xl border border-white/10 p-12 text-center text-zinc-500">No sessions match this search.</div>
       ) : (

@@ -3773,10 +3773,20 @@ class SupabaseStorage(Storage):
         return res.data or []
 
     def list_all_whatsapp_connections(self) -> list[dict]:
-        res = self.client.table("org_whatsapp_connections")\
-            .select("*, organizations(id,name,slug,is_active)")\
-            .order("created_at", desc=False).execute()
-        return res.data or []
+        # Do not embed organizations here: PostgREST can find more than one
+        # relationship. Workspace labels must never hide existing sessions.
+        rows = self.client.table("org_whatsapp_connections").select("*")\
+            .order("created_at", desc=False).execute().data or []
+        organization_ids = sorted({str(row["organization_id"]) for row in rows if row.get("organization_id")})
+        organizations = {}
+        for offset in range(0, len(organization_ids), 100):
+            try:
+                labels = self.client.table("organizations").select("id,name,slug,is_active")\
+                    .in_("id", organization_ids[offset:offset + 100]).execute().data or []
+                organizations.update({str(label["id"]): label for label in labels})
+            except Exception:
+                _logger.warning("Workspace labels unavailable for WhatsApp session list", exc_info=True)
+        return [{**row, "organizations": organizations.get(str(row.get("organization_id")))} for row in rows]
 
     def get_org_placeholder_whatsapp_connection(self, org_id: str) -> dict | None:
         for row in self.list_org_whatsapp_connections(org_id):
