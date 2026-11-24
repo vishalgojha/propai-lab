@@ -3156,7 +3156,6 @@ Search messages
                     : `No ${assetFilter === "all" ? "" : `${assetFilter} `}${mode === "all" ? "extracted records" : mode} match your selected market yet.`}
           {!similarFeedItems && triageFilter === "extracted" && freshOnly && <button type="button" onClick={() => setFreshOnly(false)} className="mt-3 rounded-md border border-white/15 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-white/5">Show all extracted records</button>}
           {!similarFeedItems && triageFilter === "extracted" && !freshOnly && query.trim().length < 2 && <button type="button" onClick={() => { setTriageFilter("raw"); setSelectedKeys(new Set()); selectedRecordsRef.current = {}; }} className="mt-3 rounded-md border border-[var(--signal-lime)]/30 px-3 py-1.5 text-xs font-semibold text-[var(--signal-lime)] hover:bg-[var(--signal-lime)]/10">Open Raw Messages</button>}
-          {!similarFeedItems && triageFilter === "raw" && !query.trim() && <p className="mx-auto mt-3 max-w-xl text-xs leading-5 text-[var(--text-secondary)]">This archive shows source messages whether or not extraction produced a record. Groups and direct messages are kept in separate views; extraction still requires the deterministic property-keyword and market-scope checks.</p>}
         </div> : (
           <>
           {similarFeedItems && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.04] px-4 py-3">
