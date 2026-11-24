@@ -103,8 +103,12 @@ type BrokerSession struct {
 	cancel                   context.CancelFunc
 	disconnected             chan struct{}
 	disconnectOnce           func() struct{}
-	lockConn                 *sql.Conn
+	lockConn                 *brokerLockHandle
 	lockReleaseOnce          sync.Once
+	done                     chan struct{}
+	stopping                 bool
+	testStep                 func(string)
+	stoppingSince            time.Time
 	reconnectFailures        int
 	reconnectCount           int
 	totalMessages            int64
@@ -292,6 +296,27 @@ func (s *BrokerSession) unlinkAndClearDevice() (bool, error) {
 	return true, nil
 }
 
+// finishSession is the only cleanup path: the client is disconnected first,
+// the broker key is released only afterwards, and done closes last. A hung
+// Disconnect therefore keeps the key and the done signal, so a replacement
+// can never start while the old client may still be connected.
+func (s *BrokerSession) finishSession() {
+	if s.client != nil {
+		s.client.RemoveEventHandlers()
+		s.client.Disconnect()
+	}
+	if s.testStep != nil {
+		s.testStep("disconnected")
+	}
+	s.releaseLock()
+	if s.testStep != nil {
+		s.testStep("released")
+	}
+	if s.done != nil {
+		close(s.done)
+	}
+}
+
 func (s *BrokerSession) releaseLock() {
 	s.lockReleaseOnce.Do(func() {
 		if s.lockConn == nil {
@@ -305,11 +330,15 @@ func (s *BrokerSession) releaseLock() {
 // ── Session manager ────────────────────────────────────────────────────────
 
 type SessionManager struct {
-	mu        sync.RWMutex
-	sessions  map[string]*BrokerSession
-	container *sqlstore.Container
-	db        *sql.DB
-	sessionWg sync.WaitGroup
+	mu           sync.RWMutex
+	sessions     map[string]*BrokerSession
+	container    *sqlstore.Container
+	db           *sql.DB
+	lockOwner    *singletonLockOwner
+	sessionWg    sync.WaitGroup
+	shuttingDown bool
+	restoring    map[string]bool
+	shutdownCh   chan struct{}
 }
 
 type inboxThreadCursor struct {
@@ -345,9 +374,11 @@ type selfChatAgentResponse struct {
 
 func NewSessionManager(container *sqlstore.Container, db *sql.DB) *SessionManager {
 	return &SessionManager{
-		sessions:  make(map[string]*BrokerSession),
-		container: container,
-		db:        db,
+		sessions:   make(map[string]*BrokerSession),
+		restoring:  make(map[string]bool),
+		shutdownCh: make(chan struct{}),
+		container:  container,
+		db:         db,
 	}
 }
 
@@ -367,13 +398,76 @@ func (sm *SessionManager) List() []*BrokerSession {
 	return out
 }
 
-func (sm *SessionManager) Remove(brokerID string) {
+func (sm *SessionManager) Remove(brokerID string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	return sm.removeSession(ctx, brokerID, nil)
+}
+func (sm *SessionManager) removeSession(ctx context.Context, brokerID string, expected *BrokerSession) bool {
 	sm.mu.Lock()
 	session := sm.sessions[brokerID]
-	delete(sm.sessions, brokerID)
+	if session == nil {
+		sm.mu.Unlock()
+		return true
+	}
+	if expected != nil && session != expected {
+		sm.mu.Unlock()
+		return false
+	}
+	session.stopping = true
+	if session.stoppingSince.IsZero() {
+		session.stoppingSince = time.Now()
+	}
+	if session.cancel != nil {
+		session.cancel()
+	}
+	done := session.done
 	sm.mu.Unlock()
-	if session != nil {
-		session.releaseLock()
+	if done == nil {
+		return false
+	} // Never infer shutdown from cancellation alone.
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return false
+	}
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if sm.sessions[brokerID] == session {
+		delete(sm.sessions, brokerID)
+	}
+	return true
+}
+
+// watchStopping is the bounded recovery for a hung Disconnect. A session whose
+// stop has been pending longer than limit keeps its map entry and broker key
+// (never released early), and the process exits so the server frees every
+// lock when the connection closes. The exit affects all loaded sessions; it
+// only happens after limit, never as part of a normal stop.
+func (sm *SessionManager) watchStopping(ctx context.Context, limit, tick time.Duration, onHung func(brokerID string, age time.Duration)) {
+	t := time.NewTicker(tick)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			sm.mu.RLock()
+			for id, sess := range sm.sessions {
+				if sess.stopping && !sess.stoppingSince.IsZero() {
+					select {
+					case <-sess.done:
+					default:
+						if age := time.Since(sess.stoppingSince); age > limit {
+							sm.mu.RUnlock()
+							onHung(id, age)
+							return
+						}
+					}
+				}
+			}
+			sm.mu.RUnlock()
+		}
 	}
 }
 
@@ -404,34 +498,16 @@ func (s *BrokerSession) failCodePairing(message string) {
 	})
 }
 
-func (sm *SessionManager) acquireBrokerLock(ctx context.Context, brokerID string) (*sql.Conn, bool, error) {
-	conn, err := sm.db.Conn(ctx)
-	if err != nil {
-		return nil, false, err
+func (sm *SessionManager) acquireBrokerLock(ctx context.Context, brokerID string) (*brokerLockHandle, bool, error) {
+	if sm.lockOwner == nil {
+		return nil, false, fmt.Errorf("session lock owner unavailable")
 	}
-	var locked bool
-	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", brokerLockKey(brokerID)).Scan(&locked); err != nil {
-		_ = conn.Close()
-		return nil, false, err
-	}
-	if !locked {
-		_ = conn.Close()
-		return nil, false, nil
-	}
-	return conn, true, nil
+	return sm.lockOwner.acquire(ctx, brokerID)
 }
 
-func releaseBrokerLockConn(conn *sql.Conn, brokerID string) {
-	if conn == nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", brokerLockKey(brokerID)); err != nil {
-		log.Printf("[broker %s] error releasing session lock: %v", brokerID, err)
-	}
-	if err := conn.Close(); err != nil {
-		log.Printf("[broker %s] error closing session lock connection: %v", brokerID, err)
+func releaseBrokerLockConn(handle *brokerLockHandle, brokerID string) {
+	if handle != nil && handle.owner != nil {
+		handle.owner.release(brokerID)
 	}
 }
 
@@ -445,7 +521,15 @@ func (sm *SessionManager) startOrGet(
 	// blocked every session endpoint, including pair-code/start, until both API
 	// aliases timed out.
 	sm.mu.Lock()
+	if sm.shuttingDown {
+		sm.mu.Unlock()
+		return nil
+	}
 	existing := sm.sessions[brokerID]
+	if existing != nil && existing.stopping {
+		sm.mu.Unlock()
+		return nil
+	}
 	sm.mu.Unlock()
 	if existing != nil {
 		if configureBeforeStart != nil {
@@ -501,9 +585,18 @@ func (sm *SessionManager) startOrGet(
 	// was acquiring the cross-instance advisory lock. Prefer that canonical
 	// session and release the unused lock connection cleanly.
 	sm.mu.Lock()
-	if existing = sm.sessions[brokerID]; existing != nil {
+	if sm.shuttingDown {
 		sm.mu.Unlock()
 		releaseBrokerLockConn(lockConn, brokerID)
+		return nil
+	}
+	if existing = sm.sessions[brokerID]; existing != nil {
+		stopping := existing.stopping
+		sm.mu.Unlock()
+		releaseBrokerLockConn(lockConn, brokerID)
+		if stopping {
+			return nil
+		}
 		if configureBeforeStart != nil {
 			configureBeforeStart(existing)
 		}
@@ -527,15 +620,14 @@ func (sm *SessionManager) startOrGetForPairing(brokerID, mode, phone string) *Br
 	// A terminal pairing failure intentionally remains readable through the
 	// status endpoint so the dashboard can show its cause. Discard it only when
 	// the user explicitly starts a fresh attempt.
-	sm.mu.Lock()
-	previous := sm.sessions[brokerID]
+	previous := sm.Get(brokerID)
 	if previous != nil && previous.getStatus().ConnectionState == "pairing_error" {
-		delete(sm.sessions, brokerID)
-	}
-	sm.mu.Unlock()
-	if previous != nil && previous.getStatus().ConnectionState == "pairing_error" {
-		previous.cancel()
-		previous.releaseLock()
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		stopped := sm.removeSession(ctx, brokerID, previous)
+		cancel()
+		if !stopped {
+			return nil
+		}
 	}
 	return sm.startOrGet(brokerID, func(session *BrokerSession) {
 		session.requestPairing(mode, phone)
@@ -556,11 +648,27 @@ func (sm *SessionManager) StartOrGetForQRPairing(brokerID string) *BrokerSession
 }
 
 func (sm *SessionManager) restoreSessionWhenAvailable(brokerID string) {
+	sm.mu.Lock()
+	if sm.shuttingDown || sm.restoring[brokerID] {
+		sm.mu.Unlock()
+		return
+	}
+	sm.restoring[brokerID] = true
+	sm.mu.Unlock()
+	defer func() { sm.mu.Lock(); delete(sm.restoring, brokerID); sm.mu.Unlock() }()
+
 	for attempt := 1; ; attempt++ {
+		select {
+		case <-sm.shutdownCh:
+			return
+		default:
+		}
 		if sm.Get(brokerID) != nil {
 			return
 		}
-		deviceJID, err := sm.lookupDeviceJID(context.Background(), brokerID)
+		lookupCtx, lookupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		deviceJID, err := sm.lookupDeviceJID(lookupCtx, brokerID)
+		lookupCancel()
 		if err == nil && deviceJID == "" {
 			log.Printf("[broker %s] restore cancelled because the saved mapping was removed", brokerID)
 			return
@@ -577,7 +685,11 @@ func (sm *SessionManager) restoreSessionWhenAvailable(brokerID string) {
 		if delay > 30*time.Second {
 			delay = 30 * time.Second
 		}
-		time.Sleep(delay)
+		select {
+		case <-time.After(delay):
+		case <-sm.shutdownCh:
+			return
+		}
 	}
 }
 
@@ -585,6 +697,7 @@ func (sm *SessionManager) newSession(brokerID string, device *store.Device) *Bro
 	ctx, cancel := context.WithCancel(context.Background())
 	return &BrokerSession{
 		brokerID:           brokerID,
+		done:               make(chan struct{}),
 		device:             device,
 		ctx:                ctx,
 		cancel:             cancel,
@@ -644,35 +757,18 @@ func (sm *SessionManager) deleteDeviceMapping(ctx context.Context, brokerID stri
 // ── Session lifecycle ──────────────────────────────────────────────────────
 
 func (sm *SessionManager) runSession(s *BrokerSession) {
-	// Keep a panic in one broker's session from taking down the ingestor
-	// process. The recovery defer is registered before the normal cleanup
-	// defers so it runs after the client has been disconnected and the session
-	// lock/WaitGroup slot have been released, allowing this broker to restart
-	// through the existing session lifecycle.
+	// A recovered panic has already unwound session cleanup and released its key.
+	// Never restart the old session without acquiring ownership again.
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			log.Printf("[broker %s] recovered panic in session goroutine (restarting): event/session panic=%v", s.brokerID, recovered)
-			s.setStatus(Status{
-				Connected:        false,
-				ConnectionState:  "reconnecting",
-				SocketState:      "disconnected",
-				LastDisconnectAt: time.Now().UTC().Format(time.RFC3339),
-			})
-			if s.ctx.Err() == nil {
-				sm.sessionWg.Add(1)
-				go sm.runSession(s)
-			}
+			log.Printf("session panic after cleanup; terminating capture safely: %v", recovered)
+			time.Sleep(5 * time.Second)
+			log.Fatal("session panic exit")
 		}
 	}()
 	log.Printf("[broker %s] starting session goroutine", s.brokerID)
-	defer s.releaseLock()
 	defer sm.sessionWg.Done()
-	defer func() {
-		if s.client != nil {
-			s.client.RemoveEventHandlers()
-			s.client.Disconnect()
-		}
-	}()
+	defer s.finishSession()
 
 sessionLoop:
 	for attempt := 0; ; attempt++ {
@@ -2619,7 +2715,9 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 			if s.cancel != nil {
 				s.cancel()
 			}
-			sm.Remove(brokerID)
+			if !sm.Remove(brokerID) {
+				log.Printf("[broker %s] reset: session stop not confirmed; old session and lock retained", brokerID)
+			}
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to clear persisted WhatsApp credentials"})
 			return
@@ -2633,7 +2731,9 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 		if s.cancel != nil {
 			s.cancel()
 		}
-		sm.Remove(brokerID)
+		if !sm.Remove(brokerID) {
+			log.Printf("[broker %s] reset: session stop not confirmed; old session and lock retained", brokerID)
+		}
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete persisted WhatsApp device mapping"})
 		return
@@ -2651,7 +2751,12 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 	if s.cancel != nil {
 		s.cancel()
 	}
-	sm.Remove(brokerID)
+	if !sm.Remove(brokerID) {
+		log.Printf("[broker %s] reset: session stop not confirmed; old session and lock retained", brokerID)
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "credentials were cleared but the old session did not confirm shutdown; retry reset before pairing again"})
+		return
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"ok":                    true,
 		"broker_id":             brokerID,
@@ -2686,12 +2791,17 @@ func (sm *SessionManager) disconnectHandler(w http.ResponseWriter, r *http.Reque
 	// Respond immediately so the caller (Cloudflare/FastAPI) never times out.
 	// Remove() does a blocking DB call (advisory lock release) that must not
 	// hold the HTTP response hostage.
+	// Status stays 200: the API treats only 200 as success. The body says the
+	// stop is still pending, so callers that read it are not told otherwise.
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "state": "stopping", "stop_confirmed": false})
 	// Fire-and-forget cleanup in a separate goroutine.
 	go func() {
-		sm.Remove(brokerID)
-		log.Printf("[broker %s] disconnected and removed", brokerID)
+		if sm.Remove(brokerID) {
+			log.Printf("[broker %s] disconnected and removed", brokerID)
+		} else {
+			log.Printf("[broker %s] disconnect requested; stop not confirmed, session and lock retained", brokerID)
+		}
 	}()
 }
 
@@ -2711,8 +2821,14 @@ func (sm *SessionManager) deleteSessionHandler(w http.ResponseWriter, r *http.Re
 		if session.cancel != nil {
 			session.cancel()
 		}
+		// Stop first: credentials are cleared only after the old client is
+		// confirmed disconnected and its key released.
+		if !sm.Remove(brokerID) {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{"error": "session stop not confirmed; credentials untouched"})
+			return
+		}
 		_ = session.clearDevice()
-		sm.Remove(brokerID)
 	} else if deviceJID, err := sm.lookupDeviceJID(context.Background(), brokerID); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to look up stored WhatsApp session"})
@@ -3509,16 +3625,27 @@ func marshalMessage(msg *waE2E.Message) json.RawMessage {
 
 // ── Main ───────────────────────────────────────────────────────────────────
 
+// startupFatalBackoff delays exit after a startup failure so Docker's
+// unless-stopped policy cannot hammer the shared database in a tight loop.
+// Ownership loss never uses it: that path must exit immediately.
+var startupFatalBackoff = 30 * time.Second
+
+func startupFatalf(format string, args ...interface{}) {
+	log.Printf("startup failure: "+format, args...)
+	time.Sleep(startupFatalBackoff)
+	log.Fatalf("startup failure, exiting after %s backoff", startupFatalBackoff)
+}
+
 func main() {
 	log.Printf("starting whatsmeow ingestor (instance: %s)", instanceName)
 	if databaseURL == "" {
-		log.Fatal("database configuration missing: set DATABASE_URL (recommended), SUPABASE_DATABASE_URL, SUPABASE_DB_URL, or both SUPABASE_REF and SUPABASE_DB_PASSWORD")
+		startupFatalf("%s", "database configuration missing: set DATABASE_URL (recommended), SUPABASE_DATABASE_URL, SUPABASE_DB_URL, or both SUPABASE_REF and SUPABASE_DB_PASSWORD")
 	}
 
 	// Open DB connection for broker-device mapping
 	db, err := sql.Open("pgx", databaseURL)
 	if err != nil {
-		log.Fatalf("error opening database: %v", err)
+		startupFatalf("error opening database: %v", err)
 	}
 	defer db.Close()
 	db.SetMaxOpenConns(5)
@@ -3530,7 +3657,7 @@ func main() {
 		created_at TIMESTAMPTZ DEFAULT NOW(),
 		updated_at TIMESTAMPTZ DEFAULT NOW()
 	)`); err != nil {
-		log.Fatalf("error creating mapping table: %v", err)
+		startupFatalf("error creating mapping table: %v", err)
 	}
 
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS broker_whatsapp_device_history (
@@ -3540,10 +3667,10 @@ func main() {
 		wiped_at TIMESTAMPTZ DEFAULT NOW(),
 		reason TEXT NOT NULL
 	)`); err != nil {
-		log.Fatalf("error creating history table: %v", err)
+		startupFatalf("error creating history table: %v", err)
 	}
 	if err := ensureGroupMembersTable(db); err != nil {
-		log.Fatalf("error creating group members table: %v", err)
+		startupFatalf("error creating group members table: %v", err)
 	}
 
 	// Whatsmeow persists Signal sessions and identity keys while encrypting and
@@ -3553,7 +3680,7 @@ func main() {
 	// but allow concurrent Signal-store reads and writes.
 	containerDB, err := sql.Open("pgx", databaseURL)
 	if err != nil {
-		log.Fatalf("error opening container database: %v", err)
+		startupFatalf("error opening container database: %v", err)
 	}
 	defer containerDB.Close()
 	containerDB.SetMaxOpenConns(4)
@@ -3564,10 +3691,36 @@ func main() {
 	ctx := context.Background()
 	container := sqlstore.NewWithDB(containerDB, "postgres", waLog.Noop)
 	if err := container.Upgrade(ctx); err != nil {
-		log.Fatalf("error creating store container: %v", err)
+		startupFatalf("error creating store container: %v", err)
 	}
 
+	// A single separate session-mode connection owns service and broker locks.
+	lockURL, err := resolveSessionLockDatabaseURL()
+	if err != nil {
+		startupFatalf("%v", err)
+	}
+	lockDB, err := sql.Open("pgx", lockURL)
+	if err != nil {
+		startupFatalf("%v", err)
+	}
+	defer lockDB.Close()
+	lockDB.SetMaxOpenConns(1)
+	lockDB.SetMaxIdleConns(0)
+	ownerCtx, ownerCancel := context.WithCancel(context.Background())
+	defer ownerCancel()
+	owner, err := newSingletonLockOwner(ownerCtx, lockDB, func() {
+		log.Fatal("session lock ownership lost; stopping capture to prevent duplicate sessions")
+	})
+	if err != nil {
+		startupFatalf("%v", err)
+	}
+	defer owner.close()
+	go owner.monitor(ownerCtx)
 	sm := NewSessionManager(container, db)
+	sm.lockOwner = owner
+	go sm.watchStopping(ownerCtx, 60*time.Second, 5*time.Second, func(id string, age time.Duration) {
+		log.Fatalf("[broker %s] disconnect pending for %s; exiting so the server releases locks (session key was not released early)", id, age.Round(time.Second))
+	})
 
 	// Load existing broker sessions from stored device mappings
 	rows, err := db.Query("SELECT whatsapp_connection_key, device_jid FROM broker_whatsapp_devices")
@@ -3598,6 +3751,7 @@ func main() {
 			lockConn, locked, lockErr := sm.acquireBrokerLock(ctx, brokerID)
 			if lockErr != nil {
 				log.Printf("[broker %s] error acquiring session lock during restore: %v", brokerID, lockErr)
+				go sm.restoreSessionWhenAvailable(brokerID)
 				continue
 			}
 			if !locked {
@@ -3659,13 +3813,15 @@ func main() {
 	log.Printf("shutting down...")
 
 	// Cancel all broker sessions — this signals runSession goroutines to disconnect
-	sm.mu.RLock()
+	sm.mu.Lock()
+	sm.shuttingDown = true
+	close(sm.shutdownCh)
 	for _, s := range sm.sessions {
 		if s.cancel != nil {
 			s.cancel()
 		}
 	}
-	sm.mu.RUnlock()
+	sm.mu.Unlock()
 
 	// Wait for all session goroutines to finish their disconnect dance
 	waitDone := make(chan struct{})
@@ -3678,7 +3834,7 @@ func main() {
 	case <-waitDone:
 		log.Printf("all sessions disconnected gracefully")
 	case <-time.After(10 * time.Second):
-		log.Printf("timed out waiting for sessions to disconnect")
+		log.Fatal("timed out waiting for sessions to disconnect; exiting without releasing owner early")
 	}
 
 	ctxShutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)

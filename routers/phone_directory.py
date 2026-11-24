@@ -259,19 +259,38 @@ async def delete_directory_entry(
         connection = await asyncio.to_thread(
             storage.get_org_whatsapp_connection_by_broker_id, broker_id
         )
+    # Stop the live session first and fail closed. Only a confirmed 200 from
+    # /delete-session (stop confirmed, then credentials and mapping removed)
+    # lets us remove rows. A 409, 5xx, timeout or unreachable ingestor keeps
+    # every record so the delete can be retried: removing rows on an unconfirmed
+    # stop would show a deleted phone that still captures and is restored on
+    # the next ingestor restart. The delete-session timeout must exceed the
+    # ingestor's 8s stop wait plus its database work, and is never read as success.
+    if _first_ingestor_response is not None and broker_id:
+        try:
+            await _first_ingestor_response(
+                "POST", "/disconnect", timeout=10,
+                headers={"X-Broker-Id": broker_id},
+            )
+        except Exception:
+            pass
+        try:
+            _, resp = await _first_ingestor_response(
+                "POST", "/delete-session", timeout=30,
+                headers={"X-Broker-Id": broker_id},
+            )
+        except Exception:
+            resp = None
+        if resp is None or resp.status_code != 200:
+            code = getattr(resp, "status_code", None)
+            raise HTTPException(
+                409 if code == 409 else 502,
+                "WhatsApp session stop was not confirmed. Nothing was deleted; try again shortly.",
+            )
     if connection:
         conn_id = int(connection.get("id") or 0)
         if conn_id:
             await asyncio.to_thread(storage.remove_org_whatsapp_connection, conn_id)
-    if _first_ingestor_response is not None and broker_id:
-        for verb, path in (("POST", "/disconnect"), ("POST", "/delete-session")):
-            try:
-                await _first_ingestor_response(
-                    verb, path, timeout=10,
-                    headers={"X-Broker-Id": broker_id},
-                )
-            except Exception:
-                pass
     removed = await asyncio.to_thread(storage.remove_org_whatsapp_phone_directory, entry_id)
     if not removed:
         raise HTTPException(500, "Failed to remove directory entry")
