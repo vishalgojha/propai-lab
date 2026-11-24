@@ -18,6 +18,7 @@ def db(monkeypatch):
         q.execute('create schema ' + schema); q.execute('set search_path to ' + schema)
         for table in TABLES:
             q.execute('create table '+table+' (tenant_id text, building_name text, micro_market text, extraction_confidence text, needs_review boolean, created_at timestamptz)')
+        q.execute('create table raw_messages (tenant_id text,created_at timestamptz)')
         q.execute('create table ai_suggestions (tenant_id text,status text,agent text,suggestion_type text)')
         q.execute('create table resolver_decisions (tenant_id text,building_name text,created_at timestamptz,method text,failure_category text)')
         q.execute('create table sync_checkpoints (instance_name text,status text)')
@@ -68,16 +69,19 @@ def test_suggestions_cold_warm_and_cross_tenant(db):
     assert not inspect.iscoroutinefunction(dashboard.action_dashboard)
 
 
-def test_dashboard_counts_deduplicated_within_load(monkeypatch):
-    calls=[]
-    async def count(table,tenant,start=None,end=None,**filters):
-        calls.append((table,tenant,start,end,tuple(filters.items())));return 1
-    monkeypatch.setattr(dashboard,'_dashboard_count_async',count)
-    result=asyncio.run(dashboard.dashboard_time_window(window='today',user={'id':'u'},tenant_id='a'))
-    assert len(calls)==len(set(calls))
-    assert len(calls)==34
-    assert result['supply']==2 and result['rentals']==2 and result['demand']==4
-    assert result['needs_review']==8
+def test_metric_aggregate_scope_windows_and_one_round_trip(db):
+    with db.cursor() as q:
+        q.execute("insert into residential_sale_listings values ('a','Old','Bandra','low',true,now()-interval '5 days')")
+        q.execute("insert into raw_messages values ('a',now()),('a',now()-interval '5 days'),('b',now())")
+    today=asyncio.run(dashboard.dashboard_time_window(window='today',user={'id':'u'},tenant_id='a'))
+    assert today['messages']==1 and today['total_messages']==2
+    assert today['supply']==1 and today['total_supply']==2
+    assert today['demand']==1 and today['total_demand']==1
+    assert today['needs_review']==1 and today['total_needs_review']==2
+    all_time=asyncio.run(dashboard.dashboard_time_window(window='all',user={'id':'u'},tenant_id='a'))
+    assert all_time['supply']==2 and all_time['messages']==2
+    empty=asyncio.run(dashboard.dashboard_time_window(window='today',user={'id':'u'},tenant_id='empty'))
+    assert empty['supply']==0 and empty['total_messages']==0
 
 
 def test_empty_tenant_cannot_read_http_routes(monkeypatch):
@@ -94,10 +98,16 @@ def test_empty_tenant_cannot_read_http_routes(monkeypatch):
     assert c.get('/api/chat/suggestions').status_code==403
 
 
-def test_total_metrics_do_not_reuse_date_filtered_counts(monkeypatch):
-    async def count(table,tenant,start=None,end=None,**filters): return 2 if start is None else 1
-    monkeypatch.setattr(dashboard,'_dashboard_count_async',count)
-    r=asyncio.run(dashboard.dashboard_time_window(window='today',user={'id':'u'},tenant_id='a'))
-    assert r['total_supply']==4 and r['supply']==2
-    assert r['total_demand']==8 and r['demand']==4
-    assert r['total_needs_review']==16 and r['needs_review']==8
+def test_metrics_storage_work_does_not_block_event_loop(monkeypatch):
+    def totals(*args):
+        time.sleep(.1)
+        return {key:0 for key in ('messages','total_messages','supply','total_supply','demand','total_demand','rentals','total_rentals','needs_review','total_needs_review')}
+    monkeypatch.setattr(dashboard,'_dashboard_metric_totals',totals)
+    async def run():
+        ticks=[]
+        async def heartbeat():
+            await asyncio.sleep(.01);ticks.append(time.monotonic())
+        start=time.monotonic()
+        await asyncio.gather(dashboard.dashboard_time_window(window='today',user={'id':'u'},tenant_id='a'),heartbeat())
+        assert ticks[0]-start < .08
+    asyncio.run(run())

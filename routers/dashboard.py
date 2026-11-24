@@ -161,6 +161,40 @@ async def _dashboard_count_async(table: str, tenant_id: str, start_date: str | N
     return await asyncio.to_thread(_dashboard_count, table, tenant_id, start_date, end_date, **filters)
 
 
+def _dashboard_metric_totals(tenant_id, start, end):
+    # One round trip, one scan of each typed table. Per-request exact counts do
+    # not need ID payloads or 34 concurrent HTTP requests to the same database.
+    return dict(storage.db.execute("""
+      WITH evidence AS (
+        SELECT created_at, needs_review, 'supply' AS kind FROM residential_sale_listings WHERE tenant_id = $1
+        UNION ALL SELECT created_at, needs_review, 'supply' FROM commercial_sale_listings WHERE tenant_id = $1
+        UNION ALL SELECT created_at, needs_review, 'rentals' FROM residential_rent_listings WHERE tenant_id = $1
+        UNION ALL SELECT created_at, needs_review, 'rentals' FROM commercial_rent_listings WHERE tenant_id = $1
+        UNION ALL SELECT created_at, needs_review, 'demand' FROM residential_sale_requirements WHERE tenant_id = $1
+        UNION ALL SELECT created_at, needs_review, 'demand' FROM residential_rent_requirements WHERE tenant_id = $1
+        UNION ALL SELECT created_at, needs_review, 'demand' FROM commercial_sale_requirements WHERE tenant_id = $1
+        UNION ALL SELECT created_at, needs_review, 'demand' FROM commercial_rent_requirements WHERE tenant_id = $1
+      ), scoped AS (
+        SELECT *, ($2::timestamptz IS NULL OR created_at >= $2::timestamptz)
+          AND ($3::timestamptz IS NULL OR created_at < $3::timestamptz) AS in_window FROM evidence
+      ), messages AS (
+        SELECT count(*) AS total_messages, count(*) FILTER (WHERE
+          ($2::timestamptz IS NULL OR created_at >= $2::timestamptz)
+          AND ($3::timestamptz IS NULL OR created_at < $3::timestamptz)) AS messages
+        FROM raw_messages WHERE tenant_id = $1
+      ) SELECT
+        (SELECT messages FROM messages) AS messages, (SELECT total_messages FROM messages) AS total_messages,
+        count(*) FILTER (WHERE kind = 'supply' AND in_window) AS supply,
+        count(*) FILTER (WHERE kind = 'supply') AS total_supply,
+        count(*) FILTER (WHERE kind = 'demand' AND in_window) AS demand,
+        count(*) FILTER (WHERE kind = 'demand') AS total_demand,
+        count(*) FILTER (WHERE kind = 'rentals' AND in_window) AS rentals,
+        count(*) FILTER (WHERE kind = 'rentals') AS total_rentals,
+        count(*) FILTER (WHERE needs_review AND in_window) AS needs_review,
+        count(*) FILTER (WHERE needs_review) AS total_needs_review FROM scoped
+    """, (tenant_id, start, end)).fetchone())
+
+
 @router.get("/api/dashboard/time-window")
 async def dashboard_time_window(
     window: str = "today",
@@ -189,58 +223,14 @@ async def dashboard_time_window(
         start_date, end_date = windows["today"]
 
     try:
-        listing_tables = (
-            ("residential_sale_listings", "commercial_sale_listings"),
-            ("residential_rent_listings", "commercial_rent_listings"),
-        )
-        requirement_tables = (
-            "residential_sale_requirements", "residential_rent_requirements",
-            "commercial_sale_requirements", "commercial_rent_requirements",
-        )
-        listing_tables_all = listing_tables[0] + listing_tables[1]
-        listing_tables_sale = listing_tables[0]
-        listing_tables_rent = listing_tables[1]
-
-        counts_in_flight = {}
-        async def count_once(table, start=None, end=None, **filters):
-            key = (table, start, end, tuple(sorted(filters.items())))
-            if key not in counts_in_flight:
-                counts_in_flight[key] = asyncio.create_task(_dashboard_count_async(table, tenant_id, start, end, **filters))
-            return await counts_in_flight[key]
-
-        async def count_tables(tables: tuple[str, ...], all_time=False, **filters) -> int:
-            counts = await asyncio.gather(*(
-                count_once(table, None if all_time else start_date, None if all_time else end_date, **filters)
-                for table in tables
-            ))
-            return sum(counts)
-
-        (
-            msg_count,
-            total_msgs,
-            supply,
-            demand,
-            rentals,
-            total_supply,
-            total_demand,
-            total_rentals,
-            needs_review_listings,
-            needs_review_requirements,
-            total_needs_review,
-        ) = await asyncio.gather(
-            count_once("raw_messages", start_date, end_date),
-            count_once("raw_messages"),
-            count_tables(listing_tables_sale),
-            count_tables(requirement_tables),
-            count_tables(listing_tables_rent),
-            count_tables(listing_tables_sale, all_time=True),
-            count_tables(requirement_tables, all_time=True),
-            count_tables(listing_tables_rent, all_time=True),
-            count_tables(listing_tables_all, needs_review=True),
-            count_tables(requirement_tables, needs_review=True),
-            count_tables(listing_tables_all + requirement_tables, all_time=True, needs_review=True),
-        )
-        needs_review = needs_review_listings + needs_review_requirements
+        start = f"{start_date}T00:00:00Z" if start_date else None
+        end = ((datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")) if end_date else None
+        row = await asyncio.to_thread(_dashboard_metric_totals, tenant_id, start, end)
+        msg_count, total_msgs = row["messages"], row["total_messages"]
+        supply, total_supply = row["supply"], row["total_supply"]
+        demand, total_demand = row["demand"], row["total_demand"]
+        rentals, total_rentals = row["rentals"], row["total_rentals"]
+        needs_review, total_needs_review = row["needs_review"], row["total_needs_review"]
     except Exception as exc:
         _logger.exception("Dashboard time-window query failed for tenant %s", tenant_id)
         raise HTTPException(status_code=503, detail="Dashboard metrics are temporarily unavailable") from exc
