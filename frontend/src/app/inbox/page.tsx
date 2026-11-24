@@ -1974,11 +1974,9 @@ function UnifiedMarketInbox() {
   const [rawScope, setRawScope] = useState<"groups" | "dms">("groups");
   const rawScopeRef = useRef<"groups" | "dms">("groups");
   const [freshOnly, setFreshOnly] = useState(false);
-  // Hiring/chat broadcasts are hidden from the raw view by default. The
-  // toggle only changes the server's include_spam flag; the raw list is never
-  // silently edited client-side.
-  const [includeSpam, setIncludeSpam] = useState(false);
-  const [rawSpamHidden, setRawSpamHidden] = useState(0);
+  // Job ads are hidden automatically in the broker Inbox. This is a display
+  // filter only; original stored messages and access permissions are unchanged.
+  const includeSpam = false;
   // Raw-message totals are per scope (groups vs DMs). The two scopes are
   // separate server queries, so a single shared total would show the group
   // count on the DM tab. Each scope keeps its own last known count.
@@ -2152,7 +2150,6 @@ function UnifiedMarketInbox() {
         if (args[9] === "raw") {
           const rawPage = await api.getInboxRawMessages(args[0], args[1], args[3], "", Boolean(args[10]), rawScope);
           feedRawOffsetRef.current = rawPage.next_source_offset ?? 0;
-          setRawSpamHidden(rawPage.spam_hidden ?? 0);
           setRawScopeTotals((current) => ({ ...current, [rawScope]: rawPage.total ?? null }));
           return {
             items: rawPage.items,
@@ -2360,7 +2357,6 @@ function UnifiedMarketInbox() {
         feedRawOffsetRef.current = "next_source_offset" in result && result.next_source_offset != null
           ? result.next_source_offset
           : feedRawOffsetRef.current + result.items.length;
-        setRawSpamHidden("spam_hidden" in result ? (result.spam_hidden ?? 0) : 0);
         setRawScopeTotals((current) => ({ ...current, [rawScope]: result.total ?? null }));
       }
     } catch (reason) {
@@ -2896,7 +2892,6 @@ function UnifiedMarketInbox() {
       if (freshOnly) chips.push({ key: "fresh", label: "Fresh today", clear: () => setFreshOnly(false) });
       if (query.trim()) chips.push({ key: "query", label: `“${query.trim()}”`, clear: () => setQuery("") });
     } else {
-      if (rawScope === "groups" && includeSpam) chips.push({ key: "spam", label: "Hiring spam shown", clear: () => setIncludeSpam(false) });
       if (query.trim()) chips.push({ key: "query", label: `“${query.trim()}”`, clear: () => setQuery("") });
     }
     return chips;
@@ -2908,7 +2903,6 @@ function UnifiedMarketInbox() {
     setTransactionFilter("all");
     setFreshOnly(false);
     setQuery("");
-    setIncludeSpam(false);
     setBackfillMessage("");
   }, []);
 
@@ -2921,7 +2915,7 @@ function UnifiedMarketInbox() {
             <h1 className="mt-1 text-xl font-semibold">{triageFilter === "raw" ? "Raw Messages" : "Extracted Records"}</h1>
             <p className="mt-1 text-xs text-zinc-500">
               {triageFilter === "raw"
-                ? `${rawScope === "groups" ? "Original messages from your connected groups" : "Private direct messages captured from WhatsApp"}, newest first. Repeated posts are shown once and hiring spam is hidden.`
+                ? `${rawScope === "groups" ? "Original messages from your connected groups" : "Private direct messages captured from WhatsApp"}, newest first. Repeated posts are shown once. Job ads are hidden automatically.`
                 : `Listings and buyer requirements from your WhatsApp market · ${scope}`}
             </p>
           </div>
@@ -2980,7 +2974,6 @@ function UnifiedMarketInbox() {
                 setSelectedKeys(new Set());
                 selectedRecordsRef.current = {};
                 feedRawOffsetRef.current = 0;
-                setRawSpamHidden(0);
                 setBackfillMessage("");
               }}
               className={`relative flex min-h-9 flex-none items-center justify-start gap-2 rounded-md border px-3 text-left text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111822] ${selected ? "border-emerald-300 bg-emerald-300 text-[#061015] shadow-sm" : "border-transparent text-white hover:border-white/10 hover:bg-white/[0.04] hover:text-white"}`}
@@ -2993,12 +2986,6 @@ function UnifiedMarketInbox() {
             <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Recency</span>
             <button type="button" aria-pressed={!freshOnly} onClick={() => setFreshOnly(false)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${!freshOnly ? "border-white/20 bg-white/[0.06] text-zinc-100" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>All recency</button>
             <button type="button" aria-pressed={freshOnly} onClick={() => setFreshOnly(true)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${freshOnly ? "border-[var(--signal-lime)]/50 bg-[var(--signal-lime)]/10 text-[var(--signal-lime)]" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Fresh today</button>
-          </div>}
-          {triageFilter === "raw" && <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[var(--zone-light-border)] pt-2">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Quality</span>
-          <button type="button" aria-pressed={!includeSpam} onClick={() => setIncludeSpam(false)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${!includeSpam ? "border-white/20 bg-white/[0.06] text-zinc-100" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Hide hiring spam</button>
-          <button type="button" aria-pressed={includeSpam} onClick={() => setIncludeSpam(true)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${includeSpam ? "border-[var(--signal-lime)]/50 bg-[var(--signal-lime)]/10 text-[var(--signal-lime)]" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Show everything</button>
-          {rawSpamHidden > 0 && <span className="rounded-full border border-amber-300/25 bg-amber-300/[0.06] px-2 py-1 text-[10px] font-semibold text-amber-200" role="status">{rawSpamHidden} hiring message{rawSpamHidden === 1 ? "" : "s"} in this batch hidden</span>}
           </div>}
         </section>
 
@@ -3159,9 +3146,7 @@ Search messages
             ? (similarLoadingKey === similarForKey ? "Finding recent similar options…" : similarError[similarForKey || ""] || "No recent similar options found in the nearby markets.")
             : triageFilter === "raw"
               ? (query.trim().length >= 2 ? `No captured WhatsApp ${rawScope === "groups" ? "group" : "direct"} messages match this text. Try another phrase or clear the search.`
-                : !includeSpam
-                  ? "No property messages were found in this batch — hiring spam is hidden. Switch to “Show everything” to see them."
-                  : `No captured WhatsApp ${rawScope === "groups" ? "group" : "direct"} messages are available in this workspace yet.`)
+                : "No messages to show in this batch. Job ads are hidden automatically; original messages are kept.")
               : freshOnly
                 ? "No extracted records were added today in this view."
                 : query.trim().length >= 2
