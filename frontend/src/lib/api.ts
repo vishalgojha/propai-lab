@@ -49,6 +49,62 @@ function invalidatePendingReads() {
   pendingReads.clear();
 }
 
+// Keep browser HTTP/1 connection slots available for control reads and writes.
+// A short dispatch turn orders the startup burst; waiting uses the caller's
+// existing budget rather than silently extending an eight-second request.
+let activeReadCount = 0;
+let activeAdvisoryCount = 0;
+let dispatchScheduled = false;
+type QueuedRead = { priority: number; run: () => void };
+const readQueue: QueuedRead[] = [];
+function dispatchReads() {
+  readQueue.sort((a, b) => a.priority - b.priority);
+  while (activeReadCount < 3 && readQueue.length) {
+    // Reserve one slot for auth/phone/group controls arriving after startup.
+    const index = readQueue.findIndex((entry) => entry.priority === 0 || activeAdvisoryCount < 2);
+    if (index < 0) return;
+    readQueue.splice(index, 1)[0].run();
+  }
+}
+function scheduleReadDispatch() {
+  if (dispatchScheduled) return;
+  dispatchScheduled = true;
+  setTimeout(() => {
+    dispatchScheduled = false;
+    dispatchReads();
+  }, 0);
+}
+function readPriority(url: string) {
+  if (/^\/(auth\/me|phones(?:\?|$)|onboarding\/groups)/.test(url)) return 0;
+  if (url.startsWith("/dashboard/whatsapp-status")) return 1;
+  return 2;
+}
+function queuedRead<T>(url: string, budget: number, start: (remaining: number) => Promise<T>): Promise<T> {
+  const queuedAt = Date.now();
+  return new Promise<T>((resolve, reject) => {
+    const entry: QueuedRead = {
+      priority: readPriority(url),
+      run: () => {
+        clearTimeout(timer);
+        activeReadCount += 1;
+        if (entry.priority !== 0) activeAdvisoryCount += 1;
+        start(Math.max(1, budget - (Date.now() - queuedAt))).then(resolve, reject).finally(() => {
+          activeReadCount -= 1;
+          if (entry.priority !== 0) activeAdvisoryCount -= 1;
+          dispatchReads();
+        });
+      },
+    };
+    const timer = setTimeout(() => {
+      const index = readQueue.indexOf(entry);
+      if (index >= 0) readQueue.splice(index, 1);
+      reject(new Error(`Request timed out: ${url}`));
+    }, budget);
+    readQueue.push(entry);
+    scheduleReadDispatch();
+  });
+}
+
 export async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = API_TIMEOUT_MS): Promise<T> {
   const normalizedUrl = url.replace(/^\/api(?:\/|$)/, "/");
   const method = (init?.method || "GET").toUpperCase();
@@ -79,7 +135,8 @@ export async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = 
   const key = JSON.stringify([generation, normalizedUrl, token, tenantId, timeoutMs, { ...init, headers }]);
   const existing = pendingReads.get(key);
   if (existing) return structuredClone(await existing) as T;
-  const request = fetchJSONWithRetry<T>(normalizedUrl, init, Math.max(1, timeoutMs - (Date.now() - startedAt)), false, BASE, { token, tenantId });
+  const request = queuedRead<T>(normalizedUrl, Math.max(1, timeoutMs - (Date.now() - startedAt)),
+    (remaining) => fetchJSONWithRetry<T>(normalizedUrl, init, remaining, false, BASE, { token, tenantId }));
   pendingReads.set(key, request);
   try { return structuredClone(await request); }
   finally { if (pendingReads.get(key) === request) pendingReads.delete(key); }
