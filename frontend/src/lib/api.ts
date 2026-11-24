@@ -101,6 +101,7 @@ export interface OnboardingGroup {
   novel_member_count?: number;
   novelty_percent?: number | null;
   covered_by_other_connection?: boolean;
+  shared_network_member_overlap?: boolean;
   selection_reason?: string;
   selectable?: boolean;
 }
@@ -128,7 +129,12 @@ export interface OnboardingGroupCheck {
   cap: OnboardingGroupCap;
 }
 
+export interface GroupSelectionConfirmation {
+  complete: boolean; request_id?: string; selected_group_jids: string[]; completed_at?: string;
+}
+
 export interface OnboardingGroupState extends OnboardingGroupCap {
+  selection_confirmation?: GroupSelectionConfirmation;
   groups: OnboardingGroup[];
   extraction_status: "stopped" | "running" | "paused";
 }
@@ -211,12 +217,17 @@ export function optInOnboardingGroup(whatsappConnectionId: number, groupJid: str
   });
 }
 
-export function selectOnboardingGroups(whatsappConnectionId: number, groupJids: string[]) {
-  return fetchJSON<{ ok: boolean; selected_group_jids: string[]; selected_count: number; cap: OnboardingGroupCap }>("/onboarding/groups/select", {
+export function getGroupSelectionConfirmation(whatsappConnectionId: number) {
+  return fetchJSON<GroupSelectionConfirmation>(`/onboarding/groups/confirmation?whatsapp_connection_id=${whatsappConnectionId}`);
+}
+
+export function selectOnboardingGroups(whatsappConnectionId: number, groupJids: string[], requestId: string) {
+  return fetchJSON<{ ok: boolean; selected_group_jids: string[]; selected_count: number; selection_confirmation: GroupSelectionConfirmation }>("/onboarding/groups/select", {
     method: "POST",
     body: JSON.stringify({
       whatsapp_connection_id: whatsappConnectionId,
       group_jids: groupJids,
+      request_id: requestId,
       confirm: true,
     }),
   });

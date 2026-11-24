@@ -14,6 +14,9 @@ def adapter():
     requests = []
     def handle(request):
         requests.append(request)
+        if request.url.path.endswith('/rpc/confirm_whatsapp_group_selection'):
+            body=json.loads(request.content)
+            return httpx.Response(200,json={'complete':True,'request_id':body['p_request'],'selected_group_jids':body['p_groups']})
         return httpx.Response(200, json=[])
     client = _RestClient('https://fixture.invalid', 'fixture-only')
     client._http.close()
@@ -43,7 +46,7 @@ def test_existing_not_is_unchanged(adapter):
 
 
 @pytest.mark.parametrize('count', [0, 1, 140])
-def test_actual_selection_route_retains_selected_groups_before_upsert(adapter, monkeypatch, count):
+def test_actual_selection_route_uses_one_atomic_rpc(adapter, monkeypatch, count):
     client, requests = adapter
     selected = [f'{i}@g.us' for i in range(count)]
     directory = [{'group_jid': jid, 'group_name': jid, 'selectable': True} for jid in selected]
@@ -59,28 +62,15 @@ def test_actual_selection_route_retains_selected_groups_before_upsert(adapter, m
     monkeypatch.setattr(controls, '_cap_state', lambda *args, **kwargs: {})
     metadata_updates = []
     monkeypatch.setattr(controls, 'storage', SimpleNamespace(client=client, is_super_admin=lambda *args: True, update_org_whatsapp_connection=lambda *args: metadata_updates.append(args)))
-    body = controls.GroupSelectionRequest(whatsapp_connection_id=225, group_jids=selected, confirm=True)
+    body = controls.GroupSelectionRequest(whatsapp_connection_id=225, group_jids=selected, confirm=True, request_id="00000000-0000-0000-0000-000000000001")
     result = asyncio.run(controls.select_groups(body, {'id': 'user'}, 'own'))
     assert result['selected_group_jids'] == selected
     assert result['selected_count'] == count
-    deselection = requests[0]
-    assert deselection.method == 'PATCH'
-    assert deselection.url.params['organization_id'] == 'eq.own'
-    assert deselection.url.params['whatsapp_connection_id'] == 'eq.225'
-    assert json.loads(deselection.content)['public_market_source'] is False
-    if count:
-        expression = deselection.url.params['group_jid']
-        retained = json.loads('[' + expression[len('not.in.('):-1] + ']')
-        assert retained == selected
-        upsert = requests[1]
-        assert upsert.method == 'POST'
-        rows = json.loads(upsert.content)
-        assert [row['group_jid'] for row in rows] == selected
-        assert all(row['public_market_source'] and row['is_active'] and not row['opted_out'] for row in rows)
-        assert len([r for r in requests if r.url.path.endswith('/rpc/sync_group_market_visibility')]) == count
-    else:
-        assert 'group_jid' not in deselection.url.params
-        assert len(requests) == 1
-    assert metadata_updates[0][1]['group_audit_required'] is False
-    assert 'extraction_status' not in metadata_updates[0][1]
+    request, = requests
+    assert request.method == 'POST'
+    assert request.url.path.endswith('/rpc/confirm_whatsapp_group_selection')
+    body = json.loads(request.content)
+    assert body['p_tenant'] == 'own' and body['p_connection'] == 225
+    assert body['p_groups'] == selected and body['p_broker'] == 'own-phone'
+    assert not metadata_updates
     assert not any('extraction/start' in str(r.url) or 'raw_messages' in str(r.url) for r in requests)

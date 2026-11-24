@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square, Search, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, optOutOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry } from "@/lib/api";
+import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, getGroupSelectionConfirmation, checkOnboardingGroup, optOutOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry } from "@/lib/api";
 import QRCode from "qrcode";
 import { connectionHealth, connectionMetric } from "@/lib/connectionHealth";
 
@@ -1315,9 +1315,10 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     setSavingSelection(true);
     setError(null);
     setMessage(null);
+    const selectedJids = Array.from(selectedGroups);
+    const requestId = crypto.randomUUID();
     try {
-      const selectedJids = Array.from(selectedGroups);
-      const result = await selectOnboardingGroups(phone.id, selectedJids);
+      const result = await selectOnboardingGroups(phone.id, selectedJids, requestId);
       // The response is authoritative. Update the local directory immediately
       // so a transient refresh failure cannot make a successful confirmation
       // look like an unsaved draft.
@@ -1326,6 +1327,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       setData((current) => current ? {
         ...current,
         selected_count: result.selected_count,
+        selection_confirmation: result.selection_confirmation,
         groups: current.groups.map((group) => ({
           ...group,
           connected: confirmed.has(group.group_jid),
@@ -1341,7 +1343,23 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       }
       void Promise.resolve(onRefresh()).catch(() => undefined);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save group selection.");
+      // A lost HTTP response is not a failed transaction. Read only, never POST
+      // again, and require this exact completed request plus exact group IDs.
+      try {
+        const receipt = await getGroupSelectionConfirmation(phone.id);
+        const exact = receipt?.selected_group_jids.length === selectedJids.length
+          && selectedJids.every((jid) => receipt?.selected_group_jids.includes(jid));
+        if (receipt?.complete && receipt.request_id === requestId && exact) {
+          setSelectedGroups(new Set(receipt.selected_group_jids));
+          setData((current) => current ? {...current, selected_count: receipt.selected_group_jids.length, selection_confirmation: receipt, groups: current.groups.map((group) => ({...group, connected: receipt.selected_group_jids.includes(group.group_jid), opted_out: receipt.selected_group_jids.includes(group.group_jid) ? false : group.opted_out}))} : current);
+          setMessage("Selection saved and confirmed. Extraction remains under your separate Start control.");
+          setError(null);
+        } else {
+          setError("Could not verify this confirmation completed. Saved choices are shown below. Extraction has not been started.");
+        }
+      } catch {
+        setError("Confirmation response was lost and readback is unavailable. Do not confirm again yet. Extraction has not been started.");
+      }
     } finally {
       setSavingSelection(false);
     }
@@ -1394,7 +1412,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     // consent. Keep this guard here as well as on the button so an older
     // client or a state race cannot turn the API's 400 into a confusing UI
     // error.
-    if (action === "start" && data && persistedSelectedCount === 0) {
+    if (action === "start" && !selectionConfirmed) {
       setError("Select and confirm at least one WhatsApp group before starting extraction.");
       setMessage(null);
       return;
@@ -1506,7 +1524,11 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     selectedGroups.size !== persistedSelectedJids.size
     || Array.from(selectedGroups).some((jid) => !persistedSelectedJids.has(jid))
   );
-  const selectionConfirmed = persistedSelectedCount > 0 && !hasUnpersistedSelection;
+  const receipt = data?.selection_confirmation;
+  const receiptMatches = receipt?.complete === true
+    && receipt.selected_group_jids.length === persistedSelectedJids.size
+    && receipt.selected_group_jids.every((jid) => persistedSelectedJids.has(jid));
+  const selectionConfirmed = persistedSelectedCount > 0 && !hasUnpersistedSelection && receiptMatches;
   const captureConnected = isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus);
 
   if (!hasPairingIdentity) {
@@ -1547,6 +1569,9 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         <div className={`mt-3 text-xs ${data ? "text-amber-200" : "text-red-400"}`}>
           {error}
         </div>
+      )}
+      {data && persistedSelectedCount > 0 && !receiptMatches && (
+        <div className="mt-3 text-xs text-amber-200">Your group choices are saved. Completion of the listing update is not yet verified. Start is unavailable; do not confirm again just to clear this notice.</div>
       )}
       {message && <div className="mt-3 text-xs text-emerald-300">{message}</div>}
 
@@ -1612,7 +1637,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                 <Check className="h-3 w-3" /> {savingSelection ? "Saving selection..." : `Confirm ${selectedGroups.size} group${selectedGroups.size === 1 ? "" : "s"}`}
               </button>
             )}
-            <button type="button" onClick={() => void handleExtractionControl("start")} disabled={activeControl !== null || savingSelection || hasUnpersistedSelection || data.extraction_status === "running" || persistedSelectedCount === 0} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/40 px-3 py-1.5 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-40">
+            <button type="button" onClick={() => void handleExtractionControl("start")} disabled={activeControl !== null || savingSelection || hasUnpersistedSelection || data.extraction_status === "running" || !selectionConfirmed} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/40 px-3 py-1.5 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-40">
               <Play className="h-3 w-3" /> {activeControl === "start" ? "Starting..." : "Start optional extraction"}
             </button>
             <button type="button" onClick={() => void handleExtractionControl("pause")} disabled={activeControl !== null || data.extraction_status !== "running"} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 px-3 py-1.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40">
@@ -1668,9 +1693,9 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
               />
               <span className="shrink-0 text-[10px] text-zinc-600">{sortedGroups.length}/{data.groups.length}</span>
             </div>
-            <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <span className="text-[11px] text-zinc-500">Sort groups</span>
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={includeAllEligibleGroups}
@@ -1726,7 +1751,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                     <span className="connection-group-status rounded-md border border-cyan-400/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">Already covered</span>
                   ) : group.opted_out ? (
                     <span className="connection-group-status rounded-md border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-zinc-500">Opted-out</span>
-                  ) : !data.unlimited && !selectedGroups.has(group.group_jid) ? (
+                  ) : !selectedGroups.has(group.group_jid) ? (
                     <span className="connection-group-status rounded-md border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-zinc-400">Not selected</span>
                   ) : (
                     <span className="connection-group-status connection-group-status-success rounded-md border px-2 py-0.5 text-[10px] font-semibold">
@@ -1734,7 +1759,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                         ? "Checked · confirm above"
                         : group.membership_status === "not_in_latest_directory"
                           ? "Selected · membership unconfirmed"
-                        : data?.extraction_status === "running" ? "Included · processing messages" : "Included · ready for extraction"}
+                        : data?.extraction_status === "running" ? "Included · processing messages" : !receiptMatches ? "Saved · completion unverified" : "Included · ready for extraction"}
                     </span>
                   )}
                 </div>

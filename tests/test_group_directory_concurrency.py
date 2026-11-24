@@ -22,6 +22,7 @@ def setup(monkeypatch, *, deny=False):
     monkeypatch.setattr(controls, '_connection', lambda *args: (check_thread('connection') or {'broker_id': 'phone'}))
     monkeypatch.setattr(controls, '_organization_has_unlimited_group_access', lambda *args: (check_thread('unlimited') or True))
     monkeypatch.setattr(controls, 'storage', SimpleNamespace(is_super_admin=lambda *args: (check_thread('admin') or True)))
+    monkeypatch.setattr(controls, "_selection_state", lambda *args: {"complete": False})
     return calls, check_thread
 
 
@@ -45,7 +46,7 @@ def test_directory_and_cap_reads_parallel_off_loop_preserving_response(monkeypat
     monkeypatch.setattr(controls, '_group_directory', directory)
     monkeypatch.setattr(controls, '_cap_state', cap)
     result = asyncio.run(controls.onboarding_groups(225, {'id': 'user'}, 'own'))
-    assert result == {'groups': [{'group_jid': 'fixture@g.us', 'connected': False}], 'extraction_status': 'stopped', 'selected_count': 0, 'cap': None}
+    assert result == {'groups': [{'group_jid': 'fixture@g.us', 'connected': False}], 'extraction_status': 'stopped', 'selected_count': 0, 'cap': None, 'selection_confirmation': {'complete': False}}
     assert set(calls) == {'permission', 'connection', 'unlimited', 'admin', 'directory', 'cap'}
 
 
