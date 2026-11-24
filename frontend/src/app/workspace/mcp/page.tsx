@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { Bot, Check, Copy, ExternalLink, KeyRound, Play, Server } from "lucide-react";
 import Link from "next/link";
+import { INSTINCT_WHATSAPP_URL } from "@/lib/instinctHandoff";
 import ContactSourceConsent from "@/components/ContactSourceConsent";
 import { fetchJSON } from "@/lib/api";
 
 const MCP_ENDPOINT = "https://mcp.propai.live/raw-mcp";
-const INSTINCT_WORKSPACE_URL = "https://app.instinct.com";
+const INSTINCT_WORKSPACE_URL = INSTINCT_WHATSAPP_URL;
 
 type AgentStatus = {
   browser?: { ok?: boolean; error?: string; version?: string };

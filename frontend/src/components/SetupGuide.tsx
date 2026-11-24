@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { INSTINCT_WHATSAPP_URL } from "@/lib/instinctHandoff";
 import { Check, ChevronRight, Loader2, MessageSquare, Network, Smartphone, Sparkles, X } from "lucide-react";
 import { fetchJSON, getMarketAccessStatus, type MarketAccessStatus } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 
 const DISMISS_KEY_PREFIX = "propai_setup_dismissed";
-const INSTINCT_WORKSPACE_URL = "https://app.instinct.com";
+const INSTINCT_WORKSPACE_URL = INSTINCT_WHATSAPP_URL;
 
 type StepState = "done" | "active" | "todo";
 
@@ -150,7 +151,7 @@ export default function SetupGuide({ variant = "page" }: { variant?: "page" | "c
       note: firstQuestionUnknown
         ? "Your workspace started before this tracker, so we can't tell whether you've already asked your first question. If you haven't, asking one now is still the best test."
         : undefined,
-      cta: { href: INSTINCT_WORKSPACE_URL, label: "Open Instinct", external: true },
+      cta: { href: INSTINCT_WORKSPACE_URL, label: "Open Instinct in WhatsApp", external: true },
     },
   ];
 
