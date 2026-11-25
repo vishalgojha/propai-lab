@@ -1509,3 +1509,13 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Deployment/push status: Commit `5ac64069` was pushed to `origin/main`. Coolify deployment `px7w5rhau35cj5ze6favrjw2` finished successfully in 215 seconds.
 - Known limitations: The screenshot’s live data path was not queried, so a backend directory row with an intrinsically missing WhatsApp subject will still display the existing safe fallback name.
 - Next action: Open `app.propai.live/whatsapp?tab=groups` on a narrow viewport and confirm the group title appears above the status badge.
+
+### Make WhatsApp group opt-out immediate
+
+- Requested outcome: Make the Opt out action reliably persist and immediately remove the group from the active selection state.
+- Files/services changed: `frontend/src/app/connections/page.tsx`, `routers/whatsapp_group_controls.py`; redeployed `api` and `propai-lab:main-app`.
+- Behavior: Opt out now removes the group from the local selected set and applies the returned cap state immediately. The backend no longer blocks the opt-out response on the advisory sender-overlap scan; durable suppression is persisted first and overlap is returned as empty advisory data.
+- Verification performed: Python compilation passed; changed-file ESLint completed with 0 errors and existing warnings only; `git diff --check` passed. The focused `tests/test_onboarding_routes_regression.py -k opt_out` run did not emit a result and was stopped after hanging in the repository's existing async harness. Independent task-verifier second pass: **PARTIAL** — code-path and static checks pass, but no authenticated browser opt-out click-through or completed focused regression test was available.
+- Deployment/push status: Commit `817a74cd` was pushed to `origin/main`. Coolify deployments finished successfully: API `j8w72e8cbb1e2zzav2od84ps` and app `veto1q6jv3cq7ls7mwkwuyts`.
+- Known limitations: Live database confirmation of a specific group’s persisted opt-out was not performed in this pass; the action remains tenant- and permission-scoped.
+- Next action: Click Opt out once on a selected group and confirm the card changes immediately to opted-out/Include group after the response returns; do not click repeatedly while Saving… is visible.
