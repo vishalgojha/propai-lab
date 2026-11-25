@@ -1584,14 +1584,17 @@ async def deselect_group(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    """Clear one group's saved extraction selection (public_market_source).
+    """Remove one group from the saved extraction selection.
 
     Selection changes otherwise persist only through the full atomic
     confirmation, which rejects a saved selection that still references a
     group missing from the live directory. This single-group removal lets the
-    user drop stale consent for a group they left or deleted, without
-    re-confirming the whole selection. It does not opt the group out, does
-    not start extraction, and only un-publishes; it never publishes.
+    user drop a group they left or deleted without re-confirming the whole
+    selection. It deactivates the selection row (is_active=False) so the group
+    no longer counts as selected and its messages are no longer eligible for
+    extraction, and clears the public-market consent flag. It does not mark a
+    privacy opt-out (opted_out stays False), does not start extraction, and
+    only un-publishes; it never publishes.
     """
     try:
         org_id = _resolve_active_organization_id(user, tenant_id)
@@ -1600,6 +1603,7 @@ async def deselect_group(
         unlimited = await asyncio.to_thread(_organization_has_unlimited_group_access, org_id)
         row = storage.client.table("organization_group_connections").update({
             "public_market_source": False,
+            "is_active": False,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }).eq("organization_id", org_id).eq("whatsapp_connection_id", body.whatsapp_connection_id).eq("group_jid", body.group_jid).execute()
         # Mirror opt-out: a group that is no longer selected must not stay

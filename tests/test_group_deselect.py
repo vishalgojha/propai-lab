@@ -57,10 +57,13 @@ def test_deselect_clears_only_that_groups_selection(adapter, monkeypatch):
     assert patch.url.params['whatsapp_connection_id'] == 'eq.225'
     assert patch.url.params['group_jid'] == 'eq.stale@g.us'
     payload = json.loads(patch.content)
-    # Only the selection flag (and its timestamp) may change: no opt-out, no
-    # is_active flip, nothing that touches other groups or sharing state.
+    # Removal clears the selection (is_active) and the public-market consent
+    # flag, with its timestamp: no opt-out marker, nothing that touches other
+    # groups or sharing state.
     assert payload['public_market_source'] is False
-    assert set(payload) <= {'public_market_source', 'updated_at'}
+    assert payload['is_active'] is False
+    assert 'opted_out' not in payload
+    assert set(payload) <= {'public_market_source', 'is_active', 'updated_at'}
 
     rpcs = [r for r in requests if r.url.path.endswith('/rpc/sync_group_market_visibility')]
     assert len(rpcs) == 1

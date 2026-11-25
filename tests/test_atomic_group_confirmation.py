@@ -24,7 +24,7 @@ def db():
    create table raw_messages(id bigint primary key,tenant_id uuid,message text,timestamp timestamptz,sender_phone text,sender_jid text,is_group boolean,source text,pipeline_version text,raw_payload jsonb,event_id text,message_uid text,synced_at timestamptz);
    create table whatsapp_conversations(tenant_id uuid,broker_id text,conversation_type text,conversation_jid text,display_name text,message_count integer,last_message_at timestamptz);
    create table broker_whatsapp_devices(whatsapp_connection_key text primary key,device_jid text);
-   create table public_market_publication_allowlist(tenant_id uuid primary key,whatsapp_connection_id bigint,enabled boolean);
+   create table public_market_publication_allowlist(tenant_id uuid primary key,whatsapp_connection_id bigint,enabled boolean,updated_at timestamptz);
    create table public_market_publication_denylist(raw_message_id bigint primary key);
   ''')
   for t in TABLES:q.execute(sql.SQL('create table {}(id bigserial primary key,tenant_id uuid,raw_message_id bigint,visibility text,source_scope text);create index on {}(tenant_id,raw_message_id)').format(sql.Identifier(t),sql.Identifier(t)))
@@ -32,6 +32,7 @@ def db():
   q.execute(Path('supabase/migrations/20261120100000_independent_raw_group_sharing.sql').read_text())
   q.execute(Path('supabase/migrations/20261123150000_optional_source_contact_disclosure.sql').read_text())
   q.execute(Path('supabase/migrations/20261124100000_atomic_group_confirmation.sql').read_text())
+  q.execute(Path('supabase/migrations/20261125160000_selection_receipt_semantic_invalidation.sql').read_text())
  yield c
  c.close()
  with admin.cursor() as q:q.execute(sql.SQL('drop database {} with(force)').format(sql.Identifier(name)))

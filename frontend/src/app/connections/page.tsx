@@ -1608,9 +1608,9 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       )}
       {data && persistedSelectedCount > 0 && !receiptMatches && (
         <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-amber-200">
-          <span>Your group choices are saved. Completion of the listing update is not yet verified, so Start is unavailable. A fresh confirmation of the same selection restores it if every saved group is still in your directory. Listings stay private to your workspace unless shared-market publication is separately enabled for your workspace.</span>
-          <button type="button" onClick={requestSelectionConfirmation} disabled={activeControl !== null || savingSelection || hasUnpersistedSelection || (data.cap != null && selectedGroups.size > data.cap)} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/40 px-3 py-1.5 text-[11px] font-semibold text-amber-200 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40">
-            <Check className="h-3 w-3" /> {savingSelection ? "Saving selection..." : "Confirm saved selection again"}
+          <span>Your group choices are saved, but the save is not verified yet, so Start is unavailable. Confirm the selection to finish. Saved groups that are no longer in your WhatsApp directory are removed and marked opted out. Listings stay private to your workspace unless shared-market publication is separately enabled for your workspace.</span>
+          <button type="button" onClick={requestSelectionConfirmation} disabled={activeControl !== null || savingSelection || hasUnpersistedSelection || (data.cap != null && selectedGroups.size > data.cap)} className="inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40">
+            <Check className="h-3 w-3" /> {savingSelection ? "Saving selection..." : "Confirm saved selection"}
           </button>
         </div>
       )}
@@ -1670,6 +1670,16 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
             <div className="mt-3 flex items-center gap-2 border-l-2 border-emerald-400/50 bg-emerald-400/[0.04] px-3 py-2 text-[11px] text-emerald-200">
               <Check className="h-3.5 w-3.5 shrink-0" />
               {persistedSelectedCount} group{persistedSelectedCount === 1 ? " is" : "s are"} confirmed for Instinct and MCP extraction.
+            </div>
+          )}
+          {persistedSelectedCount > 0 && !hasUnpersistedSelection && !receiptMatches && (
+            <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-amber-400/40 bg-amber-500/[0.08] px-3 py-2.5">
+              <div className="min-w-0 flex-1 text-[11px] leading-5 text-amber-100">
+                One confirmation is required before extraction can start. Saved groups that are no longer in your WhatsApp directory are removed and marked opted out.
+              </div>
+              <button type="button" onClick={requestSelectionConfirmation} disabled={activeControl !== null || savingSelection || (data.cap != null && selectedGroups.size > data.cap)} className="inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40">
+                <Check className="h-3 w-3" /> {savingSelection ? "Saving selection..." : `Confirm ${persistedSelectedCount} saved group${persistedSelectedCount === 1 ? "" : "s"}`}
+              </button>
             </div>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
@@ -1959,7 +1969,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
               </div>
               <div className="min-w-0">
                 <h2 id="confirm-selection-title" className="text-sm font-semibold text-white">Confirm group selection</h2>
-                <p className="mt-1 text-xs leading-5 text-zinc-400">New group messages captured after pairing stay saved privately either way. Confirming these {selectedGroups.size} group{selectedGroups.size === 1 ? "" : "s"} saves them for optional extraction. Their listings stay private to your workspace unless shared-market publication is separately enabled for your workspace. Unchecked groups stay private; private messages are not captured.</p>
+                <p className="mt-1 text-xs leading-5 text-zinc-400">New group messages captured after pairing stay saved privately either way. Confirming these {selectedGroups.size} group{selectedGroups.size === 1 ? "" : "s"} saves them for optional extraction. Their listings stay private to your workspace unless shared-market publication is separately enabled for your workspace. Unchecked groups stay private; private messages are not captured. Saved groups that are no longer in your latest WhatsApp directory are removed from the selection and marked opted out.</p>
               </div>
               <button type="button" onClick={() => setSelectionConfirmationOpen(false)} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close selection confirmation">
                 <X className="h-4 w-4" />
