@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 
 from routers import common
 from routers.common import get_current_user, get_tenant_context, storage
-from routers import notes, search, workspace
+from routers import listings, notes, search, workspace
 
 TENANT_A = "11111111-1111-1111-1111-111111111111"
 TENANT_B = "22222222-2222-2222-2222-222222222222"
@@ -57,7 +57,7 @@ class FakeDB:
 
 def make_client(tenant_id=None, member_lookup=None, listed=None):
     app = FastAPI()
-    for mod in (notes, search, workspace):
+    for mod in (listings, notes, search, workspace):
         app.include_router(mod.router)
 
     fake_db = FakeDB()
@@ -215,4 +215,36 @@ def test_notes_delete_tenant_scoped(tenant_a):
 
 def test_palette_search_requires_auth_but_works_signed_in(tenant_a):
     r = tenant_a.get("/api/search?q=Bandra")
+    assert r.status_code == 200
+
+
+# --- shared-network visibility gates --------------------------------------
+def _typed_row(tid, visibility, table="residential_rent_listings", rid=1, title="2BHK Bandra"):
+    return {
+        "id": rid, "_typed_table": table, "tenant_id": tid, "visibility": visibility,
+        "building_name": "Bandra View", "micro_market": "Bandra", "locality_raw": "Bandra",
+        "broker_name": "X", "group_name": "g", "summary_title": title,
+        "transaction_type": "rent", "created_at": "2026-01-01", "last_seen_at": "2026-01-01",
+    }
+
+
+def test_palette_hides_other_tenant_private_rows(tenant_a):
+    storage._real._fetch_typed_rows = lambda *a, **k: [
+        _typed_row(TENANT_A, "workspace_private", rid=1, title="own private"),
+        _typed_row(TENANT_A, None, rid=2, title="own shared"),
+        _typed_row(TENANT_B, None, rid=3, title="other shared"),
+        _typed_row(TENANT_B, "workspace_private", rid=4, title="other private"),
+    ]
+    r = tenant_a.get("/api/search?q=Bandra")
+    assert r.status_code == 200
+    titles = [l["summary_title"] for l in r.json().get("listings", [])]
+    assert "own private" in titles
+    assert "own shared" in titles
+    assert "other shared" in titles
+    assert "other private" not in titles
+
+
+def test_listings_route_smoke_signed_in(tenant_a):
+    storage._real.get_listings = lambda limit, offset: []
+    r = tenant_a.get("/api/listings")
     assert r.status_code == 200

@@ -669,7 +669,7 @@ async def search_market_items(
 
 
 @router.get("/api/search")
-async def search_messages(q: str = "", use_llm: bool = False, user: dict = Depends(require_user)):
+async def search_messages(q: str = "", use_llm: bool = False, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     """Search live Supabase projections used by the dashboard.
 
     This palette predates the typed-table migration.  The old implementation
@@ -689,8 +689,16 @@ async def search_messages(q: str = "", use_llm: bool = False, user: dict = Depen
             card_only=True,
             search_text=query,
         )
+        own_tenant = str(tenant_id or "")
         matching = []
         for row in rows:
+            # Shared-network gate: another workspace's rows are visible only
+            # when they are shared inventory (visibility is not
+            # workspace_private), matching get_shared_market_listings.  Own
+            # rows are always visible to their own workspace.
+            row_tenant = str(row.get("tenant_id") or "")
+            if row_tenant != own_tenant and str(row.get("visibility") or "").strip().lower() == "workspace_private":
+                continue
             haystack = " ".join(
                 str(row.get(key) or "")
                 for key in ("building_name", "micro_market", "locality_raw", "broker_name", "group_name", "summary_title")

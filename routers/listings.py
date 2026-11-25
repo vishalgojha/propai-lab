@@ -150,7 +150,7 @@ class DealHidePayload(BaseModel):
 
 
 @router.get("/api/listings")
-async def list_listings(limit: int = 50, offset: int = 0, user: dict = Depends(require_user)):
+async def list_listings(limit: int = 50, offset: int = 0, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     return storage.get_listings(limit, offset)
 
 
@@ -189,6 +189,10 @@ async def get_listing_detail(listing_id: int, user: dict = Depends(require_user)
                 typed_listing = await asyncio.to_thread(
                     storage.get_typed_listing_detail, listing_id, None
                 )
+                if typed_listing and str(typed_listing.get("visibility") or "").strip().lower() == "workspace_private":
+                    # Another workspace explicitly marked this row private;
+                    # the shared-network fallback must not serve it.
+                    typed_listing = None
         except Exception:
             typed_listing = None
         if isinstance(res, BaseException) and not typed_listing:
@@ -196,6 +200,11 @@ async def get_listing_detail(listing_id: int, user: dict = Depends(require_user)
         if not res.data and not typed_listing:
             raise HTTPException(404, "Listing not found")
         listing = typed_listing or res.data[0]
+        own_listing = bool(tenant_id) and str(listing.get("tenant_id") or "") == str(tenant_id)
+        if not own_listing:
+            # Shared-network row owned by another workspace: strip
+            # workspace-only evidence before it reaches the response.
+            listing = {k: v for k, v in listing.items() if k not in ("raw_payload", "normalized_message")}
         sources = []
         if not isinstance(src_res, BaseException):
             sources = src_res.data or []
@@ -211,7 +220,7 @@ async def get_listing_detail(listing_id: int, user: dict = Depends(require_user)
             or listing.get("latest_raw_message_id")
             or listing.get("raw_message_id")
         )
-        if raw_msg_id:
+        if raw_msg_id and own_listing:
             try:
                 raw_res = await asyncio.to_thread(lambda: storage.client.table("raw_messages").select(
                     "id, message, sender_name, sender_phone, group_name, "
