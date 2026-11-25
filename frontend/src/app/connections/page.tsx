@@ -1577,7 +1577,12 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         </div>
       )}
       {data && persistedSelectedCount > 0 && !receiptMatches && (
-        <div className="mt-3 text-xs text-amber-200">Your group choices are saved. Completion of the listing update is not yet verified. Start is unavailable; do not confirm again just to clear this notice.</div>
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-amber-200">
+          <span>Your group choices are saved. Completion of the listing update is not yet verified, so Start is unavailable. One fresh confirmation of the same selection restores it; confirming does not publish your listings.</span>
+          <button type="button" onClick={requestSelectionConfirmation} disabled={activeControl !== null || savingSelection || hasUnpersistedSelection || (data.cap != null && selectedGroups.size > data.cap)} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/40 px-3 py-1.5 text-[11px] font-semibold text-amber-200 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40">
+            <Check className="h-3 w-3" /> {savingSelection ? "Saving selection..." : "Confirm saved selection again"}
+          </button>
+        </div>
       )}
       {message && <div className="mt-3 text-xs text-emerald-300">{message}</div>}
 
@@ -1914,7 +1919,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
               </div>
               <div className="min-w-0">
                 <h2 id="confirm-selection-title" className="text-sm font-semibold text-white">Confirm group selection</h2>
-                <p className="mt-1 text-xs leading-5 text-zinc-400">New group messages captured after pairing stay saved privately either way. Confirming these {selectedGroups.size} group{selectedGroups.size === 1 ? "" : "s"} turns their listings into shared-market listings that other brokers can search. Unchecked groups stay private to your workspace; private messages are not captured.</p>
+                <p className="mt-1 text-xs leading-5 text-zinc-400">New group messages captured after pairing stay saved privately either way. Confirming these {selectedGroups.size} group{selectedGroups.size === 1 ? "" : "s"} saves them for optional extraction. Their listings stay private to your workspace unless shared-market publication is separately enabled for your workspace. Unchecked groups stay private; private messages are not captured.</p>
               </div>
               <button type="button" onClick={() => setSelectionConfirmationOpen(false)} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close selection confirmation">
                 <X className="h-4 w-4" />

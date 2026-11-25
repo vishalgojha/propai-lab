@@ -50,6 +50,7 @@ class GroupSelectionRequest(BaseModel):
     whatsapp_connection_id: int
     group_jids: list[str] = []
     confirm: bool = False
+    request_id: str
 
 
 class ExtractionControlRequest(BaseModel):
@@ -1078,6 +1079,13 @@ def _group_selection_is_unlimited(connection: dict, *, primary: bool, platform_u
     return bool(platform_unlimited or _is_propai_connection(connection) or primary)
 
 
+def _selection_state(org_id: str, connection_id: int) -> dict:
+    result = storage.client.rpc("whatsapp_group_selection_state", {
+        "p_tenant": org_id, "p_connection": connection_id,
+    })
+    return result if isinstance(result, dict) else {"complete": False}
+
+
 def _cap_state(org_id: str, connection_id: int, *, unlimited: bool = False) -> dict:
     """Return group-selection state for the connected WhatsApp number."""
     connection = _connection(org_id, connection_id)
@@ -1239,6 +1247,14 @@ async def group_cap(
         raise HTTPException(503, "WhatsApp group controls are temporarily unavailable")
 
 
+@router.get("/groups/confirmation")
+async def group_selection_confirmation(whatsapp_connection_id: int, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    org_id = str(tenant_id or "").strip() or await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    await asyncio.to_thread(_connection, org_id, whatsapp_connection_id)
+    return await asyncio.to_thread(_selection_state, org_id, whatsapp_connection_id)
+
+
 @router.get("/groups")
 async def onboarding_groups(
     whatsapp_connection_id: int,
@@ -1257,25 +1273,35 @@ async def onboarding_groups(
                 timeout=5,
             )
         await _require_org_permission(user, org_id, "manage_whatsapp")
-        connection = await asyncio.to_thread(_connection, org_id, whatsapp_connection_id)
-        is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
+        connection, is_super_admin, unlimited = await asyncio.gather(
+            asyncio.to_thread(_connection, org_id, whatsapp_connection_id),
+            asyncio.to_thread(storage.is_super_admin, user["id"]),
+            asyncio.to_thread(_organization_has_unlimited_group_access, org_id),
+        )
         # This endpoint is on the connections page's critical path. Do not
         # block directory rendering on advisory overlap work. The cap state is
         # derived from the connection control plane and identifies raw-only
         # secondary numbers.
-        groups = await asyncio.wait_for(asyncio.to_thread(
-            _group_directory,
-            org_id,
-            str(connection.get("broker_id") or ""),
-            whatsapp_connection_id,
-            include_overlap=False,
-            allow_managed_selection=is_super_admin,
-        ), timeout=8)
-        cap = _cap_state(org_id, whatsapp_connection_id, unlimited=await asyncio.to_thread(
-            _organization_has_unlimited_group_access, org_id
-        ))
+        # Both reads are independent once permission and connection identity
+        # are checked. Keep synchronous database work off the API event loop;
+        # a slow cap lookup must not stall unrelated phones/status requests.
+        groups, cap, confirmation = await asyncio.gather(
+            asyncio.wait_for(asyncio.to_thread(
+                _group_directory,
+                org_id,
+                str(connection.get("broker_id") or ""),
+                whatsapp_connection_id,
+                include_overlap=False,
+                allow_managed_selection=is_super_admin,
+            ), timeout=8),
+            asyncio.to_thread(
+                _cap_state, org_id, whatsapp_connection_id, unlimited=unlimited
+            ),
+            asyncio.to_thread(_selection_state, org_id, whatsapp_connection_id),
+        )
         return {
             "groups": groups,
+            "selection_confirmation": confirmation,
             "extraction_status": connection.get("extraction_status") or "stopped",
             **cap,
         }
@@ -1289,6 +1315,8 @@ async def onboarding_groups(
 def _set_extraction_status(org_id: str, connection_id: int, status: str) -> dict:
     connection = _connection(org_id, connection_id)
     if status == "running" and not _is_propai_connection(connection):
+        if not _selection_state(org_id, connection_id).get("complete"):
+            raise HTTPException(409, "Saved choices exist but confirmation completion is not verified; extraction remains stopped")
         if not _is_primary_group_selection_connection(org_id, connection_id):
             raise HTTPException(
                 400,
@@ -1308,6 +1336,9 @@ def _set_extraction_status(org_id: str, connection_id: int, status: str) -> dict
         )
         if not selected:
             raise HTTPException(400, "Select and confirm at least one WhatsApp group before starting extraction")
+    if status == "running" and not _is_propai_connection(connection):
+        storage.client.rpc("start_confirmed_whatsapp_extraction", {"p_tenant": org_id, "p_connection": connection_id})
+        return {"ok": True, "whatsapp_connection_id": connection_id, "extraction_status": "running", "message": "Extraction started. New and queued messages will be processed."}
     updated = storage.update_org_whatsapp_connection(connection_id, {
         "extraction_status": status,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -1375,7 +1406,7 @@ async def check_group(
 ):
     org_id = _resolve_active_organization_id(user, tenant_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
-    connection = _connection(org_id, body.whatsapp_connection_id)
+    connection = await asyncio.to_thread(_connection, org_id, body.whatsapp_connection_id)
     is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
     unlimited = await asyncio.to_thread(_organization_has_unlimited_group_access, org_id)
     groups = _group_directory(
@@ -1405,7 +1436,7 @@ async def select_groups(
     """Persist the broker's explicitly confirmed group choices."""
     org_id = _resolve_active_organization_id(user, tenant_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
-    connection = _connection(org_id, body.whatsapp_connection_id)
+    connection = await asyncio.to_thread(_connection, org_id, body.whatsapp_connection_id)
     is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
     unlimited = await asyncio.to_thread(_organization_has_unlimited_group_access, org_id)
     requested = list(dict.fromkeys(str(jid).strip() for jid in body.group_jids if str(jid).strip()))
@@ -1437,69 +1468,26 @@ async def select_groups(
     if blocked:
         raise HTTPException(409, "A selected group is already covered by another active connection")
 
-    now = datetime.now(timezone.utc).isoformat()
-    if not _is_propai_connection(connection):
-        deselections = storage.client.table("organization_group_connections").update({
-            "is_active": False,
-            "opted_out": True,
-            "public_market_source": False,
-            "updated_at": now,
-        }).eq("organization_id", org_id).eq("whatsapp_connection_id", body.whatsapp_connection_id)
-        # Do not transiently opt out retained groups. Privacy triggers deliberately
-        # revoke raw sharing on a real opt-out, with no automatic regrant.
-        if requested:
-            # Current supabase-py exposes negative filters through the direct
-            # not_(column, operator, value) form. The older not_.in_ chain
-            # resolves to _NoFilterBuilder and raises at runtime.
-            deselections = deselections.not_("group_jid", "in", f"({','.join(requested)})")
-        deselections.execute()
-
-    if requested:
-        storage.client.table("organization_group_connections").upsert([
-            {
-                "organization_id": org_id,
-                "whatsapp_connection_id": body.whatsapp_connection_id,
-                "group_jid": jid,
-                "group_name": by_jid[jid].get("group_name") or jid,
-                "is_active": True,
-                "opted_out": False,
-                "public_market_source": True,
-                "network_owned": False,
-                "updated_at": now,
-                "connected_at": now,
-            }
-            for jid in requested
-        ], on_conflict="organization_id,whatsapp_connection_id,group_jid").execute()
-
-    # Confirmed selection is the publication consent. This updates existing
-    # typed rows as well as future extraction; raw evidence stays tenant-scoped.
-    for group_jid in requested:
-        storage.client.rpc("sync_group_market_visibility", {
-            "p_organization_id": org_id,
-            "p_group_jid": group_jid,
-            "p_group_name": by_jid[group_jid].get("group_name") or group_jid,
-            "p_public_market_source": True,
-        })
-
-    # Do not rewrite raw_messages here.  This endpoint is the control-plane
-    # commit for the user's explicit selection, while the extraction worker
-    # already applies the positive organization_group_connections policy to
-    # every fetched row.  Rewriting one raw_messages slice per directory group
-    # made confirmation scan the unbounded history table (and routinely hit
-    # statement_timeout) before returning the saved selection.  Raw history is
-    # intentionally retained; queued rows from non-selected groups remain
-    # queued and are suppressed by the worker when encountered.
-
-    storage.update_org_whatsapp_connection(body.whatsapp_connection_id, {
-        "group_audit_required": False,
-        "group_audit_completed_at": now,
-        "updated_at": now,
+    # One transaction commits exact choices, eligible typed visibility and receipt.
+    # This call must never be run from deployment or a GET recovery path.
+    try:
+        from uuid import UUID
+        request_id = str(UUID(body.request_id))
+    except (ValueError, TypeError):
+        raise HTTPException(400, "A valid confirmation request ID is required")
+    confirmation = await asyncio.to_thread(storage.client.rpc, "confirm_whatsapp_group_selection", {
+        "p_tenant": org_id, "p_connection": body.whatsapp_connection_id,
+        "p_groups": requested, "p_actor": user["id"], "p_request": request_id,
+        "p_broker": str(connection.get("broker_id") or ""),
     })
+    if not isinstance(confirmation, dict) or not confirmation.get("complete"):
+        raise HTTPException(409, "Confirmation changed; review the saved state")
+    # Do not append fallible directory/cap network reads after the transaction.
     return {
         "ok": True,
-        "selected_group_jids": requested,
-        "selected_count": len(requested),
-        "cap": _cap_state(org_id, body.whatsapp_connection_id, unlimited=unlimited),
+        "selected_group_jids": confirmation["selected_group_jids"],
+        "selected_count": len(confirmation["selected_group_jids"]),
+        "selection_confirmation": confirmation,
     }
 
 
