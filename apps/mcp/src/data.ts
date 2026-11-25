@@ -1286,20 +1286,42 @@ async function upsertLeadRecord(input: LeadRecordInput) {
     clientId = existingClient?.id ?? null;
   }
 
-  // Without a phone number, reuse an existing client with the exact same name
-  // in this tenant instead of creating a duplicate on every save.
+  // A name alone never establishes identity: two different clients can share
+  // one. Same-name clients are therefore never reused - each saved
+  // requirement without a phone gets its own client row. The same-name lookup
+  // below exists ONLY to find an exact-text replay (a retry of the same
+  // save), never to merge people.
   const clientName = compactText(input.name) || "MCP Lead";
-  if (clientId == null && !phone) {
-    const { data: namedClient, error: namedError } = await supabase
+  let replayRequirement: { id: number; client_id: number } | null = null;
+  if (clientId == null && !phone && input.recordType === "buyer_requirement") {
+    const { data: namedClients, error: namedError } = await supabase
       .from("clients")
       .select("id")
       .eq("tenant_id", input.brokerId)
       .ilike("name", clientName)
       .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(10);
     if (namedError) throw new Error(namedError.message);
-    clientId = namedClient?.id ?? null;
+    const candidateIds = (namedClients || []).map((row: { id: number }) => row.id);
+    if (candidateIds.length > 0) {
+      const { data: existingReplay, error: replayError } = await supabase
+        .from("client_requirements")
+        .select("id, client_id")
+        .eq("tenant_id", input.brokerId)
+        .in("client_id", candidateIds)
+        .eq("notes", input.rawText)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (replayError) throw new Error(replayError.message);
+      if (existingReplay) {
+        replayRequirement = {
+          id: existingReplay.id as number,
+          client_id: existingReplay.client_id as number,
+        };
+        clientId = replayRequirement.client_id;
+      }
+    }
   }
 
   if (clientId == null) {
@@ -1320,10 +1342,10 @@ async function upsertLeadRecord(input: LeadRecordInput) {
     clientId = clientRow.id;
   }
 
-  let requirementId: number | null = null;
-  let requirementReplayed = false;
-  if (input.recordType === "buyer_requirement") {
-    // Durable idempotency: the exact same requirement text for the same
+  let requirementId: number | null = replayRequirement?.id ?? null;
+  let requirementReplayed = replayRequirement != null;
+  if (requirementId == null && phone && input.recordType === "buyer_requirement") {
+    // Phone-identified client: the exact same requirement text for this
     // client in this tenant returns the existing row, however old it is.
     // Any change to the text intentionally creates a separate requirement.
     const { data: existingRequirement, error: existingRequirementError } = await supabase
