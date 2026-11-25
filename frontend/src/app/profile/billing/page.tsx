@@ -1,10 +1,50 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Network } from "lucide-react";
+import { fetchJSON } from "@/lib/api";
+
+type CurrentSubscription = {
+  plan_code: string;
+  status: string;
+  trial_ends_at: string | null;
+} | null;
+
+const PLAN_CODES = ["solo", "two_numbers", "three_numbers"] as const;
 
 export function BillingPage() {
+  const [subscription, setSubscription] = useState<CurrentSubscription>(null);
+  const [busyPlan, setBusyPlan] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    fetchJSON<{ subscription: CurrentSubscription }>("/billing/subscription")
+      .then((result) => setSubscription(result.subscription))
+      .catch(() => setSubscription(null));
+  }, []);
+
+  async function subscribe(planCode: string) {
+    setBusyPlan(planCode);
+    setMessage("");
+    try {
+      const result = await fetchJSON<{ short_url?: string }>("/billing/subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan_code: planCode }),
+      });
+      if (result.short_url) {
+        window.location.href = result.short_url;
+        return;
+      }
+      setMessage("Subscription created but no payment link was returned. Contact support.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Billing is not available yet.");
+    } finally {
+      setBusyPlan(null);
+    }
+  }
+
   return (
     <div className="max-w-2xl mx-auto px-4 lg:px-6 pt-12 pb-12">
       <div className="mb-8">
@@ -32,24 +72,40 @@ export function BillingPage() {
             <p className="mt-3 text-xs font-medium uppercase tracking-wide text-zinc-500">Solo</p>
             <p className="mt-2 text-2xl font-bold text-white">₹1,299 <span className="text-sm font-medium text-zinc-400">/ month</span></p>
             <p className="mt-1 text-sm text-zinc-400">1 WhatsApp number in one account, used through Instinct, Claude, or another MCP assistant. Assistant subscription separate.</p>
+            <button type="button" onClick={() => void subscribe(PLAN_CODES[0])} disabled={busyPlan !== null} className="mt-4 w-full rounded-lg bg-emerald-400 px-3 py-2 text-sm font-bold text-black disabled:opacity-60">
+              {busyPlan === PLAN_CODES[0] ? "Starting..." : "Start free trial"}
+            </button>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/10 p-4">
             <Network className="h-5 w-5 text-emerald-300" />
             <p className="mt-3 text-xs font-medium uppercase tracking-wide text-zinc-500">2 numbers</p>
             <p className="mt-2 text-2xl font-bold text-white">₹1,499 <span className="text-sm font-medium text-zinc-400">/ month</span></p>
             <p className="mt-1 text-sm text-zinc-400">Everything in Solo, with 2 WhatsApp numbers connected to the same account.</p>
+            <button type="button" onClick={() => void subscribe(PLAN_CODES[1])} disabled={busyPlan !== null} className="mt-4 w-full rounded-lg bg-emerald-400 px-3 py-2 text-sm font-bold text-black disabled:opacity-60">
+              {busyPlan === PLAN_CODES[1] ? "Starting..." : "Start free trial"}
+            </button>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/10 p-4">
             <Network className="h-5 w-5 text-emerald-300" />
             <p className="mt-3 text-xs font-medium uppercase tracking-wide text-zinc-500">3 numbers</p>
             <p className="mt-2 text-2xl font-bold text-white">₹2,599 <span className="text-sm font-medium text-zinc-400">/ month</span></p>
             <p className="mt-1 text-sm text-zinc-400">Everything in Solo, with 3 WhatsApp numbers connected to the same account.</p>
+            <button type="button" onClick={() => void subscribe(PLAN_CODES[2])} disabled={busyPlan !== null} className="mt-4 w-full rounded-lg bg-emerald-400 px-3 py-2 text-sm font-bold text-black disabled:opacity-60">
+              {busyPlan === PLAN_CODES[2] ? "Starting..." : "Start free trial"}
+            </button>
           </div>
         </div>
 
         <p className="text-sm leading-6 text-zinc-400">
           <Check className="mr-2 inline h-4 w-4 text-emerald-300" /> New workspaces include a 15-day free trial that starts with the first assistant search.
         </p>
+        {subscription && (
+          <p className="mt-3 text-sm text-zinc-300">
+            Current subscription: {subscription.plan_code} ({subscription.status})
+            {subscription.trial_ends_at ? ` - first charge after ${new Date(subscription.trial_ends_at).toLocaleDateString("en-IN")}` : ""}
+          </p>
+        )}
+        {message && <p className="mt-3 text-sm text-amber-300">{message}</p>}
       </div>
     </div>
   );
