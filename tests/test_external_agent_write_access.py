@@ -161,3 +161,23 @@ def test_saved_requirements_requires_read_scope():
             key={"tenant_id": "tenant-1", "scopes": []},
         ))
     assert excinfo.value.status_code == 403
+
+
+def test_contains_serializes_jsonb_filter():
+    import httpx
+    from storage.supabase import _RestClient
+    requests = []
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(200, json=[])
+    client = _RestClient("https://fixture.invalid", "fixture-only")
+    client._http.close()
+    client._http = httpx.Client(transport=httpx.MockTransport(handle))
+    try:
+        client.table("crm_inventory").select("id").contains(
+            "custom_fields", {"_idempotency_key": "abc-123"},
+        ).execute()
+        request, = requests
+        assert request.url.params["custom_fields"] == 'cs.{"_idempotency_key": "abc-123"}'
+    finally:
+        client.close()

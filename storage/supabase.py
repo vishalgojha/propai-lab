@@ -2585,6 +2585,11 @@ class _QueryBuilder:
         self._filters.append((column, "in", values))
         return self
 
+    def contains(self, column: str, value: Any):
+        """Add a PostgREST containment (@>) filter for JSONB columns."""
+        self._filters.append((column, "cs", value))
+        return self
+
     def is_(self, column: str, value: Any):
         """Add a PostgREST IS filter (typically ``null``/``true``)."""
         self._filters.append((column, "is", value))
@@ -2784,6 +2789,8 @@ class _RestClient:
                 params.append((column, f"not.in.({rendered})"))
             elif op == "not.is":
                 params.append((column, f"not.is.{value}"))
+            elif op == "cs":
+                params.append((column, f"cs.{json.dumps(value)}"))
             else:
                 params.append((column, f"{op}.{value}"))
         for column, desc in query._order:
