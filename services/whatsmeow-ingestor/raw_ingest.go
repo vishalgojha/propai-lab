@@ -92,11 +92,11 @@ func resolveLIDPhone(db *sql.DB, senderJID string) string {
 // The extraction worker polls raw_messages WHERE processed=false and handles
 // the full extraction pipeline.
 //
-// Returns the inserted row ID.
-func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]interface{}) (int64, error) {
+// Returns the row ID and whether the message already existed.
+func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]interface{}) (int64, bool, error) {
 	tenantID, err := resolveTenantID(sm.db, brokerID)
 	if err != nil || strings.TrimSpace(tenantID) == "" {
-		return 0, fmt.Errorf("tenant resolution failed for broker %s: %w", brokerID, err)
+		return 0, false, fmt.Errorf("tenant resolution failed for broker %s: %w", brokerID, err)
 	}
 
 	data, _ := payload["data"].(map[string]interface{})
@@ -118,7 +118,7 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 		}
 	}
 	if !strings.HasSuffix(groupJID, "@g.us") {
-		return 0, fmt.Errorf("direct-message ingestion disabled")
+		return 0, false, fmt.Errorf("direct-message ingestion disabled")
 	}
 
 	senderJID := ""
@@ -228,12 +228,12 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 				`SELECT id FROM public.raw_messages WHERE tenant_id = $1 AND message_uid = $2 AND source = 'WHATSAPP'`, tenantID, messageUID,
 			).Scan(&rawID)
 			if rawID > 0 {
-				return rawID, nil
+				return rawID, true, nil
 			}
 		}
-		return 0, fmt.Errorf("raw_messages insert: %w", err)
+		return 0, false, fmt.Errorf("raw_messages insert: %w", err)
 	}
-	return rawID, nil
+	return rawID, false, nil
 }
 
 // jsonDocument converts JSON bytes to text before binding them to a jsonb

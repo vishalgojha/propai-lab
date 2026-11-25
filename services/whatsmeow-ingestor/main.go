@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"context"
 	"crypto/hmac"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -119,6 +121,7 @@ type BrokerSession struct {
 	totalByType              map[string]int64
 	lastSeenByType           map[string]time.Time
 	statusFile               string
+	offlineSyncStarted       time.Time
 	pairingMode              string // "qr" or "code"
 	pairingPhone             string // phone number for code pairing
 	pairingModeChanged       chan struct{}
@@ -1208,7 +1211,32 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 		})
 
 	case *events.Message:
+		sm.logMessageDeliveryDiagnostics(s, v)
 		go sm.handleMessage(s, v)
+
+	case *events.UndecryptableMessage:
+		age := originalMessageAge(v.Info.Timestamp, time.Now())
+		log.Printf("[whatsapp-diagnostics] undecryptable_message original_age_seconds=%d unavailable=%t unavailable_type=%s decrypt_fail_mode=%s",
+			ageSeconds(age), v.IsUnavailable, v.UnavailableType, v.DecryptFailMode)
+
+	case *events.OfflineSyncPreview:
+		s.mu.Lock()
+		s.offlineSyncStarted = time.Now()
+		s.mu.Unlock()
+		log.Printf("[whatsapp-diagnostics] offline_sync_preview total=%d messages=%d app_data_changes=%d notifications=%d receipts=%d",
+			v.Total, v.Messages, v.AppDataChanges, v.Notifications, v.Receipts)
+
+	case *events.OfflineSyncCompleted:
+		s.mu.Lock()
+		started := s.offlineSyncStarted
+		s.offlineSyncStarted = time.Time{}
+		s.mu.Unlock()
+		duration := time.Duration(0)
+		if !started.IsZero() {
+			duration = time.Since(started)
+		}
+		log.Printf("[whatsapp-diagnostics] offline_sync_completed count=%d duration_seconds=%d",
+			v.Count, int64(duration/time.Second))
 
 	case *events.HistorySync:
 		go sm.handleHistorySync(s, v)
@@ -1252,6 +1280,35 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 			"data":  map[string]interface{}{"broker_id": s.brokerID, "chat_jid": v.Chat.String(), "sender_jid": v.Sender.String(), "state": string(v.State), "media": string(v.Media)},
 		})
 	}
+}
+
+// logMessageDeliveryDiagnostics records only timing and delivery metadata. In
+// particular, it deliberately excludes chat JIDs, sender IDs, raw message IDs,
+// message bodies, and phone numbers. Info.Timestamp is WhatsApp's original
+// message time, not the local insertion/sync time.
+func (sm *SessionManager) logMessageDeliveryDiagnostics(s *BrokerSession, evt *events.Message) {
+	if evt == nil {
+		return
+	}
+	age := originalMessageAge(evt.Info.Timestamp, time.Now())
+	log.Printf("[whatsapp-diagnostics] message_event original_age_seconds=%d retry_count=%d group=%t from_me=%t",
+		ageSeconds(age), evt.RetryCount, evt.Info.IsGroup, evt.Info.IsFromMe)
+}
+
+func originalMessageAge(original, now time.Time) time.Duration {
+	if original.IsZero() {
+		return 0
+	}
+	return now.Sub(original)
+}
+
+func ageSeconds(age time.Duration) int64 {
+	return int64(age / time.Second)
+}
+
+func messageIDHash(id string) string {
+	digest := sha256.Sum256([]byte(id))
+	return hex.EncodeToString(digest[:])[:12]
 }
 
 func (sm *SessionManager) initializeConnectedSession(s *BrokerSession) {
@@ -1562,10 +1619,14 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		LastMessageAt:   info.Timestamp.Format(time.RFC3339),
 	})
 
-	rawID, err := sm.insertRawMessage(s.brokerID, payload)
+	rawID, duplicate, err := sm.insertRawMessage(s.brokerID, payload)
 	if err != nil {
 		log.Printf("[broker %s] raw_messages insert failed: %v", s.brokerID, err)
 		return
+	}
+	if duplicate {
+		log.Printf("[whatsapp-diagnostics] duplicate_message_event message_id_hash=%s original_age_seconds=%d retry_count=%d",
+			messageIDHash(info.ID), ageSeconds(originalMessageAge(info.Timestamp, time.Now())), evt.RetryCount)
 	}
 	// The dedicated extraction worker polls persisted raw messages. Calling the
 	// API once per message is intentionally opt-in: bursts otherwise starve
@@ -2287,7 +2348,7 @@ func (sm *SessionManager) postWebMessage(s *BrokerSession, wmsg *waWeb.WebMessag
 		},
 	}
 
-	if _, err := sm.insertRawMessage(s.brokerID, payload); err != nil {
+	if _, _, err := sm.insertRawMessage(s.brokerID, payload); err != nil {
 		log.Printf("[broker %s] history sync raw_messages insert failed: %v", s.brokerID, err)
 		return false
 	}

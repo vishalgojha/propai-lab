@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -129,6 +130,35 @@ func TestHistorySyncAcceptsOnlyDirectChats(t *testing.T) {
 		if historySyncDirectChat(jid) {
 			t.Errorf("history sync accepted non-direct chat %q", jid)
 		}
+	}
+}
+
+func TestOriginalMessageAgeUsesEventTimestamp(t *testing.T) {
+	now := time.Date(2026, 11, 25, 12, 34, 0, 0, time.UTC)
+	original := now.Add(-19*time.Hour - 4*time.Minute - 7*time.Second)
+	if got := ageSeconds(originalMessageAge(original, now)); got != int64((19*time.Hour+4*time.Minute+7*time.Second)/time.Second) {
+		t.Fatalf("original message age = %d seconds, want event age", got)
+	}
+	if got := ageSeconds(originalMessageAge(now.Add(2*time.Second), now)); got != -2 {
+		t.Fatalf("future event age = %d seconds, want -2", got)
+	}
+	if got := ageSeconds(originalMessageAge(time.Time{}, now)); got != 0 {
+		t.Fatalf("zero timestamp age = %d seconds, want 0", got)
+	}
+}
+
+func TestPinnedWhatsMeowMessageCarriesRetryCount(t *testing.T) {
+	evt := events.Message{Info: types.MessageInfo{Timestamp: time.Unix(1, 0)}, RetryCount: 3}
+	if evt.RetryCount != 3 {
+		t.Fatal("diagnostics must read RetryCount from the pinned events.Message type")
+	}
+}
+
+func TestMessageIDHashDoesNotLogRawID(t *testing.T) {
+	const id = "ABCD1234"
+	got := messageIDHash(id)
+	if len(got) != 12 || strings.Contains(got, id) {
+		t.Fatalf("message ID diagnostic hash = %q, want truncated non-raw hash", got)
 	}
 }
 
