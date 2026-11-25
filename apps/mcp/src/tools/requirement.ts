@@ -36,8 +36,10 @@ export function registerRequirementTools(server: McpServer, context: ToolContext
     },
   }, async (input) => {
     const id = requireBrokerId(context);
+    const tenantId = requireTenantId(context);
     await logToolCall(id, "saved_requirements", input);
-    const requirements = await getSavedRequirements({ brokerId: id, limit: input.limit });
+    // Saved CRM requirements live under the organization tenant id.
+    const requirements = await getSavedRequirements({ brokerId: tenantId, limit: input.limit });
     return textResponse(
       requirements.length
         ? requirements.map((item, index) => `${index + 1}. ${item.name} - ${item.location_hint || "location not specified"} - BHK: ${item.bhk ?? "any"} - saved ${item.created_at}`).join("\n")

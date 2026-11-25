@@ -328,8 +328,9 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
+      const tenantId = requireTenantId(context);
       await logToolCall(id, "save_thread_requirement", input);
-      const result = await createRequirementRecord({ brokerId: id, ...input });
+      const result = await createRequirementRecord({ brokerId: tenantId, ...input });
       return textResponse(
         `Thread requirement saved${result.lead?.lead_id ? ` with lead id ${result.lead.lead_id}` : ""} for ${input.location_pref || "the requested location"}.`,
         deprecatedAlias(result, "create_requirement"),
@@ -454,8 +455,11 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
+      const tenantId = requireTenantId(context);
       await logToolCall(id, "create_requirement", input);
-      const result = await createRequirementRecord({ brokerId: id, ...input });
+      // CRM lead tables key rows by organization tenant id; passing the
+      // broker/user id here violates clients_tenant_id_fkey.
+      const result = await createRequirementRecord({ brokerId: tenantId, ...input });
       return textResponse(
         result.idempotent_replay
           ? `This exact requirement was already saved for ${input.location_pref || "the requested location"}; returning the existing record (lead id ${result.lead.lead_id}) without changes.`
