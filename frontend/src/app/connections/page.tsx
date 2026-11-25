@@ -1924,10 +1924,10 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                   {marketSharing.available && selectedGroups.has(group.group_jid) && !group.opted_out && (
                     marketSharing.activeJids.has(group.group_jid) ? (
                       <span className="connection-group-status rounded-md border border-sky-400/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-300" title="New messages from this group are searchable by other authenticated PropAI brokers' assistants" aria-label="Shared with other brokers">Shared</span>
-                    ) : marketSharing.revokedJids.has(group.group_jid) ? (
-                      <span className="connection-group-status rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300" title="Sharing was paused by a WhatsApp reconnect or deselect. Re-confirm to resume." aria-label="Sharing paused">Sharing paused</span>
                     ) : marketSharing.shareClassByJid[group.group_jid] === "non_property" ? (
                       <span className="connection-group-status rounded-md border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-zinc-400" title="Not a property-market group; never shared with other brokers" aria-label="Not shareable">Not shareable</span>
+                    ) : marketSharing.revokedJids.has(group.group_jid) ? (
+                      <span className="connection-group-status rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300" title="Sharing was paused by a WhatsApp reconnect or deselect. Re-confirm to resume." aria-label="Sharing paused">Sharing paused</span>
                     ) : (
                       <span className="connection-group-status rounded-md border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-zinc-400" title="Selected but not shared with other brokers" aria-label="Not shared">Not shared</span>
                     )
@@ -2067,7 +2067,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
 
       {selectionConfirmationOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="confirm-selection-title">
-          <div className="w-full max-w-md overflow-hidden rounded-xl border border-white/10 bg-zinc-950 shadow-2xl shadow-black/50">
+          <div className="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-xl border border-white/10 bg-zinc-950 shadow-2xl shadow-black/50">
             <div className="flex items-start gap-3 border-b border-white/10 px-5 py-4">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-400/25 bg-emerald-500/10">
                 <Check className="h-4 w-4 text-emerald-300" />
@@ -2092,7 +2092,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                         <p className="text-[11px] leading-4 text-sky-100/80">Never shared (not property-market groups): {nonPropertyJids.map((jid) => { const topic = marketSharing.shareTopicByJid[jid]; return `${nameByJid.get(jid) ?? jid}${topic ? ` (${topic})` : ""}`; }).join(", ")}.</p>
                       )}
                       {unclearJids.length > 0 && (
-                        <div className="text-[11px] leading-4 text-sky-100/80">
+                        <div className="max-h-40 overflow-y-auto pr-1 text-[11px] leading-4 text-sky-100/80">
                           <p>Not clearly property-market groups, left out unless you include them:</p>
                           {unclearJids.map((jid) => (
                             <label key={jid} className="mt-0.5 flex items-center gap-1.5">
