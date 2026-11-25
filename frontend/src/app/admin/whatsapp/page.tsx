@@ -120,7 +120,7 @@ export default function AdminWhatsAppPage() {
         <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="WhatsApp identity metrics">
           {[
             ["Linked numbers", metrics.unique_connected_numbers, "Actual WhatsApp sessions"],
-            ["Active parsers", metrics.unique_active_parsing_numbers, `${metrics.active_parsing_session_rows} sessions extracting now`],
+            ["Extraction enabled", metrics.unique_active_parsing_numbers, `${metrics.active_parsing_session_rows} sessions set to running`],
             ["Seen identities", metrics.unique_seen_identities, "Senders + group members"],
             ["Saved broker identities", metrics.resolved_broker_numbers, "Global broker directory"],
             ["Needs resolution", metrics.unresolved_seen_identities, "Seen, not in broker directory"],
@@ -179,15 +179,15 @@ export default function AdminWhatsAppPage() {
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.04]"><Smartphone className="h-4 w-4 text-zinc-300" /></div>
                   <div className="min-w-0"><div className="truncate text-sm font-semibold text-white">{session.instance_name || session.display_name || "WhatsApp phone"}</div><div className="truncate font-mono text-xs text-zinc-500">{session.phone_number_live || session.phone_number}</div><div className="truncate text-xs text-zinc-400">{organization?.name || "Unknown workspace"}</div></div>
                 </div>
-                <div><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase ${connectionTone}`}>{connected ? "Connected" : session.connection_state || "Offline"}</span></div>
+                <div><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase ${connectionTone}`}>{connected ? "Connected" : session.connection_state === "unknown" ? "Status unavailable" : session.connection_state || "Offline"}</span></div>
                 <div className="text-sm font-medium text-white">{session.total_messages_received?.toLocaleString() || "0"}</div>
                 <div className="flex items-center gap-2"><Toggle checked={session.self_chat_enabled !== false} disabled={busy} label="Toggle self-chat assistant" onChange={() => void updateSession(session, "self_chat_enabled")} /><span className="text-xs text-zinc-400">{session.self_chat_enabled !== false ? "On" : "Off"}</span></div>
                 <div><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase ${extractionTone}`}>{session.extraction_status || "stopped"}</span></div>
-                <div><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase ${accessTone}`}>{session.is_active !== false ? "Allowed" : "Banned"}</span></div>
+                <div><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase ${accessTone}`}>{session.is_active !== false ? "Allowed" : "Inactive"}</span></div>
                 <div className="flex flex-wrap justify-end gap-2">
                   <button type="button" disabled={busy || session.extraction_status !== "running"} onClick={() => void setExtractionStatus(session, "paused")} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-amber-500/30 px-3 text-xs font-semibold text-amber-300 hover:bg-amber-500/10 disabled:opacity-50"><Pause className="h-3.5 w-3.5" />Pause</button>
                   <button type="button" disabled={busy || session.extraction_status === "stopped"} onClick={() => { if (window.confirm("Stop extraction for this WhatsApp session? Queued messages will be preserved.")) void setExtractionStatus(session, "stopped"); }} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-red-500/30 px-3 text-xs font-semibold text-red-300 hover:bg-red-500/10 disabled:opacity-50"><Square className="h-3.5 w-3.5" />Stop</button>
-                  <button type="button" disabled={busy} onClick={() => { if (window.confirm(session.is_active !== false ? "Ban this WhatsApp session and disconnect it?" : "Restore this WhatsApp session?")) void updateSession(session, "is_active"); }} className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold disabled:opacity-50 ${session.is_active !== false ? "border-red-500/30 text-red-300 hover:bg-red-500/10" : "border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"}`}><Ban className="h-3.5 w-3.5" />{session.is_active !== false ? "Ban" : "Restore"}</button>
+                  <button type="button" disabled={busy} onClick={() => { if (window.confirm(session.is_active !== false ? "Deactivate this WhatsApp session and disconnect it?" : "Restore this WhatsApp session?")) void updateSession(session, "is_active"); }} className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold disabled:opacity-50 ${session.is_active !== false ? "border-red-500/30 text-red-300 hover:bg-red-500/10" : "border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"}`}><Ban className="h-3.5 w-3.5" />{session.is_active !== false ? "Deactivate" : "Restore"}</button>
                 </div>
               </section>
             );
