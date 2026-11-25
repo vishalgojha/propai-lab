@@ -1211,7 +1211,7 @@ def _connection_health(tenant_id: str) -> list[dict]:
     """Connection/capture/sharing status signals for the workspace owner's own
     assistant. Metadata only: counts and timestamps, never message content."""
     connections = storage.client.table("org_whatsapp_connections").select(
-        "id,broker_id,phone_number,display_name,is_active,extraction_status"
+        "id,broker_id,phone_number,instance_name,is_active,extraction_status"
     ).eq("organization_id", tenant_id).execute().data or []
     health = []
     for conn in connections:
@@ -1234,7 +1234,7 @@ def _connection_health(tenant_id: str) -> list[dict]:
         health.append({
             "connection_id": conn["id"],
             "phone_number": conn.get("phone_number"),
-            "display_name": conn.get("display_name"),
+            "instance_name": conn.get("instance_name"),
             "is_active": bool(conn.get("is_active")),
             "extraction_status": conn.get("extraction_status"),
             "selected_groups": len(selected_jids),

@@ -94,7 +94,7 @@ def _health_storage(tables):
 def test_connection_health_distinguishes_paused_from_never_shared(monkeypatch):
     tables = {
         'org_whatsapp_connections': [{'id': 225, 'broker_id': 'phone-owner', 'phone_number': '9199',
-                                      'display_name': 'Main', 'is_active': True, 'extraction_status': 'running'}],
+                                      'instance_name': 'Main', 'is_active': True, 'extraction_status': 'running'}],
         # A and B selected; C consented earlier but no longer selected.
         'organization_group_connections': [{'group_jid': 'A@g.us'}, {'group_jid': 'B@g.us'}],
         'broker_market_raw_source_consents': [
