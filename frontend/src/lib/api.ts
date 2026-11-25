@@ -349,10 +349,12 @@ export function selectOnboardingGroups(whatsappConnectionId: number, groupJids: 
   });
 }
 
+export type MarketShareClass = "property" | "unclear" | "non_property";
+
 export type MarketRawSources = {
-  groups: { group_jid: string; group_name: string }[];
-  active_sources: { group_jid: string; group_name: string; confirmed_at: string }[];
-  revoked_sources?: { group_jid: string; group_name: string; revoked_at: string }[];
+  groups: { group_jid: string; group_name: string; share_class?: MarketShareClass; share_class_topic?: string | null }[];
+  active_sources: { group_jid: string; group_name: string; confirmed_at: string; share_class?: MarketShareClass; share_class_topic?: string | null }[];
+  revoked_sources?: { group_jid: string; group_name: string; revoked_at: string; share_class?: MarketShareClass; share_class_topic?: string | null }[];
   consent_version: string;
   consent_text: string;
 };
@@ -361,7 +363,7 @@ export function getMarketRawSources(whatsappConnectionId: number) {
   return fetchJSON<MarketRawSources>(`/external/v1/market/raw-sources?whatsapp_connection_id=${encodeURIComponent(whatsappConnectionId)}`);
 }
 
-export function confirmMarketRawSources(whatsappConnectionId: number, groupJids: string[], consentVersion: string) {
+export function confirmMarketRawSources(whatsappConnectionId: number, groupJids: string[], consentVersion: string, allowUnclear: string[] = []) {
   return fetchJSON<{ enabled: boolean; changed: number }>("/external/v1/market/raw-sources", {
     method: "PUT",
     body: JSON.stringify({
@@ -370,6 +372,7 @@ export function confirmMarketRawSources(whatsappConnectionId: number, groupJids:
       consent_version: consentVersion,
       confirmed: true,
       enabled: true,
+      allow_unclear: allowUnclear,
     }),
   });
 }

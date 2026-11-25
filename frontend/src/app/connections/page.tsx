@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square, Search, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, getGroupSelectionConfirmation, checkOnboardingGroup, optOutOnboardingGroup, deselectOnboardingGroup, selectOnboardingGroups, getMarketRawSources, confirmMarketRawSources, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry } from "@/lib/api";
+import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, getGroupSelectionConfirmation, checkOnboardingGroup, optOutOnboardingGroup, deselectOnboardingGroup, selectOnboardingGroups, getMarketRawSources, confirmMarketRawSources, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry, type MarketShareClass } from "@/lib/api";
 import QRCode from "qrcode";
 import { connectionHealth, connectionMetric } from "@/lib/connectionHealth";
 
@@ -1223,45 +1223,70 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   const [savingSelection, setSavingSelection] = useState(false);
   const [checkingGroup, setCheckingGroup] = useState<string | null>(null);
-  const [marketSharing, setMarketSharing] = useState<{ available: boolean; consentVersion: string; consentText: string; activeJids: Set<string>; revokedJids: Set<string> }>({ available: false, consentVersion: "", consentText: "", activeJids: new Set<string>(), revokedJids: new Set<string>() });
+  const [marketSharing, setMarketSharing] = useState<{ available: boolean; consentVersion: string; consentText: string; activeJids: Set<string>; revokedJids: Set<string>; shareClassByJid: Record<string, MarketShareClass>; shareTopicByJid: Record<string, string> }>({ available: false, consentVersion: "", consentText: "", activeJids: new Set<string>(), revokedJids: new Set<string>(), shareClassByJid: {}, shareTopicByJid: {} });
   const [sharingError, setSharingError] = useState<string | null>(null);
-  const [pendingSharingJids, setPendingSharingJids] = useState<string[] | null>(null);
+  const [pendingSharing, setPendingSharing] = useState<{ jids: string[]; allowUnclear: string[] } | null>(null);
+  const [includedUnclear, setIncludedUnclear] = useState<Set<string>>(new Set());
   const [savingSharing, setSavingSharing] = useState(false);
 
   const loadMarketSharing = useCallback(async () => {
     try {
       const state = await getMarketRawSources(phone.id);
+      const shareClassByJid: Record<string, MarketShareClass> = {};
+      const shareTopicByJid: Record<string, string> = {};
+      for (const row of [...(state.groups || []), ...(state.active_sources || []), ...(state.revoked_sources || [])]) {
+        if (row.share_class) shareClassByJid[row.group_jid] = row.share_class;
+        if (row.share_class_topic) shareTopicByJid[row.group_jid] = row.share_class_topic;
+      }
       setMarketSharing({
         available: true,
         consentVersion: state.consent_version,
         consentText: state.consent_text,
         activeJids: new Set((state.active_sources || []).map((s) => s.group_jid)),
         revokedJids: new Set((state.revoked_sources || []).map((s) => s.group_jid)),
+        shareClassByJid,
+        shareTopicByJid,
       });
     } catch {
       // Sharing controls hidden when the feature is unavailable; nothing changes.
-      setMarketSharing({ available: false, consentVersion: "", consentText: "", activeJids: new Set<string>(), revokedJids: new Set<string>() });
+      setMarketSharing({ available: false, consentVersion: "", consentText: "", activeJids: new Set<string>(), revokedJids: new Set<string>(), shareClassByJid: {}, shareTopicByJid: {} });
     }
   }, [phone.id]);
 
-  const confirmSharing = useCallback(async (jids: string[]): Promise<boolean> => {
+  const confirmSharing = useCallback(async (jids: string[], allowUnclear: string[] = []): Promise<boolean> => {
     if (!marketSharing.available || jids.length === 0) return true;
     setSavingSharing(true);
     setSharingError(null);
     try {
-      await confirmMarketRawSources(phone.id, jids, marketSharing.consentVersion);
-      setPendingSharingJids(null);
+      await confirmMarketRawSources(phone.id, jids, marketSharing.consentVersion, allowUnclear);
+      setPendingSharing(null);
       await loadMarketSharing();
       return true;
     } catch {
       // Never claim sharing from intent. Status below reads actual consent rows.
-      setPendingSharingJids(jids);
+      setPendingSharing({ jids, allowUnclear });
       setSharingError("Selection is confirmed, but sharing could not be enabled. Nothing new was shared. Retry sends your explicit confirmation again for the same groups.");
       return false;
     } finally {
       setSavingSharing(false);
     }
   }, [loadMarketSharing, marketSharing.available, marketSharing.consentVersion, phone.id]);
+
+  // Sharing set for a confirmation: property groups are in by default,
+  // unclear names only with the broker's explicit per-group include, and
+  // non-property groups never. Unknown jids are held out (the API rejects
+  // anything outside the group directory anyway).
+  const computeSharingSet = useCallback((jids: Iterable<string>): { shareable: string[]; allowUnclear: string[] } => {
+    const shareable: string[] = [];
+    const allowUnclear: string[] = [];
+    for (const jid of jids) {
+      const cls = marketSharing.shareClassByJid[jid];
+      if (cls === "non_property") continue;
+      if (cls === "property") shareable.push(jid);
+      else if (includedUnclear.has(jid)) { shareable.push(jid); allowUnclear.push(jid); }
+    }
+    return { shareable, allowUnclear };
+  }, [includedUnclear, marketSharing.shareClassByJid]);
 
   const applyDirectorySelection = useCallback((next: OnboardingGroupState) => {
     const selectable = (next.groups || []).filter((group) => group.selectable !== false && !group.opted_out);
@@ -1381,9 +1406,10 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       } else {
         setMessage("Selection saved and confirmed for optional extraction. Raw WhatsApp capture is unaffected.");
       }
-      const sharingOk = await confirmSharing(Array.from(confirmed));
-      if (sharingOk && marketSharing.available && confirmed.size > 0) {
-        setMessage("Selection confirmed. New messages from the selected groups are shared with other authenticated PropAI brokers' assistants from now; old messages and private chats are never shared.");
+      const sharingSet = computeSharingSet(confirmed);
+      const sharingOk = await confirmSharing(sharingSet.shareable, sharingSet.allowUnclear);
+      if (sharingOk && marketSharing.available && sharingSet.shareable.length > 0) {
+        setMessage(`Selection confirmed. New messages from the ${sharingSet.shareable.length} shared group${sharingSet.shareable.length === 1 ? "" : "s"} are searchable by other authenticated PropAI brokers' assistants from now. Non-property groups, old messages and private chats stay private.`);
       }
       void Promise.resolve(onRefresh()).catch(() => undefined);
     } catch (err) {
@@ -1398,9 +1424,10 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
           setData((current) => current ? {...current, selected_count: receipt.selected_group_jids.length, selection_confirmation: receipt, groups: current.groups.map((group) => ({...group, connected: receipt.selected_group_jids.includes(group.group_jid), opted_out: receipt.selected_group_jids.includes(group.group_jid) ? false : group.opted_out}))} : current);
           setMessage("Selection saved and confirmed. Extraction remains under your separate Start control.");
           setError(null);
-          const sharingOk = await confirmSharing(receipt.selected_group_jids);
-          if (sharingOk && marketSharing.available && receipt.selected_group_jids.length > 0) {
-            setMessage("Selection confirmed. New messages from the selected groups are shared with other authenticated PropAI brokers' assistants from now; old messages and private chats are never shared.");
+          const sharingSet = computeSharingSet(receipt.selected_group_jids);
+          const sharingOk = await confirmSharing(sharingSet.shareable, sharingSet.allowUnclear);
+          if (sharingOk && marketSharing.available && sharingSet.shareable.length > 0) {
+            setMessage(`Selection confirmed. New messages from the ${sharingSet.shareable.length} shared group${sharingSet.shareable.length === 1 ? "" : "s"} are searchable by other authenticated PropAI brokers' assistants from now. Non-property groups, old messages and private chats stay private.`);
           }
         } else {
           setError("Could not verify this confirmation completed. Saved choices are shown below. Extraction has not been started.");
@@ -1419,6 +1446,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       setError(`Select at most ${data.cap} groups.`);
       return;
     }
+    setIncludedUnclear(new Set());
     setSelectionConfirmationOpen(true);
   };
 
@@ -1666,8 +1694,8 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       {sharingError && (
         <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/[0.08] px-3 py-2 text-xs text-amber-200">
           {sharingError}
-          {pendingSharingJids && (
-            <button type="button" disabled={savingSharing} onClick={() => void confirmSharing(pendingSharingJids)} className="ml-2 rounded-md border border-amber-400/40 px-2 py-0.5 font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-40">
+          {pendingSharing && (
+            <button type="button" disabled={savingSharing} onClick={() => void confirmSharing(pendingSharing.jids, pendingSharing.allowUnclear)} className="ml-2 rounded-md border border-amber-400/40 px-2 py-0.5 font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-40">
               {savingSharing ? "Confirming..." : "Retry sharing confirmation"}
             </button>
           )}
@@ -1898,6 +1926,8 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                       <span className="connection-group-status rounded-md border border-sky-400/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-300" title="New messages from this group are searchable by other authenticated PropAI brokers' assistants" aria-label="Shared with other brokers">Shared</span>
                     ) : marketSharing.revokedJids.has(group.group_jid) ? (
                       <span className="connection-group-status rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300" title="Sharing was paused by a WhatsApp reconnect or deselect. Re-confirm to resume." aria-label="Sharing paused">Sharing paused</span>
+                    ) : marketSharing.shareClassByJid[group.group_jid] === "non_property" ? (
+                      <span className="connection-group-status rounded-md border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-zinc-400" title="Not a property-market group; never shared with other brokers" aria-label="Not shareable">Not shareable</span>
                     ) : (
                       <span className="connection-group-status rounded-md border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-zinc-400" title="Selected but not shared with other brokers" aria-label="Not shared">Not shared</span>
                     )
@@ -2045,13 +2075,43 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
               <div className="min-w-0">
                 <h2 id="confirm-selection-title" className="text-sm font-semibold text-white">Confirm group selection</h2>
                 <p className="mt-1 text-xs leading-5 text-zinc-400">New group messages captured after pairing stay saved privately either way. Confirming these {selectedGroups.size} group{selectedGroups.size === 1 ? "" : "s"} saves them for optional extraction. Their listings stay private to your workspace unless shared-market publication is separately enabled for your workspace. Unchecked groups stay private; private messages are not captured. Saved groups that are no longer in your latest WhatsApp directory are removed from the selection and marked opted out.</p>
-                {marketSharing.available && selectedGroups.size > 0 && (
-                  <div className="mt-3 rounded-lg border border-sky-400/25 bg-sky-500/[0.06] px-3 py-2">
-                    <p className="text-[11px] font-semibold text-sky-200">Sharing with other PropAI brokers</p>
-                    <p className="mt-1 text-[11px] leading-4 text-sky-100/80">{marketSharing.consentText}</p>
-                    <p className="mt-1.5 text-[11px] leading-4 text-sky-100/80">Confirming shares new messages from the {selectedGroups.size} selected group{selectedGroups.size === 1 ? "" : "s"}. Unchecked groups and private messages are never shared. Reconnecting WhatsApp or removing a group pauses its sharing until you confirm again.</p>
-                  </div>
-                )}
+                {marketSharing.available && selectedGroups.size > 0 && (() => {
+                  const nameByJid = new Map((data?.groups ?? []).map((group) => [group.group_jid, whatsappGroupDisplayName(group)]));
+                  const selected = Array.from(selectedGroups);
+                  const propertyJids = selected.filter((jid) => marketSharing.shareClassByJid[jid] === "property");
+                  const unclearJids = selected.filter((jid) => { const cls = marketSharing.shareClassByJid[jid]; return cls !== "property" && cls !== "non_property"; });
+                  const nonPropertyJids = selected.filter((jid) => marketSharing.shareClassByJid[jid] === "non_property");
+                  const excludedCount = nonPropertyJids.length + unclearJids.filter((jid) => !includedUnclear.has(jid)).length;
+                  const sharingCount = selected.length - excludedCount;
+                  return (
+                    <div className="mt-3 space-y-1.5 rounded-lg border border-sky-400/25 bg-sky-500/[0.06] px-3 py-2">
+                      <p className="text-[11px] font-semibold text-sky-200">Raw group-message sharing (confirmed here)</p>
+                      <p className="text-[11px] leading-4 text-sky-100/80">Sharing lets other authenticated PropAI brokers' assistants search new message text in the shared groups for property requests. Only the groups covered by this confirmation are shared; nothing is posted anywhere by sharing. Your listings stay private: structured market publication is a separate, optional feature that stays off unless separately enabled, and confirming sharing here does not enable it.</p>
+                      <p className="text-[11px] leading-4 text-sky-100/80">Sharing when you confirm: {sharingCount} of {selected.length} selected group{selected.length === 1 ? "" : "s"}{propertyJids.length > 0 ? ` (${propertyJids.length} property group${propertyJids.length === 1 ? "" : "s"} included automatically)` : ""}.</p>
+                      {nonPropertyJids.length > 0 && (
+                        <p className="text-[11px] leading-4 text-sky-100/80">Never shared (not property-market groups): {nonPropertyJids.map((jid) => { const topic = marketSharing.shareTopicByJid[jid]; return `${nameByJid.get(jid) ?? jid}${topic ? ` (${topic})` : ""}`; }).join(", ")}.</p>
+                      )}
+                      {unclearJids.length > 0 && (
+                        <div className="text-[11px] leading-4 text-sky-100/80">
+                          <p>Not clearly property-market groups, left out unless you include them:</p>
+                          {unclearJids.map((jid) => (
+                            <label key={jid} className="mt-0.5 flex items-center gap-1.5">
+                              <input
+                                type="checkbox"
+                                className="h-3 w-3 accent-sky-400"
+                                checked={includedUnclear.has(jid)}
+                                onChange={() => setIncludedUnclear((current) => { const next = new Set(current); if (next.has(jid)) { next.delete(jid); } else { next.add(jid); } return next; })}
+                              />
+                              <span>{nameByJid.get(jid) ?? jid}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                      <p className="text-[11px] leading-4 text-sky-100/80">Reconnecting WhatsApp or removing a group pauses its sharing until you confirm again. Unchecked groups and private messages are never shared.</p>
+                      <p className="text-[10px] leading-4 text-sky-100/60">Recorded consent for each shared group: {marketSharing.consentText}</p>
+                    </div>
+                  );
+                })()}
               </div>
               <button type="button" onClick={() => setSelectionConfirmationOpen(false)} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close selection confirmation">
                 <X className="h-4 w-4" />

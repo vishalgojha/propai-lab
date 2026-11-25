@@ -15,7 +15,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from broker_market_policy import (CONSENT_TEXT, CONSENT_VERSION, CONTACT_NOTICE, PROPERTY_PATTERN,
                                   PropertySearch, redact_contacts, seal, unseal, search_bounds,
-                                  CONTACT_CONSENT_VERSION, CONTACT_CONSENT_TEXT)
+                                  CONTACT_CONSENT_VERSION, CONTACT_CONSENT_TEXT,
+                                  classify_group_share_topic, validate_group_share_eligibility)
 from routers.common import require_user, require_tenant, _require_org_permission, storage
 from routers.external_agent import external_auth, _require_scope, _record_assistant_trial_start
 
@@ -171,6 +172,9 @@ async def legacy_confirm_sources(body: ConsentRequest, user: dict = Depends(requ
 class RawSourceRequest(ConsentRequest):
     group_jids: list[str] = Field(max_length=200)
     enabled: bool
+    # Exact per-group opt-in for groups whose names are not clearly
+    # property-market. Non-property groups are never accepted here.
+    allow_unclear: list[str] = Field(default_factory=list, max_length=200)
 
 
 @router.get("/raw-sources")
@@ -211,8 +215,14 @@ async def raw_sources(whatsapp_connection_id: int, user: dict = Depends(require_
                         "last_message_at": g.get("last_message_at")} for g in directory}
         sources = [dict(s, **activity.get(s["group_jid"], {"message_count": 0, "last_message_at": None}))
                    for s in consent]
-        return {"groups": list(groups.values()), "active_sources": sources,
-                "revoked_sources": revoked,
+        # Topic classification so the API, not only the page, carries the
+        # non-property rule. Never content; names come from the directory.
+        def annotated(row):
+            share_class, topic = classify_group_share_topic(row.get("group_name"))
+            return dict(row, share_class=share_class, share_class_topic=topic)
+        return {"groups": [annotated(g) for g in groups.values()],
+                "active_sources": [annotated(s) for s in sources],
+                "revoked_sources": [annotated(r) for r in revoked],
                 "consent_version": CONSENT_VERSION, "consent_text": CONSENT_TEXT}
     return await asyncio.to_thread(read)
 
@@ -228,6 +238,32 @@ async def set_raw_sources(body: RawSourceRequest, user: dict = Depends(require_u
     groups = sorted(set(body.group_jids))
     if not groups or any(not re.fullmatch(r"[0-9-]+@g\.us", jid) for jid in groups):
         raise HTTPException(400, "Choose exact WhatsApp groups")
+    if any(not re.fullmatch(r"[0-9-]+@g\.us", jid) for jid in body.allow_unclear):
+        raise HTTPException(400, "Choose exact WhatsApp groups")
+    if body.enabled:
+        # Server-side enforcement of the product rule: non-property groups are
+        # never shared for another tenant, and unclear names stay out unless
+        # the broker explicitly confirmed that exact group (allow_unclear).
+        def load_names():
+            connection = storage.client.table("org_whatsapp_connections").select("broker_id").eq(
+                "organization_id", tenant_id).eq("id", body.whatsapp_connection_id).eq(
+                "is_active", True).limit(1).execute().data or []
+            if not connection:
+                raise HTTPException(404, "Active workspace connection not found")
+            rows = storage.client.table("whatsapp_conversations").select(
+                "conversation_jid,display_name").eq("tenant_id", tenant_id).eq(
+                "broker_id", connection[0]["broker_id"]).eq("conversation_type", "group").in_(
+                "conversation_jid", groups).execute().data or []
+            return {r["conversation_jid"]: r.get("display_name") or "" for r in rows}
+        names = await asyncio.to_thread(load_names)
+        blocked, held = validate_group_share_eligibility(groups, body.allow_unclear, names)
+        if blocked:
+            raise HTTPException(400, "Non-property groups can never be shared with other brokers: "
+                              + "; ".join(blocked))
+        if held:
+            raise HTTPException(400, "These groups are not clearly property-market groups and were "
+                              "left out. To share one, explicitly include it in the sharing dialog: "
+                              + "; ".join(held))
     changed = await rpc("broker_market_set_raw_sources", {
         "p_tenant": tenant_id, "p_connection": body.whatsapp_connection_id,
         "p_groups": groups, "p_actor": str(user["id"]),

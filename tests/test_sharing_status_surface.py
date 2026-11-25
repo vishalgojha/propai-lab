@@ -69,7 +69,7 @@ def test_raw_sources_returns_revoked_metadata_only(monkeypatch):
         revoked = body['revoked_sources']
         assert [s['group_jid'] for s in revoked] == ['456@g.us']
         # Metadata only: no message content, no senders, no other tenants.
-        assert set(revoked[0].keys()) == {'group_jid', 'group_name', 'revoked_at'}
+        assert set(revoked[0].keys()) == {'group_jid', 'group_name', 'revoked_at', 'share_class', 'share_class_topic'}
     finally:
         adapter.close()
 

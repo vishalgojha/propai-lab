@@ -82,7 +82,8 @@ def test_committed_scalar_grant_is_success_and_reload_is_truth(rig):
     reload = c.get('/api/external/v1/market/raw-sources?whatsapp_connection_id=225')
     assert reload.status_code == 200
     assert reload.json()['active_sources'] == [
-        {**s, 'message_count': 5, 'last_message_at': '2026-11-20T12:00:00Z'} for s in state['active']]
+        {**s, 'message_count': 5, 'last_message_at': '2026-11-20T12:00:00Z',
+         'share_class': 'property', 'share_class_topic': None} for s in state['active']]
     assert state['writes'] == 1
 
 

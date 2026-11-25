@@ -140,6 +140,7 @@ def client(seeded,monkeypatch):
         def select(self,cols):self.cols=cols;return self
         def eq(self,k,v):self.filters.append(sql.SQL('{}=%s').format(sql.Identifier(k)));self.args.append(v);return self
         def is_(self,k,v):self.filters.append(sql.SQL('{} is null').format(sql.Identifier(k)));return self
+        def in_(self,k,v):self.filters.append(sql.SQL('{}=ANY(%s)').format(sql.Identifier(k)));self.args.append(v);return self
         def order(self,k):self.sort=k;return self
         def limit(self,n):self.n=n;return self
         def execute(self):
@@ -398,3 +399,13 @@ def test_changed_device_for_same_phone_is_real_identity_boundary(seeded):
  grant(seeded);message(seeded)
  with db.cursor() as q:q.execute("update broker_whatsapp_devices set device_jid='12025550123:8@s.whatsapp.net' where whatsapp_connection_key='phone-a'")
  assert ids(db)==[]
+
+def test_unclear_group_held_out_until_explicit_include(client):
+    # '999@g.us' is seeded as 'Social Beta': not a property name, so the API
+    # holds it out of sharing until the owner explicitly includes that group.
+    c,seed=client
+    base={'whatsapp_connection_id':1,'group_jids':['999@g.us'],'consent_version':CONSENT_VERSION,'confirmed':True,'enabled':True}
+    r=c.put('/api/external/v1/market/raw-sources',json=base)
+    assert r.status_code==400 and 'not clearly property-market' in r.text
+    r=c.put('/api/external/v1/market/raw-sources',json={**base,'allow_unclear':['999@g.us']})
+    assert r.status_code==200,r.text

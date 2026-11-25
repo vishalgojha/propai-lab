@@ -133,3 +133,56 @@ def search_bounds(body: PropertySearch, cursor: dict | None) -> tuple[str, str, 
         return cursor["since"], cursor["until"], cursor["last_id"], cursor["last_at"]
     until = datetime.now(timezone.utc)
     return (until - timedelta(days=body.days)).isoformat(), until.isoformat(), None, None
+
+# Group-topic classification for raw group sharing. Mirrors the connections UI
+# hints, but enforced server-side: non-property group content is never shared
+# for another tenant, and unclear names stay out until the broker explicitly
+# includes that exact group. Patterns must stay in sync with
+# frontend/src/app/connections/page.tsx.
+REAL_ESTATE_GROUP_NAME_PATTERN = re.compile(
+    r"\b(real\s*estate|realty|properties|property|builders?|broker(?:s|age)?|flats?|"
+    r"apartments?|housing|rera|rent|sale|commercial|residential|industrial|shops?|"
+    r"offices?|warehouses?|land|plots?|inventory|construction|development)\b",
+    re.IGNORECASE,
+)
+NON_PROPERTY_GROUP_NAME_HINTS = (
+    (re.compile(r"\b(family|families|relatives|cousins?|friends?)\b", re.IGNORECASE), "personal or family"),
+    (re.compile(r"\b(hare\s*krishna|bhajan|bhakti|kirtan|satsang|temple|mandir|church|mosque|prayer)\b", re.IGNORECASE), "religious or devotional"),
+    (re.compile(r"\b(school|college|classmates?|students?|tuition|alumni|batchmates?)\b", re.IGNORECASE), "school or college"),
+    (re.compile(r"\b(cricket|football|badminton|sports?|gaming|gamers?)\b", re.IGNORECASE), "sports or gaming"),
+    (re.compile(r"\b(good\s*morning|gm\s*(?:wishes|messages)|daily\s*wishes|festival\s*wishes)\b", re.IGNORECASE), "greetings or wishes"),
+)
+
+
+def classify_group_share_topic(name: str | None):
+    """Return (share_class, topic): 'property', 'non_property' (+topic), or 'unclear'."""
+    text = (name or "").strip()
+    if not text:
+        return "unclear", None
+    if REAL_ESTATE_GROUP_NAME_PATTERN.search(text):
+        return "property", None
+    for pattern, topic in NON_PROPERTY_GROUP_NAME_HINTS:
+        if pattern.search(text):
+            return "non_property", topic
+    return "unclear", None
+
+
+def validate_group_share_eligibility(group_jids, allow_unclear, names_by_jid):
+    """Enforce the non-property sharing rule before any consent write.
+
+    Returns (blocked, held): non-property groups that can never be shared, and
+    unclear groups that need an exact per-group opt-in via allow_unclear.
+    Jids absent from names_by_jid are left to the directory-existence check.
+    """
+    blocked, held = [], []
+    allowed = set(allow_unclear or [])
+    for jid in group_jids:
+        if jid not in names_by_jid:
+            continue
+        name = names_by_jid.get(jid) or ""
+        share_class, topic = classify_group_share_topic(name)
+        if share_class == "non_property":
+            blocked.append("%s (%s group)" % (name or jid, topic))
+        elif share_class == "unclear" and jid not in allowed:
+            held.append(name or jid)
+    return blocked, held
