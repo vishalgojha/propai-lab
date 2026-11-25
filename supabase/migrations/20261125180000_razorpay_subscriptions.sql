@@ -26,6 +26,7 @@ create table if not exists public.tenant_subscriptions (
   plan_code text not null references public.subscription_plans(code),
   razorpay_subscription_id text unique,
   razorpay_customer_id text,
+  short_url text,
   status text not null default 'created',
   start_at timestamptz,
   trial_ends_at timestamptz,
