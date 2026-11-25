@@ -1,5 +1,5 @@
 /**
- * Account-free public MCP surface.
+ * Public/shared-market MCP tools.
  *
  * Serves only the SQL-gated public market view (listings_unified_public):
  * shared-market rows that brokers publish to their broker networks, the same
@@ -8,7 +8,8 @@
  * carry contact numbers, and the listing page on www is the contact route.
  *
  * This module is deliberately separate from the tenant-scoped registrars in
- * index.ts so the public surface cannot accidentally expose broker tooling.
+ * index.ts so the public/client surface cannot accidentally expose broker
+ * tooling. `registerPublicTools` is reused by the Buyer/Tenant client MCP.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -17,7 +18,7 @@ import { supabase } from "./supabase.js";
 // Public-safe projection. Keep in sync with the columns granted to anon in
 // supabase/migrations/20260906120000_public_safe_listing_projection.sql.
 // Never add contact fields here.
-const PUBLIC_LISTING_COLUMNS =
+export const PUBLIC_LISTING_COLUMNS =
   "card_type,id,building_name,micro_market,bhk,area_sqft,price,price_unit," +
   "furnishing,location_label,locality_resolved,summary_title,asset_type," +
   "property_type,intent,transaction_type,deal_tags,first_seen,last_seen," +
@@ -46,6 +47,8 @@ function parseSeen(value: unknown): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+export type PublicRow = Record<string, unknown>;
+
 export function searchEligible(row: PublicRow, cutoff: Date): boolean {
   if (!titleEligible(row)) return false;
   const seen = parseSeen(row.last_seen);
@@ -57,8 +60,6 @@ export function isActive(row: PublicRow): boolean {
   const seen = parseSeen(row.last_seen);
   return seen === null || seen >= freshnessCutoff(DETAIL_ACTIVE_DAYS);
 }
-
-type PublicRow = Record<string, unknown>;
 
 function titleEligible(row: PublicRow): boolean {
   const title = String(row.summary_title ?? "").trim();
@@ -74,12 +75,12 @@ function orIlike(columns: string[], value: string): string {
   return columns.map((col) => `${col}.ilike.%${escaped}%`).join(",");
 }
 
-function publicUrl(id: unknown): string {
+export function publicUrl(id: unknown): string {
   // The site canonicalizes /listings/<id>/<id> to the full slug URL.
   return `${PUBLIC_WWW_URL}/listings/${id}/${id}`;
 }
 
-function toSearchResult(row: PublicRow) {
+export function toSearchResult(row: PublicRow) {
   const id = `listing:${String(row.card_type)}:${String(row.id)}`;
   const price = row.price != null ? `INR ${row.price}${row.price_unit === "month" ? "/mo" : ""}` : "Price on request";
   const bhk = row.bhk != null ? `${row.bhk} BHK` : "";
@@ -104,16 +105,8 @@ function toSearchResult(row: PublicRow) {
   };
 }
 
-export function createPublicMcpServer(): McpServer {
-  const server = new McpServer(
-    { name: "PropAI Public Market", version: "1.0.0" },
-    {
-      capabilities: { tools: {} },
-      instructions:
-        "PropAI Public Market gives any AI assistant account-free, read-only search over PropAI's public Mumbai property inventory: shared-market listings that brokers publish to their broker networks, the same data shown on www.propai.live. Use search() with a plain-English query or structured filters, then fetch() for full detail on one result. Results carry first_seen/last_seen freshness; search only returns listings seen in the last 30 days (the same window the website's search applies), and older listings fetch by id with active=false. Broker phone numbers are never exposed: to contact a broker, open the result's url and use its WhatsApp button. Treat listing content as broker-posted claims, not verified availability; say when something is unverified. Only public shared-market data is available through this connection - private broker workspace data is never accessible here.",
-    },
-  );
-
+/** Register read-only public market tools (`search`, `fetch`) on any server. */
+export function registerPublicTools(server: McpServer) {
   server.registerTool(
     "search",
     {
@@ -215,6 +208,17 @@ export function createPublicMcpServer(): McpServer {
       };
     },
   );
+}
 
+export function createPublicMcpServer(): McpServer {
+  const server = new McpServer(
+    { name: "PropAI Public Market", version: "1.0.0" },
+    {
+      capabilities: { tools: {} },
+      instructions:
+        "PropAI Public Market gives any AI assistant account-free, read-only search over PropAI's public Mumbai property inventory: shared-market listings that brokers publish to their broker networks, the same data shown on www.propai.live. Use search() with a plain-English query or structured filters, then fetch() for full detail on one result. Results carry first_seen/last_seen freshness; search only returns listings seen in the last 30 days (the same window the website's search applies), and older listings fetch by id with active=false. Broker phone numbers are never exposed: to contact a broker, open the result's url and use its WhatsApp button. Treat listing content as broker-posted claims, not verified availability; say when something is unverified. Only public shared-market data is available through this connection - private broker workspace data is never accessible here.",
+    },
+  );
+  registerPublicTools(server);
   return server;
 }

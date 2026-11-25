@@ -58,6 +58,8 @@ export const MCP_TOOL_NAMES = [
   "listing_history",
   "listing_contact_broker",
   "listing_timeline",
+  "verify_listing_availability",
+  "stale_inventory",
   "requirement_search",
   "requirement_match",
   "requirement_timeline",

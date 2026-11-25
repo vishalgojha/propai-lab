@@ -4,11 +4,11 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import * as api from "@/lib/api";
 import { useEventStream } from "@/lib/useEventStream";
 import { LatestWhatsAppKnowledge } from "@/components/dashboard/LatestWhatsAppKnowledge";
-import SetupGuide from "@/components/SetupGuide";
-import { ArrowRight, MessageCircle, Building2, Target, Home, AlertTriangle, Search, ListChecks, Radio, BarChart3, Clock3 } from "lucide-react";
+import { ArrowRight, MessageCircle, Building2, Target, Home, AlertTriangle, Search, ListChecks, Radio, BarChart3, Clock3, Check, Copy, PlugZap, PlayCircle } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
 import { ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
@@ -34,6 +34,8 @@ const METRICS = [
   { key: "needs_review", label: "Being Verified", icon: AlertTriangle, color: "text-orange-400", bg: "bg-orange-500/10" },
 ];
 
+const MCP_ENDPOINT = "https://mcp.propai.live/raw-mcp";
+
 export default function DashboardPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
@@ -46,6 +48,7 @@ export default function DashboardPage() {
   const [groups, setGroups] = useState<api.AuditGroupCard[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
+  const [copiedMcpUrl, setCopiedMcpUrl] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -112,6 +115,12 @@ export default function DashboardPage() {
     { key: "buildings_pending_approval", label: "Approve building matches", detail: "Resolve names so search stays clean.", count: Number(actionCards?.buildings_pending_approval || 0), href: "/buildings/enrichment", icon: Building2, tone: "info" },
   ].filter((item) => item.count > 0);
 
+  async function copyMcpUrl() {
+    await navigator.clipboard.writeText(MCP_ENDPOINT);
+    setCopiedMcpUrl(true);
+    window.setTimeout(() => setCopiedMcpUrl(false), 1800);
+  }
+
   return (
     <div className="propai-dashboard-page space-y-7">
       <header className="dashboard-heading">
@@ -134,7 +143,31 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <SetupGuide variant="card" />
+      <section className="dashboard-mcp-hero" aria-labelledby="mcp-first-heading">
+        <div className="dashboard-mcp-hero-main">
+          <div className="dashboard-mcp-mark"><PlugZap className="h-5 w-5" strokeWidth={1.8} /></div>
+          <div>
+            <p className="dashboard-mcp-eyebrow">Your brokerage copilot</p>
+            <h2 id="mcp-first-heading">Connect PropAI to Claude</h2>
+            <p className="dashboard-mcp-copy">Ask Claude to search your private WhatsApp inventory, find stale listings, match requirements, and draft ads. Your workspace stays tenant-scoped and nothing is sent without your approval.</p>
+            <div className="dashboard-mcp-actions">
+              <Link href="/account?tab=mcp" className="dashboard-mcp-primary"><PlugZap className="h-4 w-4" /> Connect MCP</Link>
+              <Link href="/account?tab=mcp#how-to-connect" className="dashboard-mcp-secondary"><PlayCircle className="h-4 w-4" /> See how it works</Link>
+            </div>
+          </div>
+        </div>
+        <div className="dashboard-mcp-endpoint">
+          <span>Server URL</span>
+          <div className="dashboard-mcp-endpoint-row">
+            <code>{MCP_ENDPOINT}</code>
+            <button type="button" onClick={() => void copyMcpUrl()} aria-label="Copy MCP server URL" className="dashboard-mcp-copy-button">
+              {copiedMcpUrl ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              <span>{copiedMcpUrl ? "Copied" : "Copy"}</span>
+            </button>
+          </div>
+          <p>1. Add the URL in Claude → Settings → Connectors · 2. Approve PropAI · 3. Start asking.</p>
+        </div>
+      </section>
 
       {dataError && (
         <div role="alert" className="flex items-center justify-between gap-4 rounded-xl border border-orange-300/30 bg-orange-50/70 px-4 py-3 text-sm text-orange-950">
@@ -264,10 +297,10 @@ export default function DashboardPage() {
         <div className="dashboard-section-heading"><div><h2 id="actions-heading">Move the work forward</h2><p>Jump straight into the parts of your workspace that need attention.</p></div></div>
         <div className="dashboard-action-grid">
           {[
-            { label: "Connect your assistant", count: "→", icon: Search, href: "/workspace/instinct", detail: "Use Instinct, Claude, or Gemini with your PropAI data" },
+            { label: "Open Market Inbox", count: "→", icon: MessageCircle, href: "/inbox", detail: "WhatsApp-style broker workspace" },
+            { label: "Search Listings", count: "→", icon: Search, href: "/chat", detail: "Find any property, broker, group" },
             { label: "Review Items", count: suggestionPending || "→", icon: ListChecks, href: "/chat?tab=review", detail: "Records needing confirmation" },
-            { label: "Review market data", count: "→", icon: MessageCircle, href: "/inbox", detail: "Triage and correct captured market posts" },
-            { label: "Connect groups", count: "→", icon: Radio, href: "/whatsapp?tab=groups", detail: "Choose groups to connect for parsing" },
+            { label: "Manage Groups", count: "→", icon: Radio, href: "/whatsapp?tab=groups", detail: "Choose groups to connect for parsing" },
           ].map(card => (
             <button
               key={card.label}

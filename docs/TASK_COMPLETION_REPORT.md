@@ -1496,6 +1496,6 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Files/services changed: `frontend/src/app/connections/page.tsx` only. No service or production state was changed.
 - Behavior: When extraction is already stopped, the UI now renders a clear non-actionable `Extraction stopped` state with a tooltip instead of a disabled button labeled `Stop extraction`. When extraction is running or paused, the existing Stop extraction action remains available and continues through the confirmation flow.
 - Verification performed: `git diff --check` passed; the changed file's ESLint run completed with 0 errors and existing warnings only; the Impeccable detector returned no findings. Independent task-verifier second pass: **PARTIAL** — the rendered-state defect is fixed by source inspection, but an authenticated browser click-through and live API smoke test were not available in this pass.
-- Deployment/push status: Pending commit and push. Relevant service needing redeployment: `propai-lab:main-app`. No deployment was performed.
+- Deployment/push status: Commit `39586483` was pushed to `origin/main`. Relevant service needing redeployment: `propai-lab:main-app`. No deployment was performed.
 - Known limitations: This change clarifies extraction state; it does not add a new disconnect action for stopping raw WhatsApp capture, which is a separate control.
-- Next action: Commit and push this UI change, then redeploy `propai-lab:main-app` and verify the running/paused Stop extraction flow in the authenticated dashboard.
+- Next action: Redeploy `propai-lab:main-app` and verify the running/paused Stop extraction flow in the authenticated dashboard.

@@ -5,14 +5,41 @@ export type AuthenticatedUser = User & {
   tenant_id?: string;
 };
 
+/**
+ * Lightweight, no-login client identity for the Buyer/Tenant MCP (property
+ * seekers: buyers and tenants). Issued only after a validated, consented basic
+ * form submission; never grants broker/workspace membership or a tenant scope.
+ */
+export type ClientGuest = {
+  kind: "guest";
+  /** Opaque guest session id (token subject). */
+  guest_id: string;
+  /** Own lead/client record id, if created. */
+  lead_id?: string;
+  /** Own requirement record id, if created. */
+  requirement_id?: string;
+  /** Declared intent captured at form time. */
+  intent?: "buy" | "rent";
+  scopes: string[];
+  exp: number;
+};
+
 export type ToolContext = {
+  /** Authenticated broker/workspace user (tenant-scoped MCP only). */
   user?: AuthenticatedUser;
   /**
    * Account-free public connection: no bearer token was presented. The server
-   * must expose only the public market tools (publicTools.ts) and never any
-   * tenant-scoped data or broker tooling.
+   * must expose only the public market tools and never any tenant-scoped data
+   * or broker tooling.
    */
   publicOnly?: boolean;
+  /**
+   * Buyer/Tenant guest session (no PropAI login). Bound only to the guest's
+   * own submitted records; never a tenant/workspace identity.
+   */
+  clientGuest?: ClientGuest;
+  /** Which MCP surface this context belongs to. */
+  surface?: "broker" | "client";
 };
 
 export type PublicListing = {
