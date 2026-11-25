@@ -236,7 +236,6 @@ flowchart LR
     route__connections -.-> api__extraction_progress["/extraction/progress"]
     route__connections -.-> api__stats["/stats"]
     route__extractions -.-> api__extraction_progress_hours_24["/extraction/progress?hours=24"]
-    route__market -.-> api__market_inbox_quality_metrics["/market/inbox/quality-metrics"]
     route__profile_team -.-> api__workspace_members["/workspace/members"]
     route__profile_team -.-> api__workspace_roles["/workspace/roles"]
     route__social_flow -.-> api__social_flow_actions_execute["/social-flow/actions/execute"]
