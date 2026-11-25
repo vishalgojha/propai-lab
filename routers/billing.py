@@ -37,6 +37,31 @@ def _require_keys() -> tuple[str, str]:
     return _KEY_ID, _KEY_SECRET
 
 
+def _parse_ts(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+async def _cancel_remote_subscription(subscription_id: str | None, key_id: str, key_secret: str) -> None:
+    if not subscription_id:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            await client.post(
+                f"{RAZORPAY_API_BASE}/subscriptions/{subscription_id}/cancel",
+                auth=(key_id, key_secret),
+            )
+    except Exception:
+        logger.exception("Compensating cancel failed for Razorpay subscription %s", subscription_id)
+
+
 def verify_webhook_signature(body: bytes, signature: str, secret: str) -> bool:
     expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature or "")
@@ -106,14 +131,23 @@ async def create_subscription(body: SubscriptionCreate, user: dict = Depends(req
             "existing": True,
             "note": "An open subscription already exists for this workspace; no new one was created.",
         })
-    # Trial eligibility follows the established commercial intent: only a
-    # workspace that has never started its assistant trial gets the 15-day
-    # offset. Existing brokers with a started trial are billed from day one.
+    # Trial handling follows the recorded assistant-trial state
+    # (ASSISTANT_TRIAL_DAYS=15, start on first search, end stored on the org):
+    # an unexpired recorded trial end is PRESERVED as the subscription start,
+    # so remaining days are never billed twice. A workspace that never started
+    # gets the 15-day offset from subscription time. A past/legacy trial gets
+    # no new offset (not a new workspace).
     org_rows = storage.client.table("organizations").select(
-        "mcp_trial_started_at"
+        "mcp_trial_started_at, mcp_trial_ends_at"
     ).eq("id", tenant_id).limit(1).execute().data or []
-    trial_already_started = bool(org_rows and org_rows[0].get("mcp_trial_started_at"))
-    start_at = None if trial_already_started else datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS)
+    org = org_rows[0] if org_rows else {}
+    now = datetime.now(timezone.utc)
+    start_at = None
+    recorded_end = _parse_ts(org.get("mcp_trial_ends_at"))
+    if recorded_end and recorded_end > now:
+        start_at = recorded_end  # preserve unexpired entitlement exactly
+    elif not org.get("mcp_trial_started_at") and not org.get("mcp_trial_ends_at"):
+        start_at = now + timedelta(days=TRIAL_DAYS)  # never trialled
     payload = {
         "plan_id": plan["razorpay_plan_id"],
         "total_count": 120,
@@ -136,7 +170,8 @@ async def create_subscription(body: SubscriptionCreate, user: dict = Depends(req
         logger.warning("Razorpay subscription create rejected: status=%s", resp.status_code)
         raise HTTPException(502, "Razorpay rejected the subscription request")
     data = resp.json()
-    storage.client.table("tenant_subscriptions").insert({
+    try:
+        storage.client.table("tenant_subscriptions").insert({
         "tenant_id": tenant_id,
         "plan_code": body.plan_code,
         "razorpay_subscription_id": data.get("id"),
@@ -145,7 +180,27 @@ async def create_subscription(body: SubscriptionCreate, user: dict = Depends(req
         "start_at": start_at.isoformat() if start_at else None,
         "trial_ends_at": start_at.isoformat() if start_at else None,
         "created_by": user["id"],
-    }).execute()
+        }).execute()
+    except Exception:
+        # The remote subscription exists but the local record failed. Never
+        # leave an orphan billable subscription: cancel it, then return any
+        # concurrently created open subscription or fail loudly.
+        logger.exception("Local subscription record failed after Razorpay create; cancelling remote")
+        await _cancel_remote_subscription(data.get("id"), key_id, key_secret)
+        concurrent = storage.client.table("tenant_subscriptions").select(
+            "id,status,short_url,trial_ends_at"
+        ).eq("tenant_id", tenant_id).order("created_at", desc=True).limit(5).execute().data or []
+        open_sub = next((row for row in concurrent if row.get("status") in _OPEN_SUBSCRIPTION_STATUSES), None)
+        if open_sub:
+            return JSONResponse(status_code=200, content={
+                "subscription_id": open_sub.get("id"),
+                "status": open_sub["status"],
+                "short_url": open_sub.get("short_url"),
+                "trial_ends_at": open_sub.get("trial_ends_at"),
+                "existing": True,
+                "note": "An open subscription already exists for this workspace; no new one was created.",
+            })
+        raise HTTPException(503, "Subscription could not be recorded; any remote subscription was cancelled")
     return {
         "subscription_id": data.get("id"),
         "status": data.get("status"),

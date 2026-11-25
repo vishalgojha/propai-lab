@@ -192,13 +192,65 @@ def test_trial_offset_only_for_never_trialled_workspace(env):
     assert trial_row["trial_ends_at"] is not None
 
     env2 = env
-    env2.tables["organizations"] = [{"id": "t2", "mcp_trial_started_at": "2026-11-01T00:00:00Z"}]
+    env2.tables["organizations"] = [{"id": "t2", "mcp_trial_started_at": "2026-11-01T00:00:00Z",
+                                     "mcp_trial_ends_at": "2026-11-16T00:00:00Z"}]
     _FakeRazorpayClient.calls = []
     _create(tenant="t2")
     payload2 = _FakeRazorpayClient.calls[0]["json"]
-    assert "start_at" not in payload2  # existing broker billed from day one
+    assert "start_at" not in payload2  # expired trial: existing broker, no new offset
     row2 = env2.tables["tenant_subscriptions"][-1]
     assert row2["trial_ends_at"] is None
+
+
+def test_unexpired_trial_end_preserved_as_subscription_start(env):
+    from datetime import timedelta
+    future_end = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+    env.tables["organizations"] = [{"id": "t1", "mcp_trial_started_at": "2026-11-20T00:00:00Z",
+                                    "mcp_trial_ends_at": future_end}]
+    _create()
+    payload = _FakeRazorpayClient.calls[0]["json"]
+    expected_ts = int(datetime.fromisoformat(future_end).timestamp())
+    assert payload["start_at"] == expected_ts  # remaining days never billed twice
+    row = env.tables["tenant_subscriptions"][0]
+    assert row["trial_ends_at"] == future_end
+
+
+def test_concurrent_duplicate_cancels_remote_and_returns_existing(env, monkeypatch):
+    from fastapi.responses import JSONResponse
+    store = env
+    original_insert_rows = []
+
+    class _RacyTable(_FakeTable):
+        def insert(self, payload):
+            # Simulate the competing request committing first, then our insert
+            # hitting the unique index.
+            store.tables["tenant_subscriptions"].append({
+                "id": "row-concurrent", "tenant_id": "t1", "plan_code": "solo",
+                "status": "created", "short_url": "https://rzp.io/l/other",
+                "trial_ends_at": None, "created_at": "2026-11-25T00:00:01Z",
+            })
+            raise Exception("duplicate key value violates unique constraint")
+
+    monkeypatch.setattr(store.client, "table", lambda name: _RacyTable(store, name))
+    result = _create()
+    assert isinstance(result, JSONResponse)
+    body = json.loads(result.body.decode())
+    assert body["existing"] is True
+    cancel_calls = [c for c in _FakeRazorpayClient.calls if c["url"].endswith("/cancel")]
+    assert len(cancel_calls) == 1  # orphan remote subscription cancelled
+
+
+def test_local_failure_without_concurrent_cancels_remote_and_503s(env, monkeypatch):
+    class _FailTable(_FakeTable):
+        def insert(self, payload):
+            raise Exception("database unavailable")
+
+    monkeypatch.setattr(env.client, "table", lambda name: _FailTable(env, name))
+    with pytest.raises(HTTPException) as exc:
+        _create()
+    assert exc.value.status_code == 503
+    cancel_calls = [c for c in _FakeRazorpayClient.calls if c["url"].endswith("/cancel")]
+    assert len(cancel_calls) == 1  # no orphan billable subscription left
 
 
 def test_create_grants_no_paid_entitlement(env):

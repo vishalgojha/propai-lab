@@ -47,3 +47,9 @@ create table if not exists public.razorpay_webhook_events (
   processed_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+-- At most one open subscription per workspace: concurrent subscribe clicks
+-- that both pass the pre-check still cannot create two local records.
+create unique index if not exists uq_tenant_subscriptions_one_open
+  on public.tenant_subscriptions(tenant_id)
+  where status in ('created', 'authenticated', 'active', 'paused');
