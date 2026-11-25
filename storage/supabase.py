@@ -2790,7 +2790,7 @@ class _RestClient:
             elif op == "not.is":
                 params.append((column, f"not.is.{value}"))
             elif op == "cs":
-                params.append((column, f"cs.{json.dumps(value)}"))
+                params.append((column, f"cs.{json.dumps(value, separators=(',', ':'))}"))
             else:
                 params.append((column, f"{op}.{value}"))
         for column, desc in query._order:

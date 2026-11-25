@@ -1077,7 +1077,7 @@ async def external_create_inventory(
     if normalized_idempotency_key:
         existing = storage.client.table("crm_inventory").select("*").eq(
             "tenant_id", str(key["tenant_id"])
-        ).contains("custom_fields", {"_idempotency_key": normalized_idempotency_key}).limit(1).execute()
+        ).eq("custom_fields->>_idempotency_key", normalized_idempotency_key).limit(1).execute()
         existing_row = (existing.data or [None])[0] if existing else None
         if existing_row:
             _write_audit_finish(audit_id, "succeeded", entity_id=str(existing_row.get("id") or ""), result={"idempotent_replay": True})

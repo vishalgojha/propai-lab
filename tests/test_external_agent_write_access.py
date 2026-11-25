@@ -178,6 +178,27 @@ def test_contains_serializes_jsonb_filter():
             "custom_fields", {"_idempotency_key": "abc-123"},
         ).execute()
         request, = requests
-        assert request.url.params["custom_fields"] == 'cs.{"_idempotency_key": "abc-123"}'
+        assert request.url.params["custom_fields"] == 'cs.{"_idempotency_key":"abc-123"}'
+    finally:
+        client.close()
+
+
+def test_jsonb_text_filter_serializes_for_idempotency_lookup():
+    import httpx
+    from storage.supabase import _RestClient
+    requests = []
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(200, json=[])
+    client = _RestClient("https://fixture.invalid", "fixture-only")
+    client._http.close()
+    client._http = httpx.Client(transport=httpx.MockTransport(handle))
+    try:
+        client.table("crm_inventory").select("*").eq("tenant_id", "t-1").eq(
+            "custom_fields->>_idempotency_key", "abc-123",
+        ).limit(1).execute()
+        request, = requests
+        assert request.url.params["custom_fields->>_idempotency_key"] == "eq.abc-123"
+        assert request.url.params["tenant_id"] == "eq.t-1"
     finally:
         client.close()
