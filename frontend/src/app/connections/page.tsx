@@ -1578,7 +1578,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       )}
       {data && persistedSelectedCount > 0 && !receiptMatches && (
         <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-amber-200">
-          <span>Your group choices are saved. Completion of the listing update is not yet verified, so Start is unavailable. One fresh confirmation of the same selection restores it; confirming does not publish your listings.</span>
+          <span>Your group choices are saved. Completion of the listing update is not yet verified, so Start is unavailable. A fresh confirmation of the same selection restores it if every saved group is still in your directory. Listings stay private to your workspace unless shared-market publication is separately enabled for your workspace.</span>
           <button type="button" onClick={requestSelectionConfirmation} disabled={activeControl !== null || savingSelection || hasUnpersistedSelection || (data.cap != null && selectedGroups.size > data.cap)} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/40 px-3 py-1.5 text-[11px] font-semibold text-amber-200 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40">
             <Check className="h-3 w-3" /> {savingSelection ? "Saving selection..." : "Confirm saved selection again"}
           </button>
