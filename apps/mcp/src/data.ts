@@ -1287,42 +1287,11 @@ async function upsertLeadRecord(input: LeadRecordInput) {
   }
 
   // A name alone never establishes identity: two different clients can share
-  // one. Same-name clients are therefore never reused - each saved
-  // requirement without a phone gets its own client row. The same-name lookup
-  // below exists ONLY to find an exact-text replay (a retry of the same
-  // save), never to merge people.
+  // one, and same-name + same-text can still be two different people. Clients
+  // are therefore NEVER looked up by name - each save without a phone gets
+  // its own client row. Retries are handled by request keys (keyed saves),
+  // not by guessing who a name refers to.
   const clientName = compactText(input.name) || "MCP Lead";
-  let replayRequirement: { id: number; client_id: number } | null = null;
-  if (clientId == null && !phone && input.recordType === "buyer_requirement") {
-    const { data: namedClients, error: namedError } = await supabase
-      .from("clients")
-      .select("id")
-      .eq("tenant_id", input.brokerId)
-      .ilike("name", clientName)
-      .order("updated_at", { ascending: false })
-      .limit(10);
-    if (namedError) throw new Error(namedError.message);
-    const candidateIds = (namedClients || []).map((row: { id: number }) => row.id);
-    if (candidateIds.length > 0) {
-      const { data: existingReplay, error: replayError } = await supabase
-        .from("client_requirements")
-        .select("id, client_id")
-        .eq("tenant_id", input.brokerId)
-        .in("client_id", candidateIds)
-        .eq("notes", input.rawText)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (replayError) throw new Error(replayError.message);
-      if (existingReplay) {
-        replayRequirement = {
-          id: existingReplay.id as number,
-          client_id: existingReplay.client_id as number,
-        };
-        clientId = replayRequirement.client_id;
-      }
-    }
-  }
 
   if (clientId == null) {
     const { data: clientRow, error: clientError } = await supabase
@@ -1342,8 +1311,8 @@ async function upsertLeadRecord(input: LeadRecordInput) {
     clientId = clientRow.id;
   }
 
-  let requirementId: number | null = replayRequirement?.id ?? null;
-  let requirementReplayed = replayRequirement != null;
+  let requirementId: number | null = null;
+  let requirementReplayed = false;
   if (requirementId == null && phone && input.recordType === "buyer_requirement") {
     // Phone-identified client: the exact same requirement text for this
     // client in this tenant returns the existing row, however old it is.
@@ -1784,13 +1753,11 @@ export async function createRequirementRecord(input: {
     };
   }
 
-  // Unkeyed saves keep the existing best-effort replay: upsertLeadRecord
-  // returns the existing requirement when the exact text was already saved
-  // for the same phone-identified client in this tenant, and otherwise uses
-  // a same-name exact-text heuristic. Without a key or a phone, a retry is
-  // indistinguishable from a deliberately separate identical request, so
-  // this path is not race-safe and makes no durability guarantee - callers
-  // that need exactly-once saves must pass saveRequestKey.
+  // Unkeyed saves: a phone-identified client replays the exact same saved
+  // text (best-effort); without a phone every save creates its own client
+  // row, including retries - clients are never identified by name. There is
+  // no durability or race guarantee on this path: exactly-once retries must
+  // pass saveRequestKey, which is the supported retry mechanism.
   const lead = await upsertLeadRecord({
     brokerId: input.brokerId,
     name: input.name || "MCP Requirement",

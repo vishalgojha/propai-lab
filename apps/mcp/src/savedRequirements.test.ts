@@ -217,7 +217,7 @@ const baseInput = {
   location_pref: "Bandra West",
 };
 
-test("createRequirementRecord creates then replays durably without duplicates", async () => {
+test("createRequirementRecord never merges clients by name; keyed saves are the retry mechanism", async () => {
   resetStore();
   const { createRequirementRecord } = await import("./data.ts");
 
@@ -227,36 +227,43 @@ test("createRequirementRecord creates then replays durably without duplicates", 
   assert.equal(store.tables.clients.length, 1);
   assert.equal(store.tables.client_requirements.length, 1);
 
-  // Exact retry - even long after the original save - returns the existing
-  // record and creates nothing new.
-  const replay = await createRequirementRecord(baseInput as any);
-  assert.equal(replay.idempotent_replay, true);
-  assert.equal(replay.lead.lead_id, firstLeadId);
-  assert.equal(store.tables.clients.length, 1);
-  assert.equal(store.tables.client_requirements.length, 1);
-  assert.equal(store.insertCounts.client_requirements, 1);
+  // Exact unkeyed retry WITHOUT a phone: a name never identifies a client,
+  // so this saves its own record - it cannot be told apart from a
+  // deliberately separate identical request. Keyed saves (tested below) are
+  // the retry mechanism.
+  const retry = await createRequirementRecord(baseInput as any);
+  assert.equal(retry.idempotent_replay, false);
+  assert.notEqual(retry.lead.lead_id, firstLeadId);
+  assert.equal(store.tables.clients.length, 2);
+  assert.equal(store.tables.client_requirements.length, 2);
 
   // A changed text is an intentional separate requirement and must be kept.
-  // A name alone never merges people: without a phone, the same-named save
-  // gets its own client row.
   const changed = await createRequirementRecord({
     ...baseInput,
     raw_text: "TEST requirement: 2 BHK rent in Bandra West, budget now 1.2L",
   } as any);
   assert.equal(changed.idempotent_replay, false);
-  assert.equal(store.tables.client_requirements.length, 2);
-  assert.equal(store.tables.clients.length, 2);
+  assert.equal(store.tables.client_requirements.length, 3);
+  assert.equal(store.tables.clients.length, 3);
   assert.notEqual(changed.lead.client_id, first.lead.client_id);
+});
 
-  // The retry of THAT save still replays against its own record.
-  const changedReplay = await createRequirementRecord({
-    ...baseInput,
-    raw_text: "TEST requirement: 2 BHK rent in Bandra West, budget now 1.2L",
-  } as any);
-  assert.equal(changedReplay.idempotent_replay, true);
-  assert.equal(changedReplay.lead.lead_id, changed.lead.lead_id);
-  assert.equal(store.tables.client_requirements.length, 2);
-  assert.equal(store.tables.clients.length, 2);
+test("unkeyed phone-identified saves still replay the exact same text", async () => {
+  resetStore();
+  const { createRequirementRecord } = await import("./data.ts");
+  const withPhone = { ...baseInput, phone: "9876543210" };
+
+  const first = await createRequirementRecord(withPhone as any);
+  assert.equal(first.idempotent_replay, false);
+  assert.equal(store.tables.clients.length, 1);
+  assert.equal(store.tables.client_requirements.length, 1);
+
+  const replay = await createRequirementRecord(withPhone as any);
+  assert.equal(replay.idempotent_replay, true);
+  assert.equal(replay.lead.lead_id, first.lead.lead_id);
+  assert.equal(store.tables.clients.length, 1);
+  assert.equal(store.tables.client_requirements.length, 1);
+  assert.equal(store.insertCounts.client_requirements, 1);
 });
 
 test("saveListingRecord replay returns existing listing without mutation or new lead", async () => {
