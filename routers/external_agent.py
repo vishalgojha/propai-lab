@@ -34,7 +34,7 @@ EXTERNAL_AGENT_CONTRACT = Path(__file__).resolve().parents[1] / "docs" / "EXTERN
 BROKER_AGENT_KNOWLEDGE = Path(__file__).resolve().parents[1] / "docs" / "BROKER_AGENT_KNOWLEDGE.md"
 EXTERNAL_AGENT_CONTRACT_NAME = "propai.external-agent"
 EXTERNAL_AGENT_CONTRACT_VERSION = "1.0"
-EXTERNAL_AGENT_CONTRACT_REVISION = "2026-11-25.1"
+EXTERNAL_AGENT_CONTRACT_REVISION = "2026-11-26.1"
 EXTERNAL_AGENT_CONTRACT_MIN_CLIENT_REVISION = "1"
 EXTERNAL_AGENT_SCHEMA_REVISION = "external-v1"
 WRITE_SCOPES = {"inventory:write", "requirements:write"}
@@ -218,6 +218,10 @@ class ApiKeyCreate(BaseModel):
 
 class ApiKeyWriteAccessUpdate(BaseModel):
     enabled: bool = True
+    # Optional subset of the private write bundle to grant. Omitted (the
+    # Account -> MCP toggle behavior) grants the full bundle; an explicit list
+    # grants exactly those scopes and no others.
+    scopes: list[str] | None = None
 
 
 class ApprovalDecision(BaseModel):
@@ -399,6 +403,7 @@ async def external_agent_capabilities(key: dict = Depends(external_auth)):
         ("health", None),
         ("search_listings", "inventory:read"),
         ("list_requirements", "requirements:read"),
+        ("list_saved_requirements", "requirements:read"),
         ("list_matches", "matches:read"),
         ("search_group_messages", "raw_messages:read"),
         ("get_group_message", "raw_messages:read"),
@@ -833,6 +838,63 @@ async def external_requirements(limit: int = Query(20, ge=1, le=50), offset: int
     rows = await _tenant_parsed(limit=limit, offset=offset, kind="requirement")
     await asyncio.to_thread(_record_assistant_trial_start, str(key["tenant_id"]))
     return {"results": [_public_requirement(row) for row in rows], "count": len(rows), "offset": offset}
+
+
+@router.get("/requirements/saved")
+async def external_saved_requirements(
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    key: dict = Depends(external_auth),
+):
+    """Recall tenant-private requirements saved through assistant CRM writes.
+
+    Reads the workspace's own CRM (client_requirements plus the client name),
+    unlike GET /requirements which reads normalized market requirements.
+    Client phone numbers are never returned.
+    """
+    _require_scope(key, "requirements:read")
+    tenant_id = str(key["tenant_id"])
+    rows = (
+        storage.client.table("client_requirements")
+        .select("id,client_id,bhk,price_min,price_max,micro_market,area_sqft_min,area_sqft_max,notes,created_at")
+        .eq("tenant_id", tenant_id)
+        .order("id", desc=True)
+        .offset(offset)
+        .limit(limit)
+        .execute()
+        .data
+        or []
+    )
+    client_ids = sorted({row["client_id"] for row in rows if row.get("client_id")})
+    names: dict = {}
+    if client_ids:
+        clients = (
+            storage.client.table("clients")
+            .select("id,name")
+            .eq("tenant_id", tenant_id)
+            .in_("id", client_ids)
+            .execute()
+            .data
+            or []
+        )
+        names = {client["id"]: client.get("name") for client in clients}
+    results = [
+        {
+            "id": row.get("id"),
+            "client_id": row.get("client_id"),
+            "client_name": names.get(row.get("client_id")),
+            "bhk": row.get("bhk"),
+            "budget_min": row.get("price_min"),
+            "budget_max": row.get("price_max"),
+            "micro_market": row.get("micro_market"),
+            "area_min_sqft": row.get("area_sqft_min"),
+            "area_max_sqft": row.get("area_sqft_max"),
+            "notes": row.get("notes"),
+            "created_at": row.get("created_at"),
+        }
+        for row in rows
+    ]
+    return {"private": True, "results": results, "count": len(results), "offset": offset}
 
 
 @router.get("/matches")
@@ -1458,18 +1520,28 @@ async def update_external_key_write_access(
     if not key:
         raise HTTPException(404, "Active external API key not found")
 
+    grantable = WRITE_SCOPES | TOOL_WRITE_SCOPES
     scopes = _effective_external_scopes(key.get("scopes"))
-    scopes = [scope for scope in scopes if scope not in (WRITE_SCOPES | TOOL_WRITE_SCOPES)]
+    scopes = [scope for scope in scopes if scope not in grantable]
+    granted: list[str] = []
     if body.enabled:
-        scopes.extend(sorted(WRITE_SCOPES | TOOL_WRITE_SCOPES))
-    audit_id = _write_audit_start({"tenant_id": tenant_id, "id": key_id}, "permission_change", "external_agent_api_key", {"key_id": key_id, "enabled": body.enabled}, [])
+        if body.scopes is None:
+            granted = sorted(grantable)
+        else:
+            requested = {str(scope).strip() for scope in body.scopes if str(scope).strip()}
+            unsupported = sorted(requested - grantable)
+            if unsupported:
+                raise HTTPException(422, f"Unsupported write scopes: {', '.join(unsupported)}")
+            granted = sorted(requested)
+        scopes.extend(granted)
+    audit_id = _write_audit_start({"tenant_id": tenant_id, "id": key_id}, "permission_change", "external_agent_api_key", {"key_id": key_id, "enabled": body.enabled, "granted": granted}, [])
     updated = storage.client.table("external_agent_api_keys").update(
         {"scopes": scopes}
     ).eq("id", key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").execute()
     if not updated.data:
         _write_audit_finish(audit_id, "failed", error_code="key_update_empty")
         raise HTTPException(409, "External API key changed; refresh the key list and retry")
-    _write_audit_finish(audit_id, "succeeded", entity_id=key_id, result={"enabled": body.enabled})
+    _write_audit_finish(audit_id, "succeeded", entity_id=key_id, result={"enabled": body.enabled, "granted": granted})
     return {"id": key_id, "scopes": scopes}
 
 

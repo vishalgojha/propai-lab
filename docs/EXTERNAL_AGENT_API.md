@@ -97,6 +97,7 @@ Read endpoints:
 | `GET /health` | Check the authenticated key | None |
 | `GET /listings/search` | Search workspace inventory | `q`, `locality`, `bhk`, `transaction_type`, `budget_max`, `limit`, `offset` |
 | `GET /requirements` | Read workspace requirements | `limit`, `offset` |
+| `GET /requirements/saved` | Recall assistant-saved CRM requirements with client names (never phone numbers) | `limit`, `offset` |
 | `GET /matches` | Search listing matches | `q`, `limit` |
 | `GET /standing-searches` | List private standing searches | None |
 | `GET /standing-searches/{search_id}/run` | Run one saved search against tenant inventory | `limit` |
@@ -193,6 +194,12 @@ standing-search and follow-up write scopes. The authenticated owner endpoint is
 `{"enabled":true}`. Setting `enabled` to `false` removes those four private
 write scopes. Other unrelated scopes are preserved. There is no private-message
 read scope.
+
+To grant only part of the bundle, include an explicit `scopes` list, for
+example `{"enabled":true,"scopes":["inventory:write","requirements:write"]}`.
+Every entry must be one of the four private write scopes; anything else is
+rejected with `422`. Omitting `scopes` grants the full bundle, matching the
+Account → MCP control.
 
 Pending sensitive changes are visible only to authenticated workspace owners
 at `GET /approvals`. Approve or reject one with

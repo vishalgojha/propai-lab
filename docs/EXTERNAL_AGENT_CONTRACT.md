@@ -66,6 +66,7 @@ The normalized capabilities are:
 | `health` | Verify the connection and granted scopes | authenticated connection |
 | `search_listings` | Search tenant-visible normalized listings | `inventory:read` |
 | `list_requirements` | Read tenant-visible requirements | `requirements:read` |
+| `list_saved_requirements` | Recall the workspace's own saved CRM requirements (with client names, never phone numbers) | `requirements:read` |
 | `list_matches` | Read explainable tenant-local matches | `matches:read` |
 | `search_group_messages` | Search captured group source evidence | `raw_messages:read` |
 | `get_group_message` | Fetch one complete group source message | `raw_messages:read` |
@@ -75,6 +76,11 @@ is normalized inventory or raw source evidence. A missing result means no match
 was found in the searched PropAI data; it does not prove that no property or
 requirement exists elsewhere.
 
+`list_requirements` reads normalized market requirements captured from source
+evidence; `list_saved_requirements` recalls requirements the broker's assistant
+saved into the workspace CRM with `create_requirement`. Saved CRM records stay
+workspace-private and never appear in market reads.
+
 Raw message search is group-only, limited to a maximum 90-day window and 100
 rows per page. Use the returned cursor/offset; never fabricate a second page.
 
@@ -82,7 +88,10 @@ rows per page. Use the returned cursor/offset; never fabricate a second page.
 
 External AI writes are broker CRM writes only. New connections grant the
 private write scopes by default; the broker sees and approves that grant on
-the connection page before any key is created. Agents should read
+the connection page before any key is created. Workspace owners may also grant
+only a subset of the write bundle to a key (for example inventory writes
+without standing-search or follow-up writes); the granted subset is visible in
+`GET /capabilities`. Agents should read
 `GET /capabilities` for the scopes actually granted to the current key and
 treat missing write operations as not permitted:
 
