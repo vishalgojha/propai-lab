@@ -68,6 +68,11 @@ func TestDeleteSessionInactiveBrokerReturnsContractReceipt(t *testing.T) {
 	if body["broker_id"] != "phone-x" {
 		t.Fatalf("receipt broker_id mismatch: %v", body)
 	}
+	// The warning field is part of the receipt contract: it carries the
+	// device-delete timeout downgrade instead of hiding it.
+	if warning, present := body["credentials_warning"]; !present || warning != "" {
+		t.Fatalf("expected empty credentials_warning on clean delete: %v", body)
+	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet db expectations: %v", err)
 	}

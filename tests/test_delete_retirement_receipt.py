@@ -13,6 +13,10 @@ from routers import whatsapp_sync
     (200, {"ok": True}, False),
     (200, {"credentials_deleted": False, "mapping_deleted": True, "reset_at": "fixture"}, False),
     (200, {"credentials_deleted": True, "mapping_deleted": True, "reset_at": "fixture"}, True),
+    # A device-delete timeout downgrades to a warning; the receipt still
+    # confirms the resurrection guard (mapping_deleted) so removal proceeds.
+    (200, {"credentials_deleted": True, "mapping_deleted": True, "reset_at": "fixture",
+           "credentials_warning": "The old WhatsApp device could not be confirmed deleted. Its broker mapping was removed; pair again now."}, True),
 ])
 def test_delete_keeps_phone_until_cleanup_receipt(monkeypatch, status, payload, removed):
     calls = []
