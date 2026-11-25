@@ -1739,19 +1739,24 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
               const topicHint = whatsappGroupTopicHint(group);
               return (
           <div key={group.group_jid} className={`h-full rounded-lg border p-3 ${selectedGroups.has(group.group_jid) ? "border-emerald-400/35 bg-emerald-500/[0.04]" : "border-white/10 bg-white/[0.02]"}`}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0 w-full flex-1">
                 {topicHint && (
                   <div className="mb-2 rounded-md border border-amber-400/25 bg-amber-400/[0.06] px-2 py-1 text-[10px] leading-4 text-amber-200" title="This hint uses the group name only. It does not inspect messages or change your selection.">
                     <span className="font-semibold">Possibly not real estate</span>
                     <span className="text-amber-100/75"> · Name suggests a {topicHint} group; review before opting out.</span>
                   </div>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {group.selectable !== false && !group.opted_out && (
                     <input type="checkbox" checked={selectedGroups.has(group.group_jid)} onChange={() => toggleGroupSelection(group)} disabled={savingSelection} className="h-4 w-4 accent-emerald-400" aria-label={`Select ${whatsappGroupDisplayName(group)}`} />
                   )}
-                  <div className="connection-group-name truncate text-sm font-semibold">{whatsappGroupDisplayName(group)}</div>
+                  <div
+                    className="connection-group-name min-w-0 basis-full break-words text-sm font-semibold leading-5 sm:basis-auto sm:flex-1 sm:truncate"
+                    title={whatsappGroupDisplayName(group)}
+                  >
+                    {whatsappGroupDisplayName(group)}
+                  </div>
                   {group.network_owned ? (
                     <span title="Detected on PropAI's shared WhatsApp network" className="connection-group-status rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300" aria-label="Detected on shared network">PropAI network</span>
                   ) : group.shared_network_member_overlap ? (
