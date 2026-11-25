@@ -1386,11 +1386,17 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     setError(null);
     setMessage(null);
     try {
-      await optOutOnboardingGroup(phone.id, group.group_jid, group.group_name);
+      const result = await optOutOnboardingGroup(phone.id, group.group_jid, group.group_name);
+      setSelectedGroups((current) => {
+        const next = new Set(current);
+        next.delete(group.group_jid);
+        return next;
+      });
       // Make the persisted action visible immediately. A directory/status
       // refresh is useful but must not make a successful save look failed.
       setData((current) => current ? {
         ...current,
+        ...result.cap,
         groups: current.groups.map((item) => item.group_jid === group.group_jid
           ? { ...item, opted_out: true, connected: false }
           : item),
