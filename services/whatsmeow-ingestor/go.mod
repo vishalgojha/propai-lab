@@ -3,6 +3,7 @@ module github.com/vishalgojha/propai-lab/services/whatsmeow-ingestor
 go 1.26.0
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/jackc/pgx/v5 v5.7.4
 	go.mau.fi/whatsmeow v0.0.0-20260915211301-f376da267f95
 	google.golang.org/protobuf v1.36.12

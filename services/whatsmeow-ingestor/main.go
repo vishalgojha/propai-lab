@@ -2878,6 +2878,7 @@ func (sm *SessionManager) deleteSessionHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	credentialsWarning := ""
 	if session := sm.Get(brokerID); session != nil {
 		if session.cancel != nil {
 			session.cancel()
@@ -2889,20 +2890,38 @@ func (sm *SessionManager) deleteSessionHandler(w http.ResponseWriter, r *http.Re
 			json.NewEncoder(w).Encode(map[string]string{"error": "session stop not confirmed; credentials untouched"})
 			return
 		}
-		_ = session.clearDevice()
+		if err := session.clearDevice(); err != nil {
+			// The broker mapping is the authoritative restore pointer; removing
+			// it below prevents this broker from resurrecting the stale device.
+			// The orphaned device is scoped to this broker and can be garbage
+			// collected later when the store is healthy.
+			log.Printf("[broker %s] error clearing device after confirmed stop: %v", brokerID, err)
+			credentialsWarning = "The old WhatsApp device could not be confirmed deleted. Its broker mapping was removed; pair again now."
+		}
 	} else if deviceJID, err := sm.lookupDeviceJID(context.Background(), brokerID); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to look up stored WhatsApp session"})
 		return
 	} else if deviceJID != "" {
-		if jid, parseErr := types.ParseJID(deviceJID); parseErr == nil {
-			if device, getErr := sm.container.GetDevice(context.Background(), jid); getErr == nil && device != nil {
-				deleteCtx, cancelDelete := context.WithTimeout(context.Background(), 8*time.Second)
-				deleteErr := device.Delete(deleteCtx)
-				cancelDelete()
-				if deleteErr != nil {
-					log.Printf("[broker %s] error deleting inactive device: %v", brokerID, deleteErr)
-				}
+		jid, parseErr := types.ParseJID(deviceJID)
+		if parseErr != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "failed to parse persisted WhatsApp device"})
+			return
+		}
+		device, getErr := sm.container.GetDevice(context.Background(), jid)
+		if getErr != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "failed to load persisted WhatsApp credentials"})
+			return
+		}
+		if device != nil {
+			deleteCtx, cancelDelete := context.WithTimeout(context.Background(), 8*time.Second)
+			deleteErr := device.Delete(deleteCtx)
+			cancelDelete()
+			if deleteErr != nil {
+				log.Printf("[broker %s] error deleting inactive device: %v", brokerID, deleteErr)
+				credentialsWarning = "The old WhatsApp device could not be confirmed deleted because the device store timed out. Its broker mapping was removed; pair again now."
 			}
 		}
 	}
@@ -2913,7 +2932,19 @@ func (sm *SessionManager) deleteSessionHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	log.Printf("[broker %s] session and device mapping deleted", brokerID)
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	// Receipt shape is the contract the API's delete_phone verifies
+	// (routers/whatsapp_sync.py): it refuses to remove the workspace phone
+	// unless credentials_deleted and mapping_deleted are true and reset_at is
+	// set. A bare {"ok": true} here made every Remove report 502 after the
+	// session had actually been deleted.
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":                  true,
+		"broker_id":           brokerID,
+		"credentials_deleted": true,
+		"mapping_deleted":     true,
+		"credentials_warning": credentialsWarning,
+		"reset_at":            time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 func (sm *SessionManager) connectedSession(brokerID string) (*BrokerSession, error) {

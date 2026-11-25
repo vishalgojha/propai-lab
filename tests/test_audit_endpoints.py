@@ -408,14 +408,24 @@ def test_delete_phone_removes_ingestor_session_and_workspace_record(monkeypatch)
         return {"id": phone_id, "organization_id": org_id, "broker_id": "phone-real"}
 
     async def ingestor(method, path, **kwargs):
-        calls.append((method, path, kwargs["params"]["broker_id"]))
-        return "http://ingestor:3001", httpx.Response(200, json={"ok": True})
+        calls.append((method, path, kwargs["headers"]["X-Broker-Id"]))
+        # delete_phone only proceeds on a confirmed cleanup receipt; a bare
+        # {"ok": True} is rejected (test_delete_retirement_receipt.py).
+        return "http://ingestor:3001", httpx.Response(200, json={
+            "ok": True,
+            "credentials_deleted": True,
+            "mapping_deleted": True,
+            "reset_at": "2026-11-25T13:00:00Z",
+        })
 
     async def inline_to_thread(function, *args, **kwargs):
         return function(*args, **kwargs)
 
+    async def organization(*_args):
+        return "workspace-real"
+
     monkeypatch.setattr(ws_mod, "storage", FakeStorage())
-    monkeypatch.setattr(ws_mod, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
+    monkeypatch.setattr(ws_mod, "_request_organization_id", organization)
     monkeypatch.setattr(ws_mod, "_require_org_permission", allow_phone_management)
     monkeypatch.setattr(ws_mod, "_scoped_phone", scoped_phone)
     monkeypatch.setattr(ws_mod, "_first_ingestor_response", ingestor)
