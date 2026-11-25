@@ -1643,9 +1643,18 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
             <button type="button" onClick={() => void handleExtractionControl("pause")} disabled={activeControl !== null || data.extraction_status !== "running"} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 px-3 py-1.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40">
               <Pause className="h-3 w-3" /> {activeControl === "pause" ? "Pausing..." : "Pause extraction"}
             </button>
-            <button type="button" onClick={requestStop} disabled={activeControl !== null || data.extraction_status === "stopped"} className="inline-flex items-center gap-1.5 rounded-lg border border-red-400/30 px-3 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40">
-              <Square className="h-3 w-3" /> {activeControl === "stop" ? "Stopping..." : "Stop extraction"}
-            </button>
+            {data.extraction_status === "stopped" ? (
+              <span
+                className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-500/30 px-3 py-1.5 text-[11px] font-semibold text-zinc-500"
+                title="Extraction is already stopped"
+              >
+                <Square className="h-3 w-3" /> Extraction stopped
+              </span>
+            ) : (
+              <button type="button" onClick={requestStop} disabled={activeControl !== null} className="inline-flex items-center gap-1.5 rounded-lg border border-red-400/30 px-3 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40">
+                <Square className="h-3 w-3" /> {activeControl === "stop" ? "Stopping..." : "Stop extraction"}
+              </button>
+            )}
           </div>
         </div>
       )}
