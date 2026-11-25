@@ -286,6 +286,26 @@ export function checkOnboardingGroup(
   });
 }
 
+export interface OnboardingGroupDeselectResult {
+  ok: boolean;
+  deselected: boolean;
+  group_jid: string;
+  cap: OnboardingGroupCap;
+}
+
+export function deselectOnboardingGroup(
+  whatsappConnectionId: number,
+  groupJid: string,
+) {
+  return fetchJSON<OnboardingGroupDeselectResult>("/onboarding/groups/deselect", {
+    method: "POST",
+    body: JSON.stringify({
+      whatsapp_connection_id: whatsappConnectionId,
+      group_jid: groupJid,
+    }),
+  });
+}
+
 export function optOutOnboardingGroup(
   whatsappConnectionId: number,
   groupJid: string,

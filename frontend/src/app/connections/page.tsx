@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square, Search, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, getGroupSelectionConfirmation, checkOnboardingGroup, optOutOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry } from "@/lib/api";
+import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, getGroupSelectionConfirmation, checkOnboardingGroup, optOutOnboardingGroup, deselectOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry } from "@/lib/api";
 import QRCode from "qrcode";
 import { connectionHealth, connectionMetric } from "@/lib/connectionHealth";
 
@@ -1380,6 +1380,36 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     void loadGroups();
   }, [loadGroups]);
 
+  const handleDeselect = async (group: OnboardingGroup) => {
+    const displayName = whatsappGroupDisplayName(group);
+    setActiveGroup(group.group_jid);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await deselectOnboardingGroup(phone.id, group.group_jid);
+      setSelectedGroups((current) => {
+        const next = new Set(current);
+        next.delete(group.group_jid);
+        return next;
+      });
+      // Mirror the opt-out handler: make the persisted removal visible
+      // immediately; a later refresh must not make a successful save look failed.
+      setData((current) => current ? {
+        ...current,
+        ...result.cap,
+        selected_count: Math.max(0, current.selected_count - (current.groups.find((item) => item.group_jid === group.group_jid)?.connected ? 1 : 0)),
+        groups: current.groups.map((item) => item.group_jid === group.group_jid
+          ? { ...item, connected: false }
+          : item),
+      } : current);
+      setMessage(`Removed ${displayName} from the saved selection.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not remove the saved selection.");
+    } finally {
+      setActiveGroup(null);
+    }
+  };
+
   const handleOptOut = async (group: OnboardingGroup) => {
     const displayName = whatsappGroupDisplayName(group);
     setActiveGroup(group.group_jid);
@@ -1794,6 +1824,16 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                 {group.membership_status === "not_in_latest_directory" && (
                   <div className="mt-2 rounded-md border border-amber-400/30 bg-amber-500/[0.06] px-2 py-1.5 text-[11px] text-amber-200">
                     Not in the latest WhatsApp directory. Refresh membership to confirm whether this phone still belongs to the group.
+                    {persistedSelectedJids.has(group.group_jid) && (
+                      <button
+                        type="button"
+                        onClick={() => void handleDeselect(group)}
+                        disabled={activeGroup === group.group_jid || savingSelection}
+                        className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-amber-400/40 px-2.5 py-1 text-[11px] font-semibold text-amber-200 hover:bg-amber-500/10 disabled:opacity-50"
+                      >
+                        {activeGroup === group.group_jid ? "Removing..." : "Remove from saved selection"}
+                      </button>
+                    )}
                   </div>
                 )}
                 {!data.unlimited && group.member_count != null && group.member_count > 0 && (

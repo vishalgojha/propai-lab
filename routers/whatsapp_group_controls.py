@@ -1578,6 +1578,53 @@ async def opt_out_group(
         raise
 
 
+@router.post("/groups/deselect")
+async def deselect_group(
+    body: GroupRequest,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Clear one group's saved extraction selection (public_market_source).
+
+    Selection changes otherwise persist only through the full atomic
+    confirmation, which rejects a saved selection that still references a
+    group missing from the live directory. This single-group removal lets the
+    user drop stale consent for a group they left or deleted, without
+    re-confirming the whole selection. It does not opt the group out, does
+    not start extraction, and only un-publishes; it never publishes.
+    """
+    try:
+        org_id = _resolve_active_organization_id(user, tenant_id)
+        await _require_org_permission(user, org_id, "manage_whatsapp")
+        _connection(org_id, body.whatsapp_connection_id)
+        unlimited = await asyncio.to_thread(_organization_has_unlimited_group_access, org_id)
+        row = storage.client.table("organization_group_connections").update({
+            "public_market_source": False,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("organization_id", org_id).eq("whatsapp_connection_id", body.whatsapp_connection_id).eq("group_jid", body.group_jid).execute()
+        # Mirror opt-out: a group that is no longer selected must not stay
+        # published. This call can only un-publish (p_public_market_source=False).
+        state = storage.client.table("organization_group_connections").select("group_name").eq("organization_id", org_id).eq("whatsapp_connection_id", body.whatsapp_connection_id).eq("group_jid", body.group_jid).limit(1).execute()
+        group_name = ((state.data or [{}])[0]).get("group_name") or body.group_jid
+        storage.client.rpc("sync_group_market_visibility", {
+            "p_organization_id": org_id,
+            "p_group_jid": body.group_jid,
+            "p_group_name": group_name,
+            "p_public_market_source": False,
+        })
+        return {
+            "ok": True,
+            "deselected": bool(row.data),
+            "group_jid": body.group_jid,
+            "cap": _cap_state(org_id, body.whatsapp_connection_id, unlimited=unlimited),
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        _logger.exception("deselect_group crashed for org=%s connection=%s group=%s", org_id, body.whatsapp_connection_id, body.group_jid)
+        raise
+
+
 @router.post("/groups/opt-in")
 async def opt_in_group(
     body: GroupRequest,
