@@ -1499,3 +1499,13 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Deployment/push status: Commit `39586483` was pushed to `origin/main`. Coolify redeployed `propai-lab:main-app` successfully as deployment `ugq7ejt6x1ykvtlwggeui3h6`, finished in 226 seconds at commit `67c0680caf22c9e41e7f1cf2080d7b9ca8f9d379`.
 - Known limitations: This change clarifies extraction state; it does not add a new disconnect action for stopping raw WhatsApp capture, which is a separate control.
 - Next action: Verify the running/paused Stop extraction flow in the authenticated dashboard; no further deployment is required for this change.
+
+### Show WhatsApp group names on mobile
+
+- Requested outcome: Ensure WhatsApp group names remain visible in the narrow/mobile group-selection layout.
+- Files/services changed: `frontend/src/app/connections/page.tsx`; redeployed `propai-lab:main-app`.
+- Behavior: Mobile group cards now place the group name on a dedicated full-width row with wrapping and a title tooltip. Desktop retains the compact single-row/truncated layout.
+- Verification performed: Changed-file ESLint completed with 0 errors and existing warnings only; Impeccable detector returned no findings; `git diff --check` passed. Independent task-verifier second pass: **PARTIAL** — responsive behavior is verified by source inspection, but no authenticated mobile browser click-through was available.
+- Deployment/push status: Commit `5ac64069` was pushed to `origin/main`. Coolify deployment `px7w5rhau35cj5ze6favrjw2` finished successfully in 215 seconds.
+- Known limitations: The screenshot’s live data path was not queried, so a backend directory row with an intrinsically missing WhatsApp subject will still display the existing safe fallback name.
+- Next action: Open `app.propai.live/whatsapp?tab=groups` on a narrow viewport and confirm the group title appears above the status badge.
