@@ -40,7 +40,7 @@ export default function McpWorkspacePage() {
   const [externalToken, setExternalToken] = useState<string | null>(null);
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyMessage, setKeyMessage] = useState("");
-  const [writeAccess, setWriteAccess] = useState(false);
+  const [writeAccess, setWriteAccess] = useState(true);
   const [keysLoading, setKeysLoading] = useState(true);
   const [keysError, setKeysError] = useState(false);
   const [externalKeys, setExternalKeys] = useState<ExternalAgentKey[]>([]);

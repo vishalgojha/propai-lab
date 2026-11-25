@@ -32,11 +32,13 @@ Automatch is suggestion-only and reads existing tenant-local match rows; it does
 
 Never use localhost, MCP, Supabase, or ask for the connection secret in WhatsApp chat. Never publish inventory, promote private data to shared market, send messages, activate ads, change budgets, or delete records.
 
-Private writes, when their scopes are granted, are:
+Saving to the broker's private CRM is a normal part of this connection: new connections grant the private write scopes by default, and the broker sees and approves that grant on the connection page. Before writing, confirm via GET /api/external/v1/capabilities that the write operations are listed for this key. When granted, the private writes are:
 POST /api/external/v1/inventory
 POST /api/external/v1/requirements
 POST /api/external/v1/standing-searches (requires confirmed:true)
-POST /api/external/v1/followups (creates a private task only; never sends a message)`;
+POST /api/external/v1/followups (creates a private task only; never sends a message)
+
+Requirement saves need only name + raw_text (a short summary of what the client wants); phone is optional and should be omitted unless the broker explicitly gave a number to store. Writes carrying contact or budget fields (phone, budget_min, budget_max, contact_number, owner_name, contact_name, quote) are NOT saved immediately: the API returns 202 with approval_required:true, and the record saves only after the broker approves it in Account > MCP. Report that as pending broker approval, not as a failure.`;
 
 export const INSTINCT_MANUAL_WRITE_RULES = `
 

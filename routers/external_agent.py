@@ -34,7 +34,7 @@ EXTERNAL_AGENT_CONTRACT = Path(__file__).resolve().parents[1] / "docs" / "EXTERN
 BROKER_AGENT_KNOWLEDGE = Path(__file__).resolve().parents[1] / "docs" / "BROKER_AGENT_KNOWLEDGE.md"
 EXTERNAL_AGENT_CONTRACT_NAME = "propai.external-agent"
 EXTERNAL_AGENT_CONTRACT_VERSION = "1.0"
-EXTERNAL_AGENT_CONTRACT_REVISION = "2026-11-23.2"
+EXTERNAL_AGENT_CONTRACT_REVISION = "2026-11-25.1"
 EXTERNAL_AGENT_CONTRACT_MIN_CLIENT_REVISION = "1"
 EXTERNAL_AGENT_SCHEMA_REVISION = "external-v1"
 WRITE_SCOPES = {"inventory:write", "requirements:write"}
@@ -211,7 +211,9 @@ def _mask_dm_response_row(row: dict, tenant_id: str, name_cache: dict, device_ca
 
 class ApiKeyCreate(BaseModel):
     label: str = "Instinct"
-    write_access: bool = False
+    # Owner-driven key creation defaults to writes on as well; the MCP page
+    # checkbox is pre-checked so the grant stays visible before creating.
+    write_access: bool = True
 
 
 class ApiKeyWriteAccessUpdate(BaseModel):
@@ -1571,7 +1573,9 @@ def _prune_connect_sessions() -> None:
 
 class ConnectSessionCreate(BaseModel):
     label: str = "Instinct"
-    write_access: bool = False
+    # New connections default to CRM writes on (product direction 2026-11-25);
+    # the broker sees the write disclosure on the approval page before deciding.
+    write_access: bool = True
 
 
 def _generate_user_code() -> str:

@@ -2,7 +2,7 @@
 
 Contract name: `propai.external-agent`
 Contract version: `1.0`
-Contract revision: `2026-11-23.2`
+Contract revision: `2026-11-25.1`
 Published: `2026-11-23T00:00:00Z`
 Minimum client revision: `1`
 Schema revision: `external-v1`
@@ -80,7 +80,11 @@ rows per page. Use the returned cursor/offset; never fabricate a second page.
 
 ## Shared write operations
 
-External AI writes are broker CRM writes only:
+External AI writes are broker CRM writes only. New connections grant the
+private write scopes by default; the broker sees and approves that grant on
+the connection page before any key is created. Agents should read
+`GET /capabilities` for the scopes actually granted to the current key and
+treat missing write operations as not permitted:
 
 | Operation | Required scope | Result |
 | --- | --- | --- |
