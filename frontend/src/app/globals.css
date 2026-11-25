@@ -485,8 +485,10 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .broker-pipeline { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1rem; }
 .broker-step-number { color: var(--accent); font-family: var(--font-mono); font-size: .75rem; font-weight: 600; }
 .broker-step p, .broker-capability p, .broker-price-card p, .broker-cta p { margin: 0; color: var(--text-secondary); font-size: .9rem; line-height: 1.6; }
-.broker-price-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 1.5rem; box-shadow: var(--shadow); }
-.broker-pricing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.broker-price-card { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 1.5rem; box-shadow: var(--shadow); }
+.broker-price-card .broker-button { margin-top: auto; }
+.broker-price-card .broker-plan-list { flex: 1 1 auto; }
+.broker-pricing-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
 .broker-price-card-featured { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); box-shadow: 0 1rem 3rem color-mix(in srgb, var(--accent) 10%, transparent); }
 .broker-plan-list { display: grid; gap: .7rem; margin: 1.5rem 0 0; padding: 1rem 0 0; border-top: 1px solid var(--border); color: var(--text-secondary); font-size: .85rem; line-height: 1.5; list-style: none; }
 .broker-plan-list li { display: flex; align-items: flex-start; gap: .5rem; }

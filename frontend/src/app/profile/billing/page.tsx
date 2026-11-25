@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Check, MessageCircle, Network } from "lucide-react";
+import { Check, Network } from "lucide-react";
 
 export function BillingPage() {
   return (
@@ -18,31 +18,37 @@ export function BillingPage() {
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">PropAI Broker OS</p>
             <h3 className="mt-2 text-xl font-bold text-white">Your workspace plan</h3>
             <p className="mt-2 max-w-xl text-sm leading-6 text-zinc-400">
-              Choose the way you want to work with PropAI. Both plans keep your brokerage workspace private.
+              One PropAI through Instinct or any MCP assistant. Every plan keeps your brokerage workspace private; the only difference is how many WhatsApp numbers feed one account.
             </p>
           </div>
           <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-            7-day assistant access
+            15-day assistant access
           </span>
         </div>
 
-        <div className="grid gap-3 py-6 sm:grid-cols-2">
+        <div className="grid gap-3 py-6 sm:grid-cols-3">
           <div className="rounded-xl border border-white/10 bg-black/10 p-4">
             <Network className="h-5 w-5 text-emerald-300" />
-            <p className="mt-3 text-xs font-medium uppercase tracking-wide text-zinc-500">AI assistant connection</p>
-            <p className="mt-2 text-2xl font-bold text-white">₹999 <span className="text-sm font-medium text-zinc-400">/ month</span></p>
-            <p className="mt-1 text-sm text-zinc-400">Connect Instinct, Claude, or another MCP assistant: private inventory, search, matching, and drafts. Assistant subscription separate.</p>
+            <p className="mt-3 text-xs font-medium uppercase tracking-wide text-zinc-500">Solo</p>
+            <p className="mt-2 text-2xl font-bold text-white">₹1,299 <span className="text-sm font-medium text-zinc-400">/ month</span></p>
+            <p className="mt-1 text-sm text-zinc-400">1 WhatsApp number in one account, used through Instinct, Claude, or another MCP assistant. Assistant subscription separate.</p>
           </div>
-          <div className="rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-4">
-            <MessageCircle className="h-5 w-5 text-amber-300" />
-            <p className="mt-3 text-xs font-medium uppercase tracking-wide text-zinc-500">WhatsApp self-chat agent</p>
-            <p className="mt-2 text-2xl font-bold text-amber-300">₹1,999 <span className="text-sm font-medium text-zinc-400">/ month</span></p>
-            <p className="mt-1 text-sm text-zinc-400">Everything in Assistant Connection, plus the agent in your own WhatsApp self-chat. No free trial for this plan.</p>
+          <div className="rounded-xl border border-white/10 bg-black/10 p-4">
+            <Network className="h-5 w-5 text-emerald-300" />
+            <p className="mt-3 text-xs font-medium uppercase tracking-wide text-zinc-500">2 numbers</p>
+            <p className="mt-2 text-2xl font-bold text-white">₹1,499 <span className="text-sm font-medium text-zinc-400">/ month</span></p>
+            <p className="mt-1 text-sm text-zinc-400">Everything in Solo, with 2 WhatsApp numbers connected to the same account.</p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/10 p-4">
+            <Network className="h-5 w-5 text-emerald-300" />
+            <p className="mt-3 text-xs font-medium uppercase tracking-wide text-zinc-500">3 numbers</p>
+            <p className="mt-2 text-2xl font-bold text-white">₹2,599 <span className="text-sm font-medium text-zinc-400">/ month</span></p>
+            <p className="mt-1 text-sm text-zinc-400">Everything in Solo, with 3 WhatsApp numbers connected to the same account.</p>
           </div>
         </div>
 
         <p className="text-sm leading-6 text-zinc-400">
-          <Check className="mr-2 inline h-4 w-4 text-emerald-300" /> New workspaces include a 15-day free trial that starts with the first assistant search. WhatsApp self-chat is paid with no trial; the configured owner number remains exempt from lockouts.
+          <Check className="mr-2 inline h-4 w-4 text-emerald-300" /> New workspaces include a 15-day free trial that starts with the first assistant search.
         </p>
       </div>
     </div>
