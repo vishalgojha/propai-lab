@@ -1,7 +1,10 @@
 import Link from "next/link";
 import InstinctManualSetup from "@/components/InstinctManualSetup";
+import CopyPromptButton from "@/components/CopyPromptButton";
 import { INSTINCT_SETUP_MESSAGE, INSTINCT_WHATSAPP_URL } from "@/lib/instinctHandoff";
 import { ArrowRight, CheckCircle2, ExternalLink, KeyRound, MessageCircle } from "lucide-react";
+
+const TRY_THIS_PROMPT = "Find me a 2 BHK for rent in Bandra West from my WhatsApp groups.";
 
 export default function InstinctWorkspacePage() {
   return (
@@ -11,14 +14,22 @@ export default function InstinctWorkspacePage() {
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Connect Instinct to your workspace</h1>
         <p className="mt-3 text-base leading-7 text-zinc-400">Instinct helps with the whole brokerage workflow. Connect PropAI when you want Instinct to use your permitted property evidence and workspace records.</p>
       </div>
+      <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-6 sm:p-7">
+        <h2 className="text-xl font-semibold text-white">First: connect your WhatsApp</h2>
+        <p className="mt-2 text-sm leading-6 text-zinc-400">Instinct searches your own broker group feed, so your WhatsApp number must be paired with this workspace first. This is separate from the Instinct approval below: pairing decides what PropAI captures, approval decides what Instinct may read.</p>
+        <ol className="mt-4 grid gap-3 sm:grid-cols-3">
+          {[["1", "Add your number", "Open the WhatsApp page and add the number that receives your broker groups."], ["2", "Pair it", "On your phone: WhatsApp → Settings → Linked devices → Link a device, then scan the QR code shown in PropAI (or use 'Link with phone number instead')."], ["3", "Choose groups", "Pick the broker groups PropAI may capture. Private chats are never captured."]].map(([number, title, copy]) => <li key={number} className="rounded-xl border border-white/10 bg-black/20 p-4"><div className="flex items-center gap-3"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-sm font-bold text-white">{number}</span><span className="font-semibold text-white">{title}</span></div><p className="mt-3 text-sm leading-6 text-zinc-400">{copy}</p></li>)}
+        </ol>
+        <Link href="/whatsapp?tab=numbers" className="mt-5 inline-flex items-center gap-2 rounded-lg border border-white/20 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/[0.06]">Open WhatsApp setup <ArrowRight className="h-4 w-4" aria-hidden="true" /></Link>
+      </div>
       <div className="mt-8 rounded-2xl border border-emerald-400/25 bg-emerald-400/[0.07] p-6 sm:p-7">
-        <div className="flex items-start gap-4"><div className="rounded-xl border border-emerald-300/25 bg-emerald-300/10 p-3 text-emerald-200"><MessageCircle className="h-6 w-6" aria-hidden="true" /></div><div><h2 className="text-xl font-semibold text-white">Three quick steps</h2><p className="mt-1 text-sm leading-6 text-zinc-400">You do not need to create, copy, or paste an API key for the normal connection.</p></div></div>
+        <div className="flex items-start gap-4"><div className="rounded-xl border border-emerald-300/25 bg-emerald-300/10 p-3 text-emerald-200"><MessageCircle className="h-6 w-6" aria-hidden="true" /></div><div><h2 className="text-xl font-semibold text-white">Then: connect Instinct in three quick steps</h2><p className="mt-1 text-sm leading-6 text-zinc-400">You do not need to create, copy, or paste an API key for the normal connection.</p></div></div>
         <ol className="mt-6 grid gap-3 sm:grid-cols-3">
           {[["1", "Send the request", "Tap the WhatsApp button below. Review the prefilled message, then tap Send."], ["2", "Open the approval link", "Your assistant sends a secure PropAI link. Open that link, not Instinct account settings."], ["3", "Sign in and approve", "Sign in at app.propai.live, check the requested access and code, then tap Approve. Return to your chat for the connection check."]].map(([number, title, copy]) => <li key={number} className="rounded-xl border border-white/10 bg-black/20 p-4"><div className="flex items-center gap-3"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-300 text-sm font-bold text-black">{number}</span><span className="font-semibold text-white">{title}</span></div><p className="mt-3 text-sm leading-6 text-zinc-400">{copy}</p></li>)}
         </ol>
         <a href={INSTINCT_WHATSAPP_URL} style={{ color: "#052e24" }} target="_blank" rel="noreferrer" className="mt-6 inline-flex items-center gap-2 rounded-lg bg-emerald-300 px-4 py-2.5 text-sm font-semibold text-black hover:bg-emerald-200">Open Instinct in WhatsApp <ExternalLink className="h-4 w-4" aria-hidden="true" /></a>
         <p className="mt-3 text-sm leading-6 text-zinc-400">This opens WhatsApp with a message ready to send. Nothing is sent or connected until you act.</p>
-        <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4"><p className="text-sm font-semibold text-white">Already use Instinct on iMessage or another channel?</p><p className="mt-2 text-sm leading-6 text-zinc-400">Send this in your existing Instinct chat. You do not need to add a website in Instinct account settings.</p><p className="mt-3 select-all break-words rounded-lg border border-white/10 p-3 text-sm leading-6 text-emerald-200">{INSTINCT_SETUP_MESSAGE}</p></div>
+        <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4"><p className="text-sm font-semibold text-white">Already use Instinct on iMessage or another channel?</p><p className="mt-2 text-sm leading-6 text-zinc-400">Send this in your existing Instinct chat. You do not need to add a website in Instinct account settings.</p><p className="mt-3 select-all break-words rounded-lg border border-white/10 p-3 text-sm leading-6 text-emerald-200">{INSTINCT_SETUP_MESSAGE}</p><div className="mt-3"><CopyPromptButton text={INSTINCT_SETUP_MESSAGE} label="Copy message" /></div></div>
       </div>
       <div className="mt-5 grid gap-5 sm:grid-cols-2">
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5"><div className="flex items-center gap-2 text-sm font-semibold text-white"><CheckCircle2 className="h-4 w-4 text-emerald-300" aria-hidden="true" /> Instinct can work like a broker colleague</div><p className="mt-3 text-sm leading-6 text-zinc-400">Search listings, requirements, matches, buildings, brokers, and market signals; read the original WhatsApp group evidence; explain why a result matched; and compare options.</p></div>
@@ -38,7 +49,12 @@ export default function InstinctWorkspacePage() {
         <h2 className="text-base font-semibold text-white">Help across the whole brokerage</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-400">Use Instinct for client briefs, visits, negotiation, paperwork, marketing, administration, web and project research, spreadsheet analysis, Excel-ready reports, broker emails, and property photo or video work. PropAI is one connected workspace inside that wider assistant workflow.</p>
       </div>
-      <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5"><h2 className="text-base font-semibold text-white">Try this after connecting</h2><p className="mt-2 rounded-lg border border-white/10 bg-black/20 px-4 py-3 text-sm text-emerald-200">“Find me a 2 BHK for rent in Bandra West from my WhatsApp groups.”</p></div>
+      <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5"><h2 className="text-base font-semibold text-white">Try this after connecting</h2><p className="mt-2 rounded-lg border border-white/10 bg-black/20 px-4 py-3 text-sm text-emerald-200">“{TRY_THIS_PROMPT}”</p><div className="mt-3"><CopyPromptButton text={TRY_THIS_PROMPT} label="Copy prompt" /></div></div>
+      <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+        <h2 className="text-base font-semibold text-white">Stuck anywhere?</h2>
+        <p className="mt-2 text-sm leading-6 text-zinc-400">If any step does not work, take a screenshot of what you see and send it to Vishal on WhatsApp. Include the page you were on and what you tapped.</p>
+        <a href="https://wa.me/919820056180" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 rounded-lg border border-white/20 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/[0.06]">Message Vishal on WhatsApp <ExternalLink className="h-4 w-4" aria-hidden="true" /></a>
+      </div>
       <details className="mt-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5"><summary className="flex cursor-pointer list-none items-center gap-3 text-sm font-semibold text-zinc-300"><KeyRound className="h-4 w-4 text-zinc-500" aria-hidden="true" /> Advanced/manual connection settings</summary><div className="mt-4 border-t border-white/10 pt-4 text-sm leading-6 text-zinc-400"><p>Manual API-key setup is only for technical integrations or troubleshooting. It is not required for the normal Instinct approval flow.</p><div className="mt-4"><InstinctManualSetup /></div><Link href="/workspace/mcp" className="mt-4 inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/[0.06]">Open advanced integrations <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link></div></details>
     </section>
   );

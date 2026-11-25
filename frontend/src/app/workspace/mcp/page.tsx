@@ -190,8 +190,12 @@ export default function McpWorkspacePage() {
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold text-white">Connect your assistant</h2>
             <p className="mt-1 text-sm leading-6 text-zinc-400">
-              Instinct is the easiest option for brokers. Open the Instinct setup, approve PropAI once, and start asking for listings. Claude can connect through the broker connector below.
+              Instinct is the easiest option for brokers: approve PropAI once and start asking for listings. Claude can connect through the broker connector below.
             </p>
+            <Link href="/workspace/instinct" className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-300 px-4 py-2.5 text-sm font-semibold text-black hover:bg-emerald-200" style={{ color: "#052e24" }}>
+              Open the Instinct setup page <Bot className="h-4 w-4" aria-hidden="true" />
+            </Link>
+            <p className="mt-2 text-xs leading-5 text-zinc-500">Step-by-step instructions, WhatsApp pairing, and a copy-ready connect message.</p>
           </div>
         </div>
 
