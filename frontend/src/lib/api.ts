@@ -349,6 +349,31 @@ export function selectOnboardingGroups(whatsappConnectionId: number, groupJids: 
   });
 }
 
+export type MarketRawSources = {
+  groups: { group_jid: string; group_name: string }[];
+  active_sources: { group_jid: string; group_name: string; confirmed_at: string }[];
+  revoked_sources?: { group_jid: string; group_name: string; revoked_at: string }[];
+  consent_version: string;
+  consent_text: string;
+};
+
+export function getMarketRawSources(whatsappConnectionId: number) {
+  return fetchJSON<MarketRawSources>(`/external/v1/market/raw-sources?whatsapp_connection_id=${encodeURIComponent(whatsappConnectionId)}`);
+}
+
+export function confirmMarketRawSources(whatsappConnectionId: number, groupJids: string[], consentVersion: string) {
+  return fetchJSON<{ enabled: boolean; changed: number }>("/external/v1/market/raw-sources", {
+    method: "PUT",
+    body: JSON.stringify({
+      whatsapp_connection_id: whatsappConnectionId,
+      group_jids: groupJids,
+      consent_version: consentVersion,
+      confirmed: true,
+      enabled: true,
+    }),
+  });
+}
+
 export async function fetchFormData<T>(url: string, formData: FormData, timeoutMs = API_TIMEOUT_MS): Promise<T> {
   invalidatePendingReads();
   try { return await fetchFormDataUnshared<T>(url, formData, timeoutMs); }

@@ -194,6 +194,13 @@ async def raw_sources(whatsapp_connection_id: int, user: dict = Depends(require_
             "group_jid,group_name,confirmed_at").eq("organization_id", tenant_id).eq(
             "whatsapp_connection_id", whatsapp_connection_id).eq("broker_id", broker).eq(
             "version", CONSENT_VERSION).is_("revoked_at", "null").execute().data or []
+        # Revoked consent metadata lets the owner see sharing PAUSED by a device
+        # change or deselect instead of a silent "not shared". Metadata only.
+        revoked = storage.client.table("broker_market_raw_source_consents").select(
+            "group_jid,group_name,revoked_at").eq("organization_id", tenant_id).eq(
+            "whatsapp_connection_id", whatsapp_connection_id).eq("broker_id", broker).eq(
+            "version", CONSENT_VERSION).not_.is_("revoked_at", "null").order(
+            "revoked_at", desc=True).limit(500).execute().data or []
         import re
         groups = {g["conversation_jid"]: {"group_jid": g["conversation_jid"],
                     "group_name": g.get("display_name") or g["conversation_jid"]}
@@ -205,6 +212,7 @@ async def raw_sources(whatsapp_connection_id: int, user: dict = Depends(require_
         sources = [dict(s, **activity.get(s["group_jid"], {"message_count": 0, "last_message_at": None}))
                    for s in consent]
         return {"groups": list(groups.values()), "active_sources": sources,
+                "revoked_sources": revoked,
                 "consent_version": CONSENT_VERSION, "consent_text": CONSENT_TEXT}
     return await asyncio.to_thread(read)
 

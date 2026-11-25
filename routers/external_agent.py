@@ -1193,15 +1193,56 @@ async def external_workspace_attention(key: dict = Depends(external_auth)):
         "due_date", desc=False
     ).limit(50).execute()
     searches = await asyncio.to_thread(storage.list_saved_market_searches, tenant_id)
+    connection_health = await asyncio.to_thread(_connection_health, tenant_id)
     return {
         "attention": {
             "open_followups": followups.data or [],
             "standing_searches": searches,
             "counts": {"open_followups": len(followups.data or []), "standing_searches": len(searches)},
+            "connection_health": connection_health,
         },
         "tenant_scoped": True,
         "outbound_actions": "not performed",
+        "sharing_note": "paused_groups mean sharing consent was revoked by a device change or deselect. Only the workspace owner can re-confirm sharing in Connections; an assistant must never restore it.",
     }
+
+
+def _connection_health(tenant_id: str) -> list[dict]:
+    """Connection/capture/sharing status signals for the workspace owner's own
+    assistant. Metadata only: counts and timestamps, never message content."""
+    connections = storage.client.table("org_whatsapp_connections").select(
+        "id,broker_id,phone_number,display_name,is_active,extraction_status"
+    ).eq("organization_id", tenant_id).execute().data or []
+    health = []
+    for conn in connections:
+        selected = storage.client.table("organization_group_connections").select(
+            "group_jid").eq("organization_id", tenant_id).eq(
+            "whatsapp_connection_id", conn["id"]).eq("is_active", True).eq(
+            "opted_out", False).execute().data or []
+        selected_jids = {row["group_jid"] for row in selected}
+        consents = storage.client.table("broker_market_raw_source_consents").select(
+            "group_jid,revoked_at").eq("organization_id", tenant_id).eq(
+            "whatsapp_connection_id", conn["id"]).execute().data or []
+        shared = sum(1 for row in consents if row.get("revoked_at") is None)
+        paused = sum(1 for row in consents
+                     if row.get("revoked_at") is not None and row.get("group_jid") in selected_jids)
+        devices = storage.client.table("broker_whatsapp_devices").select(
+            "created_at,updated_at").eq(
+            "whatsapp_connection_key", conn.get("broker_id") or "").limit(50).execute().data or []
+        last_device_change = max(
+            (d.get("updated_at") or d.get("created_at") or "" for d in devices), default=None) or None
+        health.append({
+            "connection_id": conn["id"],
+            "phone_number": conn.get("phone_number"),
+            "display_name": conn.get("display_name"),
+            "is_active": bool(conn.get("is_active")),
+            "extraction_status": conn.get("extraction_status"),
+            "selected_groups": len(selected_jids),
+            "shared_groups": shared,
+            "paused_groups": paused,
+            "last_device_change_at": last_device_change,
+        })
+    return health
 
 
 @router.get("/followups")
