@@ -1048,8 +1048,8 @@ async def external_create_inventory(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     normalized_idempotency_key = idempotency_key.strip() if idempotency_key else ""
-    if normalized_idempotency_key:
-        payload["_idempotency_key"] = normalized_idempotency_key
+    # The dedupe marker lives in custom_fields only; crm_inventory has no
+    # top-level _idempotency_key column and PostgREST rejects unknown keys.
     sensitive_fields = _sensitive_fields(payload, SENSITIVE_INVENTORY_FIELDS)
     audit_id = str(key.get("_audit_id") or "") if key.get("_approval_granted") else _write_audit_start(key, "create", "crm_inventory", payload, sensitive_fields)
     if sensitive_fields and not key.get("_approval_granted"):

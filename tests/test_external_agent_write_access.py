@@ -202,3 +202,33 @@ def test_jsonb_text_filter_serializes_for_idempotency_lookup():
         assert request.url.params["tenant_id"] == "eq.t-1"
     finally:
         client.close()
+
+
+def test_inventory_insert_payload_has_no_top_level_idempotency_key(monkeypatch):
+    client = FakeClient({"crm_inventory": []})
+    inserted = {}
+    real_table = client.table
+    class InsertCapture(FakeClient):
+        def table(self, table):
+            q = real_table(table)
+            if table == "crm_inventory":
+                orig_insert = q.insert
+                def capture(payload):
+                    inserted.update(payload)
+                    q.mode = "update"  # return non-empty data like a real insert
+                    return q
+                q.insert = capture
+            return q
+    capture_client = InsertCapture({"crm_inventory": []})
+    monkeypatch.setattr(external_agent, "storage", type("Storage", (), {"client": capture_client})())
+    monkeypatch.setattr(external_agent, "_write_audit_start", lambda *a, **k: "audit-1")
+    monkeypatch.setattr(external_agent, "_write_audit_finish", lambda *a, **k: None)
+    result = asyncio.run(external_agent.external_create_inventory(
+        {"building_name": "Test Building", "location": "Test Locality"},
+        key={"tenant_id": "tenant-1", "scopes": ["inventory:write"], "id": "key-1", "label": "Instinct", "created_by": "user-1"},
+        idempotency_key="abc-123",
+    ))
+    assert result["ok"] is True
+    assert "_idempotency_key" not in inserted
+    assert inserted["custom_fields"]["_idempotency_key"] == "abc-123"
+    assert inserted["tenant_id"] == "tenant-1"
