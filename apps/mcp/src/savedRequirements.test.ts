@@ -16,6 +16,7 @@ function createStore() {
     residential_sale_listings: [],
     commercial_rent_listings: [],
     commercial_sale_listings: [],
+    mcp_save_requests: [],
   };
   const insertCounts: Record<string, number> = {};
 
@@ -110,7 +111,83 @@ function createStore() {
     return builder;
   }
 
-  return { supabase: { from }, tables, insertCounts };
+  function normalizePhoneSql(value: any) {
+    const digits = String(value || "").replace(/[^0-9]/g, "");
+    if (!digits) return null;
+    if (digits.length === 10) return `+91${digits}`;
+    if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
+    const trimmed = String(value || "").trim();
+    return trimmed || null;
+  }
+
+  // Mirrors public.mcp_save_requirement: the whole claim+save runs as one
+  // atomic unit here, the way the SQL function runs in one transaction.
+  async function rpc(name: string, args: any) {
+    if (name !== "mcp_save_requirement") return { data: null, error: { message: `unknown rpc ${name}` } };
+    const crypto = await import("node:crypto");
+    const phone = normalizePhoneSql(args.p_phone);
+    const fingerprint = crypto.createHash("md5")
+      .update([args.p_name || "", phone || "", args.p_raw_text || ""].join("\x1f"))
+      .digest("hex");
+    const gate = (tables.mcp_save_requests || []).find(
+      (row) => row.tenant_id === args.p_tenant_id && row.save_request_key === args.p_save_request_key,
+    );
+    if (gate) {
+      if (gate.requirement_id == null) {
+        return { data: null, error: { message: `requirement save for key "${args.p_save_request_key}" is in progress; retry the same request` } };
+      }
+      if (gate.request_fingerprint !== fingerprint) {
+        return { data: null, error: { message: `idempotency key "${args.p_save_request_key}" was already used for a different requirement; use a new key for a new save` } };
+      }
+      return { data: { replayed: true, client_id: gate.client_id, requirement_id: gate.requirement_id }, error: null };
+    }
+    let clientId: number | null = null;
+    if (phone) {
+      const found = (tables.clients || []).filter((row) => row.tenant_id === args.p_tenant_id && row.phone === phone);
+      clientId = found.length ? found[found.length - 1].id : null;
+    }
+    if (clientId == null) {
+      const row = {
+        id: (tables.clients || []).length + 1,
+        tenant_id: args.p_tenant_id,
+        name: String(args.p_name || "").trim() || null,
+        phone,
+        notes: args.p_raw_text,
+        status: "active",
+        created_at: "2026-11-26T03:00:00.000Z",
+        updated_at: "2026-11-26T03:00:00.000Z",
+      };
+      tables.clients.push(row);
+      clientId = row.id;
+    }
+    const requirement = {
+      id: (tables.client_requirements || []).length + 1,
+      tenant_id: args.p_tenant_id,
+      client_id: clientId,
+      intent: "requirement",
+      bhk: args.p_bhk,
+      price_max: args.p_budget,
+      micro_market: args.p_location,
+      notes: args.p_raw_text,
+      created_at: "2026-11-26T03:00:00.000Z",
+      updated_at: "2026-11-26T03:00:00.000Z",
+    };
+    tables.client_requirements.push(requirement);
+    tables.mcp_save_requests.push({
+      id: tables.mcp_save_requests.length + 1,
+      tenant_id: args.p_tenant_id,
+      save_request_key: args.p_save_request_key,
+      record_type: "buyer_requirement",
+      request_fingerprint: fingerprint,
+      client_id: clientId,
+      requirement_id: requirement.id,
+      created_at: "2026-11-26T03:00:00.000Z",
+      completed_at: "2026-11-26T03:00:00.000Z",
+    });
+    return { data: { replayed: false, client_id: clientId, requirement_id: requirement.id }, error: null };
+  }
+
+  return { supabase: { from, rpc }, tables, insertCounts };
 }
 
 function makeMock(store: ReturnType<typeof createStore>) {
@@ -267,4 +344,87 @@ test("saved_requirements tool is registered and returns saved rows for the broke
   const fakeServer2 = { registerTool: (name: string, _m: any, h: any) => { registered[name] = h; } };
   registerRequirementTools(fakeServer2 as any, { user: null } as any);
   await assert.rejects(() => registered.saved_requirements({ limit: 5 }), /broker id/i);
+});
+
+test("keyed save replays exactly-once and never writes twice", async () => {
+  resetStore();
+  const { createRequirementRecord } = await import("./data.ts");
+  const keyed = { ...baseInput, saveRequestKey: "chat-msg-1" } as any;
+
+  const first = await createRequirementRecord(keyed);
+  assert.equal(first.idempotent_replay, false);
+  assert.equal(store.tables.clients.length, 1);
+  assert.equal(store.tables.client_requirements.length, 1);
+
+  // Same key, same content, any time later: replay, zero new rows.
+  const replay = await createRequirementRecord(keyed);
+  assert.equal(replay.idempotent_replay, true);
+  assert.equal(replay.lead.lead_id, first.lead.lead_id);
+  assert.equal(replay.lead.client_id, first.lead.client_id);
+  assert.equal(store.tables.clients.length, 1);
+  assert.equal(store.tables.client_requirements.length, 1);
+  assert.equal(store.tables.mcp_save_requests.length, 1);
+});
+
+test("same key with different requirement content is rejected, never collapsed", async () => {
+  resetStore();
+  const { createRequirementRecord } = await import("./data.ts");
+  await createRequirementRecord({ ...baseInput, saveRequestKey: "k-1" } as any);
+
+  await assert.rejects(
+    () => createRequirementRecord({ ...baseInput, raw_text: "TEST: completely different 3 BHK ask", saveRequestKey: "k-1" } as any),
+    /already used for a different requirement/,
+  );
+  // Nothing written by the rejected attempt.
+  assert.equal(store.tables.client_requirements.length, 1);
+});
+
+test("distinct keys with identical name and text are deliberately separate saves", async () => {
+  resetStore();
+  const { createRequirementRecord } = await import("./data.ts");
+
+  const first = await createRequirementRecord({ ...baseInput, saveRequestKey: "msg-1" } as any);
+  const second = await createRequirementRecord({ ...baseInput, saveRequestKey: "msg-2" } as any);
+
+  assert.equal(first.idempotent_replay, false);
+  assert.equal(second.idempotent_replay, false);
+  // A new key is never collapsed by content or name: two clients, two requirements.
+  assert.equal(store.tables.clients.length, 2);
+  assert.notEqual(first.lead.client_id, second.lead.client_id);
+  assert.equal(store.tables.client_requirements.length, 2);
+  assert.notEqual(first.lead.lead_id, second.lead.lead_id);
+});
+
+test("distinct keys with the same phone share the client but not the requirement", async () => {
+  resetStore();
+  const { createRequirementRecord } = await import("./data.ts");
+
+  const first = await createRequirementRecord({ ...baseInput, phone: "9820012345", saveRequestKey: "msg-1" } as any);
+  const second = await createRequirementRecord({ ...baseInput, phone: "9820012345", saveRequestKey: "msg-2" } as any);
+
+  // Phone is identity: one client. A new key is a new request: two requirements.
+  assert.equal(store.tables.clients.length, 1);
+  assert.equal(first.lead.client_id, second.lead.client_id);
+  assert.equal(store.tables.client_requirements.length, 2);
+  assert.notEqual(first.lead.lead_id, second.lead.lead_id);
+  assert.equal(second.idempotent_replay, false);
+});
+
+test("concurrent same-key saves produce exactly one client and one requirement", async () => {
+  resetStore();
+  const { createRequirementRecord } = await import("./data.ts");
+  const keyed = { ...baseInput, saveRequestKey: "race-key" } as any;
+
+  const results = await Promise.all([
+    createRequirementRecord(keyed),
+    createRequirementRecord(keyed),
+    createRequirementRecord(keyed),
+    createRequirementRecord(keyed),
+  ]);
+  const leadIds = new Set(results.map((r) => r.lead.lead_id));
+  assert.equal(leadIds.size, 1);
+  assert.equal(results.filter((r) => !r.idempotent_replay).length, 1);
+  assert.equal(store.tables.clients.length, 1);
+  assert.equal(store.tables.client_requirements.length, 1);
+  assert.equal(store.tables.mcp_save_requests.length, 1);
 });

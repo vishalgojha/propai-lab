@@ -1732,6 +1732,7 @@ export async function createRequirementRecord(input: {
   bhk_preference?: string[];
   property_type?: string;
   listing_type?: string;
+  saveRequestKey?: string;
 }) {
   const budgetCr = parseBudgetToCr(input.budget);
   const payload = {
@@ -1744,10 +1745,52 @@ export async function createRequirementRecord(input: {
     listing_type: input.listing_type || null,
   };
 
-  // Idempotency is durable: upsertLeadRecord reuses the same-name client and
+  const saveRequestKey = compactText(input.saveRequestKey) || null;
+  if (saveRequestKey) {
+    // Durable request-scoped idempotency, atomic in one database transaction
+    // (migration 20261126120000_mcp_requirement_save_idempotency): the gate
+    // row and the CRM rows commit or roll back together, so there is no
+    // partial state to take over. Concurrent saves with the same key
+    // serialize on the gate's unique index; the loser returns the winner's
+    // committed ids unchanged. A NEW key always saves distinctly, even for
+    // identical name+text - keyed saves never reuse clients by name and are
+    // never collapsed by content matching. A phone reuses the client because
+    // a phone number is identity, not a heuristic.
+    const { data: saveResult, error: saveError } = await supabase.rpc("mcp_save_requirement", {
+      p_tenant_id: input.brokerId,
+      p_save_request_key: saveRequestKey,
+      p_name: input.name || "MCP Requirement",
+      p_phone: input.phone || null,
+      p_raw_text: input.raw_text,
+      p_budget: budgetCr,
+      p_location: input.location_pref || null,
+      p_bhk: Array.isArray(input.bhk_preference) ? input.bhk_preference.join(", ") : null,
+    });
+    if (saveError) throw new Error(saveError.message);
+    const keyed = saveResult as { replayed?: boolean; client_id: number; requirement_id: number };
+    return {
+      requirement: payload,
+      lead: {
+        lead_id: String(keyed.requirement_id),
+        client_id: keyed.client_id,
+        requirement_id: keyed.requirement_id,
+        phone: normalizePhone(input.phone) || null,
+        priority_bucket: null,
+        urgency: null,
+        priority_score: null,
+        requirement_replayed: keyed.replayed === true,
+      },
+      idempotent_replay: keyed.replayed === true,
+    };
+  }
+
+  // Unkeyed saves keep the existing best-effort replay: upsertLeadRecord
   // returns the existing requirement when the exact text was already saved
-  // for that client in this tenant (requirement_replayed). Any change to the
-  // text intentionally creates a separate requirement.
+  // for the same phone-identified client in this tenant, and otherwise uses
+  // a same-name exact-text heuristic. Without a key or a phone, a retry is
+  // indistinguishable from a deliberately separate identical request, so
+  // this path is not race-safe and makes no durability guarantee - callers
+  // that need exactly-once saves must pass saveRequestKey.
   const lead = await upsertLeadRecord({
     brokerId: input.brokerId,
     name: input.name || "MCP Requirement",

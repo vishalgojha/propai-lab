@@ -324,13 +324,19 @@ export function createMcpServer(context: ToolContext = {}) {
         bhk_preference: z.array(z.string()).optional(),
         property_type: z.string().optional(),
         listing_type: z.string().optional(),
+        idempotency_key: z
+          .string()
+          .optional()
+          .describe(
+            "Optional stable key that makes this save exactly-once: retries with the same key return the original record, while a new key always saves a separate record even for identical text. Use a conversation or message id.",
+          ),
       },
     },
     async (input) => {
       const id = requireBrokerId(context);
       const tenantId = requireTenantId(context);
       await logToolCall(id, "save_thread_requirement", input);
-      const result = await createRequirementRecord({ brokerId: tenantId, ...input });
+      const result = await createRequirementRecord({ brokerId: tenantId, ...input, saveRequestKey: input.idempotency_key });
       return textResponse(
         `Thread requirement saved${result.lead?.lead_id ? ` with lead id ${result.lead.lead_id}` : ""} for ${input.location_pref || "the requested location"}.`,
         deprecatedAlias(result, "create_requirement"),
@@ -451,6 +457,12 @@ export function createMcpServer(context: ToolContext = {}) {
         bhk_preference: z.array(z.string()).optional(),
         property_type: z.string().optional(),
         listing_type: z.string().optional(),
+        idempotency_key: z
+          .string()
+          .optional()
+          .describe(
+            "Optional stable key that makes this save exactly-once: retries with the same key return the original record, while a new key always saves a separate record even for identical text. Use a conversation or message id.",
+          ),
       },
     },
     async (input) => {
@@ -459,7 +471,7 @@ export function createMcpServer(context: ToolContext = {}) {
       await logToolCall(id, "create_requirement", input);
       // CRM lead tables key rows by organization tenant id; passing the
       // broker/user id here violates clients_tenant_id_fkey.
-      const result = await createRequirementRecord({ brokerId: tenantId, ...input });
+      const result = await createRequirementRecord({ brokerId: tenantId, ...input, saveRequestKey: input.idempotency_key });
       return textResponse(
         result.idempotent_replay
           ? `This exact requirement was already saved for ${input.location_pref || "the requested location"}; returning the existing record (lead id ${result.lead.lead_id}) without changes.`
