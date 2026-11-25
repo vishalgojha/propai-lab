@@ -15,9 +15,9 @@ create table if not exists public.subscription_plans (
 -- Price points from the Nov 25 pricing direction; number mapping per tier.
 insert into public.subscription_plans (code, name, monthly_price_inr, whatsapp_numbers)
 values
-  ('starter', 'Starter (1 number)', 1299, 1),
-  ('growth', 'Growth (2 numbers)', 1499, 2),
-  ('pro', 'Pro (3 numbers)', 2599, 3)
+  ('solo', 'Solo (1 number)', 1299, 1),
+  ('two_numbers', 'Two numbers', 1499, 2),
+  ('three_numbers', 'Three numbers', 2599, 3)
 on conflict (code) do nothing;
 
 create table if not exists public.tenant_subscriptions (
