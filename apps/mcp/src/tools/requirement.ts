@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { logToolCall, matchRequirementToInventory, searchRequirements } from "../data.ts";
+import { getSavedRequirements, logToolCall, matchRequirementToInventory, searchRequirements } from "../data.ts";
 import { recordAssistantSearchSuccess } from "../supabase.ts";
 import { recordSearchUsage } from "../usage.ts";
 import type { ToolContext } from "../types.js";
@@ -29,6 +29,23 @@ function requireTenantId(context?: ToolContext) {
 }
 
 export function registerRequirementTools(server: McpServer, context: ToolContext) {
+  server.registerTool("saved_requirements", {
+    description: "List the client requirements you have intentionally saved through this assistant (create_requirement). Returns client name, budget, location, BHK, notes and when each was saved - newest first. Client phone numbers are never returned. Use this to recall what you have saved.",
+    inputSchema: {
+      limit: z.number().optional().default(20).describe("How many saved requirements to return (max 100)"),
+    },
+  }, async (input) => {
+    const id = requireBrokerId(context);
+    await logToolCall(id, "saved_requirements", input);
+    const requirements = await getSavedRequirements({ brokerId: id, limit: input.limit });
+    return textResponse(
+      requirements.length
+        ? requirements.map((item, index) => `${index + 1}. ${item.name} - ${item.location_hint || "location not specified"} - BHK: ${item.bhk ?? "any"} - saved ${item.created_at}`).join("\n")
+        : "No saved requirements yet. Use create_requirement to save one.",
+      { requirements },
+    );
+  });
+
   server.registerTool("requirement_search", {
     description: "Search the typed market requirements directly by locality, asset type, transaction type, budget, and BHK. Use this for buyer or tenant demand; it is distinct from listing search.",
     inputSchema: {

@@ -1286,12 +1286,28 @@ async function upsertLeadRecord(input: LeadRecordInput) {
     clientId = existingClient?.id ?? null;
   }
 
+  // Without a phone number, reuse an existing client with the exact same name
+  // in this tenant instead of creating a duplicate on every save.
+  const clientName = compactText(input.name) || "MCP Lead";
+  if (clientId == null && !phone) {
+    const { data: namedClient, error: namedError } = await supabase
+      .from("clients")
+      .select("id")
+      .eq("tenant_id", input.brokerId)
+      .ilike("name", clientName)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (namedError) throw new Error(namedError.message);
+    clientId = namedClient?.id ?? null;
+  }
+
   if (clientId == null) {
     const { data: clientRow, error: clientError } = await supabase
       .from("clients")
       .insert({
         tenant_id: input.brokerId,
-        name: compactText(input.name) || "MCP Lead",
+        name: clientName,
         phone: phone || null,
         notes: input.rawText,
         status: "active",
@@ -1305,7 +1321,28 @@ async function upsertLeadRecord(input: LeadRecordInput) {
   }
 
   let requirementId: number | null = null;
+  let requirementReplayed = false;
   if (input.recordType === "buyer_requirement") {
+    // Durable idempotency: the exact same requirement text for the same
+    // client in this tenant returns the existing row, however old it is.
+    // Any change to the text intentionally creates a separate requirement.
+    const { data: existingRequirement, error: existingRequirementError } = await supabase
+      .from("client_requirements")
+      .select("id")
+      .eq("tenant_id", input.brokerId)
+      .eq("client_id", clientId)
+      .eq("notes", input.rawText)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existingRequirementError) throw new Error(existingRequirementError.message);
+    if (existingRequirement) {
+      requirementId = existingRequirement.id as number;
+      requirementReplayed = true;
+    }
+  }
+
+  if (requirementId == null && input.recordType === "buyer_requirement") {
     const { data: requirementRow, error: requirementError } = await supabase
       .from("client_requirements")
       .insert({
@@ -1335,6 +1372,7 @@ async function upsertLeadRecord(input: LeadRecordInput) {
     priority_bucket: priorityBucket,
     urgency,
     priority_score: priorityScore,
+    requirement_replayed: requirementReplayed,
   };
 }
 
@@ -1426,13 +1464,56 @@ export async function saveListingRecord(input: {
   }
 
   const typed = buildMcpTypedListing(input, structured, fingerprint, rawMessageId, visibility);
-  const { data, error } = await supabase
+
+  // Create-or-return-existing: a retry of the same save returns the existing
+  // listing WITHOUT mutating it and without creating another lead. Nothing
+  // about an already-saved row is ever updated by this path.
+  const { data: existingListing, error: existingListingError } = await supabase
     .from(typed.table)
-    .upsert(typed.row, { onConflict: "source_fingerprint" })
+    .select("id, created_at")
+    .eq("source_fingerprint", fingerprint)
+    .limit(1)
+    .maybeSingle();
+  if (existingListingError) throw new Error(existingListingError.message);
+  if (existingListing) {
+    return {
+      listing_id: existingListing.id,
+      created_at: existingListing.created_at,
+      lead: null,
+      listing: structured,
+      idempotent_replay: true,
+    };
+  }
+
+  let data: { id: number; created_at: string } | null = null;
+  const { data: inserted, error } = await supabase
+    .from(typed.table)
+    .insert(typed.row)
     .select("id, created_at")
     .single();
 
+  if (error && (error as { code?: string }).code === "23505") {
+    // Concurrent save of the identical listing lost the insert race: return
+    // the row the other request created, unmodified.
+    const { data: raced, error: racedError } = await supabase
+      .from(typed.table)
+      .select("id, created_at")
+      .eq("source_fingerprint", fingerprint)
+      .limit(1)
+      .maybeSingle();
+    if (racedError) throw new Error(racedError.message);
+    if (raced) {
+      return {
+        listing_id: raced.id,
+        created_at: raced.created_at,
+        lead: null,
+        listing: structured,
+        idempotent_replay: true,
+      };
+    }
+  }
   if (error) throw new Error(error.message);
+  data = inserted;
 
   const lead = await upsertLeadRecord({
     brokerId: input.tenantId,
@@ -1452,6 +1533,7 @@ export async function saveListingRecord(input: {
     created_at: data?.created_at || null,
     lead,
     listing: structured,
+    idempotent_replay: false,
   };
 }
 
@@ -1640,6 +1722,10 @@ export async function createRequirementRecord(input: {
     listing_type: input.listing_type || null,
   };
 
+  // Idempotency is durable: upsertLeadRecord reuses the same-name client and
+  // returns the existing requirement when the exact text was already saved
+  // for that client in this tenant (requirement_replayed). Any change to the
+  // text intentionally creates a separate requirement.
   const lead = await upsertLeadRecord({
     brokerId: input.brokerId,
     name: input.name || "MCP Requirement",
@@ -1656,6 +1742,7 @@ export async function createRequirementRecord(input: {
   return {
     requirement: payload,
     lead,
+    idempotent_replay: lead.requirement_replayed === true,
   };
 }
 
@@ -2085,6 +2172,35 @@ export async function getPendingFollowUps(input: { brokerId: string; limit?: num
 
 export async function getRecentSavedListings(input: { brokerId: string; limit?: number }) {
   return getWorkspaceListings(input);
+}
+
+export async function getSavedRequirements(input: { brokerId: string; limit?: number }) {
+  // Recall surface for intentional assistant saves: client name and
+  // requirement details only - client phone numbers are never returned here.
+  const { data, error } = await supabase
+    .from("client_requirements")
+    .select("id, client_id, micro_market, building_name, bhk, price_min, price_max, area_sqft_min, area_sqft_max, notes, created_at, clients(name)")
+    .eq("tenant_id", input.brokerId)
+    .order("created_at", { ascending: false })
+    .limit(clampLimit(input.limit, 20, 100));
+
+  if (error) throw new Error(error.message);
+  return (data || []).map((row: any) => {
+    const client = Array.isArray(row.clients) ? row.clients[0] : row.clients;
+    return {
+      lead_id: String(row.id),
+      client_id: row.client_id != null ? String(row.client_id) : null,
+      name: client?.name || "Unknown lead",
+      location_hint: row.micro_market || row.building_name || null,
+      bhk: row.bhk || null,
+      budget_min: row.price_min ?? null,
+      budget_max: row.price_max ?? null,
+      area_min_sqft: row.area_sqft_min ?? null,
+      area_max_sqft: row.area_sqft_max ?? null,
+      raw_text: row.notes || null,
+      created_at: row.created_at,
+    };
+  });
 }
 
 export async function getRecentRequirements(input: { brokerId: string; limit?: number }) {

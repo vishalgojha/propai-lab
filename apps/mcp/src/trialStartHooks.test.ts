@@ -34,6 +34,7 @@ const dataMock = mock.module("./data.js", {
     getMarketSummary: (input: unknown) => getMarketSummaryImpl(),
     getPendingFollowUps: async () => [],
     getRecentRequirements: async () => [],
+    getSavedRequirements: async () => [],
     getRecentSavedListings: async () => [],
     getStaleInventory: async () => ({ results: [] }),
     getStaleLeadReactivation: asyncStub,

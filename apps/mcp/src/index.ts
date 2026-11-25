@@ -93,6 +93,7 @@ export const MCP_TOOL_NAMES = [
   "building_intel",
   "save_listing",
   "create_requirement",
+  "saved_requirements",
   "set_follow_up",
   "qualify_lead",
   "draft_broadcast",
@@ -456,7 +457,9 @@ export function createMcpServer(context: ToolContext = {}) {
       await logToolCall(id, "create_requirement", input);
       const result = await createRequirementRecord({ brokerId: id, ...input });
       return textResponse(
-        `Requirement saved for ${input.location_pref || "the requested location"} with lead id ${result.lead.lead_id}.`,
+        result.idempotent_replay
+          ? `This exact requirement was already saved for ${input.location_pref || "the requested location"}; returning the existing record (lead id ${result.lead.lead_id}) without changes.`
+          : `Requirement saved for ${input.location_pref || "the requested location"} with lead id ${result.lead.lead_id}.`,
         result,
       );
     },
@@ -649,7 +652,9 @@ export function createMcpServer(context: ToolContext = {}) {
         ...input,
       });
       return textResponse(
-        `Listing saved${result.listing_id ? ` with id ${result.listing_id}` : ""} for ${result.listing.location || "the requested location"}.`,
+        result.idempotent_replay
+          ? `This exact listing was already saved (id ${result.listing_id}); returning the existing record without changes.`
+          : `Listing saved${result.listing_id ? ` with id ${result.listing_id}` : ""} for ${result.listing.location || "the requested location"}.`,
         result,
       );
     },
