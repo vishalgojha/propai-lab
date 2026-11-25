@@ -314,10 +314,9 @@ def test_actual_legacy_selection_retains_or_revokes_raw_as_requested(seeded,monk
   def update(self,values):self.values=values;return self
   def upsert(self,rows,**kwargs):self.rows=rows;return self
   def eq(self,k,v):self.filters.append(sql.SQL('{}=%s').format(sql.Identifier(k)));self.args.append(v);return self
-  def not_(self,k,operator,value):
-   assert k=='group_jid' and operator=='in'
-   self.negative=True
-   values=value.strip('()').split(',') if value else []
+  @property
+  def not_(self):self.negative=True;return self
+  def in_(self,k,values):
    self.filters.append(sql.SQL('{} <> all(%s)').format(sql.Identifier(k)));self.args.append(values);return self
   def execute(self):
    with db.cursor() as q:

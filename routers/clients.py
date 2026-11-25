@@ -79,11 +79,6 @@ async def update_client(client_id: int, body: dict, user: dict = Depends(require
 # ── Client Aliases ───────────────────────────────────────────────
 
 
-@router.get("/api/clients/{client_id}/aliases")
-async def list_client_aliases(client_id: int, user: dict = Depends(require_user)):
-    return _get_client_store().get_client_aliases(client_id)
-
-
 @router.post("/api/clients/{client_id}/aliases")
 async def add_client_alias(client_id: int, body: dict, user: dict = Depends(require_user)):
     alias = str(body.get("alias") or "").strip()

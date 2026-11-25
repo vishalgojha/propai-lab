@@ -6,7 +6,6 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as api from "@/lib/api";
 import { displayGroupName, stripDecorativeEmoji } from "@/lib/whatsapp-display";
-import { MarketInboxQualityWidget } from "./inbox-quality-widget";
 
 function MarketsContent() {
   const router = useRouter();
@@ -18,8 +17,6 @@ function MarketsContent() {
   const [selectedMarket, setSelectedMarket] = useState<string | null>(initialMarket);
   const [marketDetail, setMarketDetail] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [qualityMetrics, setQualityMetrics] = useState<any | null>(null);
-  const [qualityLoading, setQualityLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([api.getDashboardHeatmap(), api.getDashboardCoverage()]).then(([h, c]) => {
@@ -39,16 +36,6 @@ function MarketsContent() {
       setMarketDetail(null);
     }
   }, [selectedMarket]);
-
-  useEffect(() => {
-    setQualityLoading(true);
-    api.fetchJSON("/market/inbox/quality-metrics").then((res: any) => {
-      setQualityMetrics(res.metrics);
-      setQualityLoading(false);
-    }).catch(() => {
-      setQualityLoading(false);
-    });
-  }, []);
 
   const maxHeat = heatmap.length > 0 ? heatmap[0].c : 1;
   const topMarkets = heatmap.slice(0, 30);
@@ -71,15 +58,6 @@ function MarketsContent() {
           </div>
         ))}
       </div>
-
-      {/* Market Inbox Quality Metrics Widget */}
-      {qualityLoading ? (
-        <div className="p-4 animate-pulse">
-          <span className="animate-pulse h-6 w-24 rounded bg-border-200/30" />
-        </div>
-      ) : (
-        <MarketInboxQualityWidget metrics={qualityMetrics} />
-      )}
 
       {/* Two-panel: Market List + Detail */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">

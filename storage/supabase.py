@@ -6693,14 +6693,7 @@ class SupabaseStorage(Storage):
             if intent and not _matches_transaction_filter(legacy, intent):
                 continue
             if bhk and bhk not in str(legacy.get("bhk") or "").lower().replace(" bhk", ""):
-                legacy_bhk = (legacy.get("bhk") or "").lower().replace(" bhk", "")
-                if not legacy_bhk:
-                    # Listings without a specified BHK are not excluded when a
-                    # BHK filter is active; they are kept for the broker to
-                    # decide based on other criteria (e.g. budget band).
-                    pass
-                elif bhk not in legacy_bhk:
-                    continue
+                continue
             if building and building not in text:
                 continue
             if micro_market and micro_market not in " ".join(str(legacy.get(key) or "").lower() for key in ("micro_market", "locality_raw", "locality_resolved")):
@@ -8327,30 +8320,6 @@ class SupabaseStorage(SupabaseStorage):
             self.client.table(table).update(base).eq("id", int(row["id"])).execute()
             return base
         old = candidate["row"]
-        # --- accumulate repost_count / max last_posted_at (Phase 1) ---
-        old_rc = int(old.get("repost_count") or 0)
-        old_lp = old.get("last_posted_at")
-        try:
-            old_lp_dt = datetime.fromisoformat(str(old_lp).replace("Z", "+00:00")) if old_lp else None
-        except (TypeError, ValueError):
-            old_lp_dt = None
-        new_lp_dt = posted_dt if posted_dt else None
-        if old_lp_dt and new_lp_dt:
-            final_lp = old_lp_dt if old_lp_dt >= new_lp_dt else new_lp_dt
-        elif old_lp_dt:
-            final_lp = old_lp_dt
-        elif new_lp_dt:
-            final_lp = new_lp_dt
-        else:
-            final_lp = None
-        new_rc = old_rc + 1 if old_rc > 0 else 1
-        # rebuild base with accumulated values
-        base = {
-            "duplicate_status": "distinct",
-            "repost_count": new_rc,
-            "last_posted_at": final_lp.isoformat() if final_lp else None,
-        }
-        # --- end Phase 1 fix ---
         same_broker = (
             broker_id is not None and old.get("broker_id") is not None and int(old["broker_id"]) == int(broker_id)
         ) or (
@@ -12897,17 +12866,11 @@ class SupabaseStorage(SupabaseStorage):
         )
         return items
 
-    def get_raw_messages_page(self, *, tenant_id: str, limit: int = 50,
-                              offset: int = 0, query: str = "",
-                              include_spam: bool = False,
-                              scope: str = "groups") -> dict:
-        """Page original workspace messages with cross-repost dedupe.
-
-        ``scope`` is deliberately explicit: ``groups`` is the market feed's
-        historical default, while ``dms`` exposes one-to-one source evidence
-        without making it eligible for market inventory by itself. The rows
-        remain tenant-scoped and the source cursor is independent for each
-        scope, so switching tabs cannot mix or leak conversations.
+    def get_raw_group_messages_page(self, *, tenant_id: str, limit: int = 50,
+                                    offset: int = 0, query: str = "",
+                                    include_spam: bool = False) -> dict:
+        """Page the workspace's original group messages with cross-repost
+        dedupe and an honest spam header.
 
         ``offset`` is a stable cursor into the deduped newest-first ordering,
         not a result offset. Each page consumes a bounded slab, collapses the
@@ -12921,16 +12884,13 @@ class SupabaseStorage(SupabaseStorage):
         page boundary no longer reappears on the next page. The in-slab chain
         dedupe still runs to collapse same-author reposts whose bodies differ.
         """
-        normalized_scope = str(scope or "groups").strip().lower()
-        if normalized_scope not in {"groups", "dms"}:
-            normalized_scope = "groups"
         page_limit = min(max(int(limit or 50), 1), 100)
         source_offset = max(int(offset or 0), 0)
         needle = str(query or "").strip()[:120].replace("%", "").replace("_", "")
         fetch_window = min(max(page_limit * 8, 200), 1000)
         q = (self.client.table("raw_messages")
              .select("id,message,group_name,sender,timestamp,created_at,repeat_of_raw_message_id")
-             .eq("tenant_id", tenant_id).eq("is_group", normalized_scope == "groups")
+             .eq("tenant_id", tenant_id).eq("is_group", True)
              .eq("is_content_latest", True))
         if len(needle) >= 2:
             q = q.ilike("message", f"%{needle}%")
@@ -12982,13 +12942,8 @@ class SupabaseStorage(SupabaseStorage):
             "next_source_offset": source_offset + fetched_count,
             "spam_hidden": spam_hidden if not include_spam else 0,
             "deduped": deduped_before - len(rows),
-            "scope": f"active_workspace_connected_{normalized_scope}",
+            "scope": "active_workspace_connected_groups",
         }
-
-    def get_raw_group_messages_page(self, **kwargs) -> dict:
-        """Backward-compatible group-only raw message page."""
-        kwargs["scope"] = "groups"
-        return self.get_raw_messages_page(**kwargs)
 
     def _cached_market_feed_window(self, *, cache_key: tuple, required: int,
                                    build) -> list[dict]:

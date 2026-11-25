@@ -9,9 +9,7 @@
     "build": "tsc",
     "test": "npm run build && node --experimental-test-module-mocks --test dist/*.test.js",
     "start": "node dist/server.js",
-    "start:client": "node dist/server.client.js",
     "dev": "node --loader ts-node/esm src/server.ts",
-    "dev:client": "node --loader ts-node/esm src/server.client.ts",
     "stdio": "node dist/stdio.js",
     "dev:stdio": "node --loader ts-node/esm src/stdio.ts"
   },
