@@ -1566,8 +1566,8 @@ async def opt_out_group(
             "connection": (row.data or [None])[0],
             "cap": _cap_state(org_id, body.whatsapp_connection_id, unlimited=unlimited),
             # Sender overlap is advisory and is intentionally not part of the
-            # opt-out critical path. The durable suppression must return
-            # immediately even if overlap reads are slow or unavailable.
+            # opt-out critical path. Durable suppression must return promptly
+            # even if overlap reads are slow or unavailable.
             "overlap": {},
             "opted_out": True,
         }
