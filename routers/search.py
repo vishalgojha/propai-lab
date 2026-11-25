@@ -425,7 +425,7 @@ JSON:"""
 
 
 @router.get("/api/search/parse")
-async def parse_query(q: str = ""):
+async def parse_query(q: str = "", user: dict = Depends(require_user)):
     if not q:
         return ParsedQuery(query="").model_dump()
     q = q.strip()
@@ -669,7 +669,7 @@ async def search_market_items(
 
 
 @router.get("/api/search")
-async def search_messages(q: str = "", use_llm: bool = False):
+async def search_messages(q: str = "", use_llm: bool = False, user: dict = Depends(require_user)):
     """Search live Supabase projections used by the dashboard.
 
     This palette predates the typed-table migration.  The old implementation
@@ -755,6 +755,8 @@ async def search_messages(q: str = "", use_llm: bool = False):
 @router.get("/api/search/raw")
 @tracked_search("app")
 async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    if not tenant_id:
+        raise HTTPException(403, "Tenant context required")
     if not q:
         return {"results": [], "count": 0}
     q = q.strip()
@@ -789,13 +791,15 @@ async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0, use
                    snippet(raw_messages_fts, 0, '<mark>', '</mark>', '...', 40) as snippet
             FROM raw_messages_fts fts
             JOIN raw_messages rm ON rm.id = fts.rowid
-            WHERE raw_messages_fts MATCH ?
+            WHERE raw_messages_fts MATCH ? AND rm.tenant_id = ?
             ORDER BY rank
             LIMIT ? OFFSET ?
-        """, (q, limit, offset)).fetchall()
+        """, (q, tenant_id, limit, offset)).fetchall()
         count_row = storage.db.execute("""
-            SELECT COUNT(*) FROM raw_messages_fts WHERE raw_messages_fts MATCH ?
-        """, (q,)).fetchone()
+            SELECT COUNT(*) FROM raw_messages_fts fts
+            JOIN raw_messages rm ON rm.id = fts.rowid
+            WHERE raw_messages_fts MATCH ? AND rm.tenant_id = ?
+        """, (q, tenant_id)).fetchone()
         total = count_row[0] if count_row else 0
         return {"results": [_row_to_result(r, r[7]) for r in rows], "count": total, "query": q}
     except Exception as e:
@@ -829,7 +833,9 @@ async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0, use
 
 
 @router.get("/api/search/raw/sender")
-async def search_raw_by_sender(sender: str = "", limit: int = 50, user: dict = Depends(require_user)):
+async def search_raw_by_sender(sender: str = "", limit: int = 50, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    if not tenant_id:
+        raise HTTPException(403, "Tenant context required")
     if not sender:
         return {"results": [], "count": 0}
     limit, _ = bounded_page(limit, 0)
@@ -837,10 +843,10 @@ async def search_raw_by_sender(sender: str = "", limit: int = 50, user: dict = D
     rows = storage.db.execute("""
         SELECT id, group_name, sender, sender_phone, message, timestamp, source
         FROM raw_messages
-        WHERE sender LIKE ? OR sender_phone LIKE ?
+        WHERE (sender LIKE ? OR sender_phone LIKE ?) AND tenant_id = ?
         ORDER BY id DESC
         LIMIT ?
-    """, (like_q, like_q, limit)).fetchall()
+    """, (like_q, like_q, tenant_id, limit)).fetchall()
     results = []
     for r in rows:
         group_name = r[1]
@@ -864,17 +870,19 @@ async def search_raw_by_sender(sender: str = "", limit: int = 50, user: dict = D
 
 
 @router.get("/api/search/raw/group")
-async def search_raw_by_group(group_jid: str = "", limit: int = 50, user: dict = Depends(require_user)):
+async def search_raw_by_group(group_jid: str = "", limit: int = 50, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    if not tenant_id:
+        raise HTTPException(403, "Tenant context required")
     if not group_jid:
         return {"results": [], "count": 0}
     limit, _ = bounded_page(limit, 0)
     rows = storage.db.execute("""
         SELECT id, group_name, sender, sender_phone, message, timestamp, source
         FROM raw_messages
-        WHERE group_name = ? OR group_name LIKE ?
+        WHERE (group_name = ? OR group_name LIKE ?) AND tenant_id = ?
         ORDER BY id DESC
         LIMIT ?
-    """, (group_jid, f"%{group_jid}%", limit)).fetchall()
+    """, (group_jid, f"%{group_jid}%", tenant_id, limit)).fetchall()
     results = []
     for r in rows:
         group_name = r[1]

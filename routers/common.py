@@ -493,15 +493,22 @@ async def _select_reply_broker_id(member: dict, requested_broker_id: str = "") -
 
 async def get_current_member(
     x_team_member_id: int = Header(None),
+    user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ) -> dict:
+    if not tenant_id:
+        raise HTTPException(403, "Tenant context required")
     if not x_team_member_id:
         members = storage.list_team_members(org_id=tenant_id)
         owner = next((m for m in members if m["role"] == "owner"), None)
-        return owner or {"id": 0, "permissions": 1023, "name": "System"}
+        return owner or {"id": 0, "permissions": 1023, "name": "System", "organization_id": tenant_id}
 
     m = storage.get_team_member(x_team_member_id)
-    if not m or not m["is_active"]:
+    if (
+        not m
+        or not m["is_active"]
+        or str(m.get("organization_id") or "") != str(tenant_id)
+    ):
         raise HTTPException(403, "Invalid or inactive team member")
     m["permission_keys"] = storage._perm_keys(m["permissions"])
     return m

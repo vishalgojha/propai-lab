@@ -3,7 +3,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from routers.common import storage, get_current_member
+from routers.common import storage, get_current_member, require_tenant
 
 router = APIRouter(tags=["notes"])
 
@@ -15,6 +15,7 @@ async def list_notes(
     entity_type: str,
     entity_id: str,
     member: dict = Depends(get_current_member),
+    tenant_id: str = Depends(require_tenant),
 ):
     if entity_type not in _VALID_NOTE_ENTITY_TYPES:
         raise HTTPException(400, f"Invalid entity_type. Must be one of: {', '.join(sorted(_VALID_NOTE_ENTITY_TYPES))}")
@@ -26,9 +27,9 @@ async def list_notes(
                   tm.name AS author_name
            FROM internal_notes n
            LEFT JOIN team_members tm ON tm.id = n.author_id
-           WHERE n.entity_type = ? AND n.entity_id = ?
+           WHERE n.entity_type = ? AND n.entity_id = ? AND n.tenant_id = ?
            ORDER BY n.created_at DESC""",
-        (entity_type, entity_id),
+        (entity_type, entity_id, tenant_id),
     ).fetchall()
     return {"notes": [dict(r) for r in rows]}
 
@@ -37,6 +38,7 @@ async def list_notes(
 async def create_note(
     body: dict,
     member: dict = Depends(get_current_member),
+    tenant_id: str = Depends(require_tenant),
 ):
     entity_type = body.get("entity_type")
     entity_id = body.get("entity_id")
@@ -54,9 +56,9 @@ async def create_note(
         mentioned = []
 
     storage.db.execute(
-        """INSERT INTO internal_notes (entity_type, entity_id, author_id, body, mentioned_member_ids)
-           VALUES (?, ?, ?, ?, ?::jsonb)""",
-        (entity_type, entity_id, member["id"], note_body, json.dumps(mentioned)),
+        """INSERT INTO internal_notes (entity_type, entity_id, author_id, body, mentioned_member_ids, tenant_id)
+           VALUES (?, ?, ?, ?, ?::jsonb, ?)""",
+        (entity_type, entity_id, member["id"], note_body, json.dumps(mentioned), tenant_id),
     )
     storage.db.commit()
     return {"ok": True}
@@ -66,14 +68,15 @@ async def create_note(
 async def delete_note(
     note_id: int,
     member: dict = Depends(get_current_member),
+    tenant_id: str = Depends(require_tenant),
 ):
     row = storage.db.execute(
-        "SELECT author_id FROM internal_notes WHERE id = ?", (note_id,)
+        "SELECT author_id FROM internal_notes WHERE id = ? AND tenant_id = ?", (note_id, tenant_id)
     ).fetchone()
     if not row:
         raise HTTPException(404, "Note not found")
     if row["author_id"] != member["id"]:
         raise HTTPException(403, "Only the original author can delete this note")
-    storage.db.execute("DELETE FROM internal_notes WHERE id = ?", (note_id,))
+    storage.db.execute("DELETE FROM internal_notes WHERE id = ? AND tenant_id = ?", (note_id, tenant_id))
     storage.db.commit()
     return {"ok": True}
