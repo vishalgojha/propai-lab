@@ -120,7 +120,10 @@ async def list_brokers(
         )
         feed = await asyncio.to_thread(storage.get_brokers_feed, page_limit, page_offset, 1, tenant_id, True)
         directory = _broker_feed_directory(storage, feed, blocked_keys)
-        return {"brokers": directory, "total": total}
+        # The header renders `total` verbatim. When the fallback cannot serve
+        # any rows, reporting the graph count would show a contradictory
+        # "N broker profiles" above an empty directory.
+        return {"brokers": directory, "total": total if directory else 0}
     rows = [
         row for row in rows
         if not storage.broker_is_workspace_blocked(
@@ -186,7 +189,7 @@ async def list_brokers(
             ORDER BY observation_count DESC, last_seen_at DESC
             """, ids, top_n["buildings"]),
             asyncio.to_thread(_batch, f"""
-            SELECT bo.broker_id, p.intent, p.message_type, p.bhk, p.furnishing,
+            SELECT bo.broker_id, p.intent, r.message_type, p.bhk, p.furnishing,
                    p.building_name, p.micro_market, p.location_raw,
                    p.summary_title, substr(r.message, 1, 220) AS message
             FROM broker_observations bo
@@ -220,7 +223,8 @@ async def list_brokers(
             network_wide=True,
         )
         feed = await asyncio.to_thread(storage.get_brokers_feed, page_limit, page_offset, 1, tenant_id, True)
-        return {"brokers": _broker_feed_directory(storage, feed, blocked_keys), "total": total}
+        directory = _broker_feed_directory(storage, feed, blocked_keys)
+        return {"brokers": directory, "total": total if directory else 0}
 
     def _group_top_n(rows, n):
         grouped: dict[int, list[dict]] = {}
@@ -733,11 +737,12 @@ async def get_broker_profile(
         for r in group_rows
     ]
     broker["observations"] = safe_rows("""
-        SELECT p.id AS parsed_id, p.intent, p.message_type, p.bhk, p.price, p.price_unit,
+        SELECT p.id AS parsed_id, p.intent, r.message_type, p.bhk, p.price, p.price_unit,
                p.furnishing, p.building_name, p.micro_market, p.broker_name,
                p.confidence, p.created_at, bo.role, bo.group_name, bo.seen_at
         FROM broker_observations bo
         JOIN parsed_output_unified p ON p.id = bo.parsed_id
+        LEFT JOIN raw_messages r ON r.id = p.raw_message_id
         WHERE bo.broker_id = ?
         ORDER BY bo.seen_at DESC
         LIMIT 100
