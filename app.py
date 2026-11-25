@@ -350,6 +350,9 @@ app.include_router(search_router)
 from routers.usage import router as usage_router
 app.include_router(usage_router)
 
+from routers.billing import router as billing_router
+app.include_router(billing_router)
+
 from routers.notes import router as notes_router
 app.include_router(notes_router)
 
