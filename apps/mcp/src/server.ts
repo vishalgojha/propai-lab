@@ -312,7 +312,7 @@ process.on("SIGINT", async () => {
   process.exit(0);
 });
 
-const httpServer = app.listen(PORT, () => {
+export const httpServer = app.listen(PORT, () => {
   console.log(`PropAI MCP server running on port ${PORT}`);
 });
 

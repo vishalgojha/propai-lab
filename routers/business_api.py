@@ -217,8 +217,34 @@ async def business_api_webhook_verify(request: Request):
 
 
 @router.get("/api/waba/session/{chat_id:path}")
-async def waba_session_status(chat_id: str, user: dict = Depends(require_user)):
-    """Check 24h session window for a given chat_id (e.g. '919876543210@s.whatsapp.net')."""
+async def waba_session_status(
+    chat_id: str,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Check 24h session window for a given chat_id (e.g. '919876543210@s.whatsapp.net').
+
+    waba_sessions has no tenant column, so ownership is established through
+    the caller's own workspace: the chat must appear in that workspace's
+    raw_messages (the same rows the inbox renders). Super-admins bypass.
+    """
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        org_id = _resolve_active_organization_id(user, tenant_id)
+        owned = False
+        if org_id:
+            try:
+                row = await asyncio.to_thread(
+                    lambda: storage.db.execute(
+                        "SELECT 1 AS one FROM raw_messages WHERE tenant_id = ? "
+                        "AND (group_name = ? OR sender_jid = ?) LIMIT 1",
+                        (org_id, chat_id, chat_id),
+                    ).fetchone()
+                )
+                owned = row is not None
+            except Exception:
+                owned = False  # fail closed
+        if not owned:
+            raise HTTPException(404, "Conversation not found")
     return _waba_session_status(chat_id)
 
 

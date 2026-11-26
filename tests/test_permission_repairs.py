@@ -127,3 +127,45 @@ def test_overview_workspace_scoped_for_non_admin(monkeypatch):
     body = r.json()
     assert body["total_team_members"] == 0 and body["connected_team_members"] == 0
     assert body["inventory_summary"]["groups"] == 0
+
+
+def _session_client(owned_rows):
+    c = _client(perms=set())
+    calls = []
+    class R:
+        def __init__(s, row): s.row = row
+        def fetchone(s): return s.row
+        def fetchall(s): return []
+    class DB:
+        def execute(self, sql, params=()):
+            calls.append((sql, params))
+            if "FROM raw_messages" in sql:
+                return R({"one": 1} if params[0] == ORG and params[1] in owned_rows else None)
+            return R(None)
+    storage._real.db = DB()
+    return c, calls
+
+
+def test_waba_session_owned_chat_served():
+    c, calls = _session_client({"919000000001@s.whatsapp.net"})
+    r = c.get("/api/waba/session/919000000001@s.whatsapp.net")
+    assert r.status_code == 200
+    assert calls[0][1][0] == ORG  # tenant-scoped ownership query
+
+
+def test_waba_session_foreign_chat_404():
+    c, _ = _session_client({"919000000001@s.whatsapp.net"})
+    assert c.get("/api/waba/session/919999999999@s.whatsapp.net").status_code == 404
+
+
+def test_waba_session_ownership_error_fails_closed():
+    c, _ = _session_client(set())
+    class Boom:
+        def execute(self, *a, **k): raise RuntimeError("db down")
+    storage._real.db = Boom()
+    assert c.get("/api/waba/session/919000000001@s.whatsapp.net").status_code == 404
+
+
+def test_waba_session_super_admin_bypass():
+    c = _client(perms=set(), admin=True)
+    assert c.get("/api/waba/session/919000000001@s.whatsapp.net").status_code == 200
