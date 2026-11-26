@@ -1954,6 +1954,11 @@ function UnifiedMarketInbox() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
+  // WhatsApp connection reminder: fetched once on mount so a signed-up broker
+  // who has not connected WhatsApp yet sees a direct connect CTA on the Inbox
+  // instead of only on the dashboard setup guide. A failed probe only hides
+  // the reminder; the inbox itself is unaffected.
+  const [marketAccess, setMarketAccess] = useState<api.MarketAccessStatus | null>(null);
   // Reference time for the "Fresh today" filter, captured when a feed load
   // starts. Reading Date.now() during render is impure; capturing it here
   // keeps the memo stable across re-renders within one batch.
@@ -2906,8 +2911,41 @@ function UnifiedMarketInbox() {
     setBackfillMessage("");
   }, []);
 
+  useEffect(() => {
+    // The WhatsApp Groups route is a raw mirror of joined groups and does not
+    // need the connect reminder probe.
+    if (typeof window !== "undefined" && window.location.pathname === "/whatsapp-groups") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const access = await api.getMarketAccessStatus();
+        if (!cancelled) setMarketAccess(access);
+      } catch {
+        // Reminder stays hidden on probe failure.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <div className="unified-market-inbox market-intelligence-screen flex min-h-[calc(100dvh-44px)] flex-1 flex-col overflow-hidden bg-[var(--zone-light-background)] text-[var(--zone-light-text-primary)]">
+      {marketAccess?.whatsapp_connected === false && (
+        <div className="shrink-0 border-b border-amber-400/30 bg-amber-400/10 px-4 py-3 sm:px-6 lg:px-8" role="status">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="text-lg">⚡</span>
+              <div>
+                <div className="text-xs font-bold text-white">Connect WhatsApp to get started</div>
+                <div className="text-[11px] text-amber-100/80">Listings from your broker groups land here once a WhatsApp number is connected.</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Link href="/whatsapp?tab=numbers" className="rounded-lg bg-amber-400 px-3 py-1.5 text-[11px] font-bold text-amber-950 transition-colors hover:bg-amber-300">Connect WhatsApp</Link>
+              <Link href="/setup" className="rounded-lg border border-amber-400/30 px-3 py-1.5 text-[11px] font-medium text-amber-100 transition-colors hover:bg-amber-400/10">Open setup guide</Link>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="market-feed-header shrink-0 border-b border-[var(--zone-light-border)] bg-[var(--zone-light-card)] px-4 py-4 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>

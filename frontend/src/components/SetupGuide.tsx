@@ -43,6 +43,7 @@ export default function SetupGuide({ variant = "page" }: { variant?: "page" | "c
   const [assistantConnected, setAssistantConnected] = useState<boolean | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [snoozed, setSnoozed] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -73,8 +74,16 @@ export default function SetupGuide({ variant = "page" }: { variant?: "page" | "c
     return () => window.removeEventListener("focus", onFocus);
   }, [load]);
 
-  if (!hydrated || dismissed) {
-    if (variant === "page" && hydrated && dismissed) {
+  // While WhatsApp is not connected the guide is the only persistent
+    // reminder of the required first step, so a permanent dismissal must not
+    // hide it. Hiding works again once status shows WhatsApp connected; an
+    // unknown status (load failure) never forces the guide back.
+  const statusKnownEarly = access !== null && !loadError;
+  const whatsappConnectedEarly = access?.whatsapp_connected === true;
+  const forceVisible = statusKnownEarly && !whatsappConnectedEarly;
+
+  if (!hydrated || ((dismissed || snoozed) && !forceVisible)) {
+    if (variant === "page" && hydrated && dismissed && !forceVisible) {
       return (
         <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6 text-center">
           <p className="text-sm text-zinc-400">You hid the setup guide.</p>
@@ -96,8 +105,8 @@ export default function SetupGuide({ variant = "page" }: { variant?: "page" | "c
 
   // Under a load failure nothing is known: no step may present itself as
   // "up next", because that would be an unverified progress suggestion.
-  const statusKnown = access !== null && !loadError;
-  const whatsappConnected = access?.whatsapp_connected === true;
+  const statusKnown = statusKnownEarly;
+  const whatsappConnected = whatsappConnectedEarly;
   // Step 2 completes on an actual confirmed market group, never on sync state.
   const groupsConfirmed = access?.market_groups_confirmed === true;
   // Step 3 completes when a usable assistant key EXISTS. A key proves the
@@ -197,6 +206,13 @@ export default function SetupGuide({ variant = "page" }: { variant?: "page" | "c
         <button
           type="button"
           onClick={() => {
+            // Until WhatsApp is connected the hide is session-only: the
+            // reminder returns on the next visit instead of vanishing
+            // permanently while the first required step is undone.
+            if (forceVisible) {
+              setSnoozed(true);
+              return;
+            }
             window.localStorage.setItem(dismissKey, "1");
             setDismissed(true);
           }}
