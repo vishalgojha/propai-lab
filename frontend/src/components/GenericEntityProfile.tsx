@@ -70,7 +70,7 @@ export default function GenericEntityProfile({
             <div className="text-xs text-zinc-500">Messages that reference this entity.</div>
           </div>
           <Link
-            href="/listings"
+            href="/inbox"
             className="text-xs font-semibold text-[var(--accent-text-on-light)] hover:underline"
           >
             Open search
