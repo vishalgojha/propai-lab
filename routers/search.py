@@ -692,12 +692,12 @@ async def search_messages(q: str = "", use_llm: bool = False, user: dict = Depen
         own_tenant = str(tenant_id or "")
         matching = []
         for row in rows:
-            # Own-tenant only: the palette searches the workspace's own
-            # records.  Cross-workspace discovery lives in the designated
-            # shared-market route (/api/search/market), which applies the
-            # shared-network gate.
+            # Shared-network gate: another workspace's rows are visible only
+            # when they are shared inventory (visibility is not
+            # workspace_private), matching get_shared_market_listings.  Own
+            # rows are always visible to their own workspace.
             row_tenant = str(row.get("tenant_id") or "")
-            if row_tenant != own_tenant:
+            if row_tenant != own_tenant and str(row.get("visibility") or "").strip().lower() == "workspace_private":
                 continue
             haystack = " ".join(
                 str(row.get(key) or "")

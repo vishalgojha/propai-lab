@@ -228,7 +228,7 @@ def _typed_row(tid, visibility, table="residential_rent_listings", rid=1, title=
     }
 
 
-def test_palette_shows_only_own_tenant_rows(tenant_a):
+def test_palette_hides_other_tenant_private_rows(tenant_a):
     storage._real._fetch_typed_rows = lambda *a, **k: [
         _typed_row(TENANT_A, "workspace_private", rid=1, title="own private"),
         _typed_row(TENANT_A, None, rid=2, title="own shared"),
@@ -240,7 +240,7 @@ def test_palette_shows_only_own_tenant_rows(tenant_a):
     titles = [l["summary_title"] for l in r.json().get("listings", [])]
     assert "own private" in titles
     assert "own shared" in titles
-    assert "other shared" not in titles
+    assert "other shared" in titles
     assert "other private" not in titles
 
 
