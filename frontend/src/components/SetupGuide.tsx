@@ -124,8 +124,8 @@ export default function SetupGuide({ variant = "page" }: { variant?: "page" | "c
     },
     {
       id: "groups",
-      title: "Choose your market groups",
-      body: "Captured group messages stay saved privately either way. Checking a group here means its listings join the shared market that other brokers search. Unchecked groups stay private to your workspace; private WhatsApp messages are not captured.",
+      title: "Choose groups for extraction",
+      body: "Pick the broker groups PropAI may process into listings and requirements. Confirmed groups stay private to your workspace: sharing listings with other brokers is a separate, explicit confirmation, never implied here. Private WhatsApp messages are not captured.",
       state: stepState(groupsConfirmed, statusKnown && whatsappConnected),
       cta: { href: "/whatsapp?tab=groups", label: "Choose groups" },
     },
@@ -190,7 +190,7 @@ export default function SetupGuide({ variant = "page" }: { variant?: "page" | "c
             Four steps to your first answer
           </h2>
           <p className="mt-1 text-xs leading-5 text-zinc-400">
-            Connect WhatsApp, pick your market groups, connect your assistant, then ask it for a property in plain
+            Connect WhatsApp, pick the groups to process, connect your assistant, then ask it for a property in plain
             language.
           </p>
         </div>

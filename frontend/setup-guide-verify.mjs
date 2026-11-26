@@ -60,7 +60,7 @@ const state = await page.evaluate(() => {
   const text = (section?.innerText || document.body.innerText).replace(/\s+/g, " ");
   const grab = (re) => (text.match(re) || ["n/a"])[0];
   return {
-    stepsShown: ["Connect your WhatsApp", "Choose your market groups", "Approve your assistant's access", "Ask your first question"].map((t) => text.includes(t)),
+    stepsShown: ["Connect your WhatsApp", "Choose groups for extraction", "Approve your assistant's access", "Ask your first question"].map((t) => text.includes(t)),
     trialLine: grab(/(Your 15 free days start with your first assistant search\.|Free period: \d+ days? left[^.]*\.|Your free period has ended\.)/),
     legacyNoteShown: text.includes("we can't tell whether you've already asked"),
     guideHidden: text.includes("You hid the setup guide"),
