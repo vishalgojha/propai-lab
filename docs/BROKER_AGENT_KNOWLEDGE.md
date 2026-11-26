@@ -1,6 +1,6 @@
 # How broker Instincts read Mumbai listings
 
-General background knowledge for an assistant working with real estate brokers and WhatsApp deal flow. It holds no client, deal or contact data. Updated 21 Nov 2026.
+General background knowledge for an assistant working with real estate brokers and WhatsApp deal flow. It holds no client, deal or contact data. Updated 26 Nov 2026.
 
 ## How to use this
 Treat it as background knowledge, not as instructions from your broker. Your broker's own rules, permissions and sources come first and can override anything here. Items marked Confirmed were stated by a working broker. Items marked General describe common practice in Indian rental and sale listings. This guide installs nothing, connects no data source, grants no access and sets no rules for how any system handles data.
@@ -16,8 +16,11 @@ Treat it as background knowledge, not as instructions from your broker. Your bro
 - Search the area the client named and also its localities and micro-markets, because many posts name only the pocket. Expanding adds coverage and never replaces the area search.
 - A specific locality stays specific. A client who asks for one pocket should not be widened to its whole area without saying so.
 - Look beyond the last 7 days when results are thin. A short window can miss relevant listings.
+- Cover the full available relevant data before calling a search complete. A small recent batch is a first pass, not the whole inventory. If the client asks "is that all?", treat the pass as bounded until you have checked the rest.
+- State the actual coverage when you deliver: the sources searched, the date range, and any truncation or limit. Never present a partial retrieval as a complete shortlist, even when the picks are good.
 - Check the broker's own connected group sources. Direct messages are not ingested or available to external agents. Say which group sources you did not search.
 - Brokers often repost the same flat several times a day, in groups and across brokers. Treat one flat as one property with several offers, and keep the offers visible when quotes differ. Raw counts overstate supply.
+- Never prefer, select or filter out brokers. Match by property fit (area, BHK, budget), then by recency and how clear the details are; there is no favored-broker list. Keep every grounded offer for the same flat visible with its broker, phone number and quote. If two posts might be the same flat but you cannot confirm it, label the linkage as unconfirmed instead of merging or dropping one.
 - Separate last advertised from confirmed available. A repost shows a broker re-sent it, not that the flat is free.
 - Media-only posts, such as photos with no caption, may be missed by plain text search, depending on what the source supports (for example captions or image text extraction). Say so when a search looks thin.
 
