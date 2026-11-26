@@ -100,3 +100,17 @@ def test_in_app_chat_returns_410_no_paid_calls(monkeypatch):
         )
     assert response.status_code == 410
     assert "retired" in response.json()["detail"].lower()
+
+
+def test_scribe_token_route_retired_no_elevenlabs_mint():
+    """Static guard: the retired scribe-token route must keep auth, answer 410,
+    and contain no path that can call ElevenLabs or mint a token."""
+    from pathlib import Path
+
+    source = Path("frontend/src/app/api/voice/scribe-token/route.ts").read_text()
+    assert "api.elevenlabs.io" not in source
+    assert "single-use-token" not in source
+    assert "ELEVENLABS_API_KEY" not in source
+    assert "auth.getUser" in source, "authentication must be preserved"
+    assert "401" in source, "unauthenticated callers must still get 401"
+    assert "410" in source and "retired" in source.lower()
