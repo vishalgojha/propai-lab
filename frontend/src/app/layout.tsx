@@ -701,11 +701,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <a href="/whatsapp?tab=numbers" className={`${sidebarCollapsed ? "mx-2 justify-center px-2" : "mx-3 px-3"} sidebar-connection-card mb-3 flex min-h-14 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] py-2 transition-colors hover:bg-white/[0.07]`} title={sidebarCollapsed ? `${whatsappLabel} · ${captureLabel}` : undefined}>
-          <span className={`h-2 w-2 shrink-0 rounded-full ${whatsappHealth === "healthy" ? "bg-accent" : whatsappHealth === "error" ? "bg-red-400" : "bg-amber-300"}`} />
+          <span className={`h-2 w-2 shrink-0 rounded-full ${whatsappHealth === "healthy" ? "bg-accent" : whatsappHealth === "error" ? "bg-red-400" : whatsappHealth === "checking" ? "bg-zinc-500 animate-pulse" : "bg-amber-300"}`} />
           {!sidebarCollapsed && <div className="min-w-0 flex-1">
             <div className="truncate text-[11px] font-semibold text-zinc-200">{whatsappLabel}</div>
             <div className="truncate font-mono text-[10px] text-zinc-400">{waPhone || "No number connected"}</div>
-            <div className={`truncate text-[10px] ${captureHealth === "error" ? "text-red-300" : captureHealth === "checking" ? "text-amber-300" : "text-zinc-500"}`}>{captureLabel}{wabaConfig?.outbound_allowed ? " · WABA Connected" : ""}</div>
+            <div className={`truncate text-[10px] ${captureHealth === "error" ? "text-red-300" : "text-zinc-500"}`}>{captureLabel}{wabaConfig?.outbound_allowed ? " · WABA Connected" : ""}</div>
           </div>}
           {!sidebarCollapsed && <RefreshCw className="h-3 w-3 shrink-0 text-zinc-500" aria-hidden="true" />}
         </a>
@@ -936,16 +936,23 @@ function AppShell({ children }: { children: React.ReactNode }) {
               aria-expanded={mobileStatusExpanded}
               aria-label="Show system status details"
             >
-              <div className="min-w-0 space-y-0.5">
-                <div className={`flex items-center gap-2 truncate text-[10px] font-semibold ${whatsappHealth === "healthy" ? "text-accent" : whatsappHealth === "error" ? "text-red-300" : "text-amber-300"}`}>
-                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${whatsappHealth === "healthy" ? "bg-accent" : whatsappHealth === "error" ? "bg-red-400" : "bg-amber-300"}`} />
-                  <span className="truncate">{whatsappLabel}</span>
+              {whatsappHealth === "checking" && captureHealth === "checking" ? (
+                <div className="flex items-center gap-2 truncate text-[10px] font-medium text-zinc-500">
+                  <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-zinc-500" />
+                  <span className="truncate">Checking connection…</span>
                 </div>
-                <div className={`flex items-center gap-2 truncate text-[10px] font-medium ${captureHealth === "healthy" ? "text-zinc-400" : captureHealth === "error" ? "text-red-300" : "text-amber-300"}`}>
-                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${captureHealth === "healthy" ? "bg-accent" : captureHealth === "error" ? "bg-red-400" : "bg-amber-300"}`} />
-                  <span className="truncate">{captureLabel}</span>
+              ) : (
+                <div className="min-w-0 space-y-0.5">
+                  <div className={`flex items-center gap-2 truncate text-[10px] font-semibold ${whatsappHealth === "healthy" ? "text-accent" : whatsappHealth === "error" ? "text-red-300" : whatsappHealth === "checking" ? "text-zinc-400" : "text-amber-300"}`}>
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${whatsappHealth === "healthy" ? "bg-accent" : whatsappHealth === "error" ? "bg-red-400" : whatsappHealth === "checking" ? "bg-zinc-500 animate-pulse" : "bg-amber-300"}`} />
+                    <span className="truncate">{whatsappLabel}</span>
+                  </div>
+                  <div className={`flex items-center gap-2 truncate text-[10px] font-medium ${captureHealth === "healthy" ? "text-zinc-400" : captureHealth === "error" ? "text-red-300" : "text-zinc-500"}`}>
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${captureHealth === "healthy" ? "bg-accent" : captureHealth === "error" ? "bg-red-400" : captureHealth === "checking" ? "bg-zinc-500 animate-pulse" : "bg-amber-300"}`} />
+                    <span className="truncate">{captureLabel}</span>
+                  </div>
                 </div>
-              </div>
+              )}
             </button>
             <div className="hidden min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 lg:flex">
               {offline && (
@@ -954,12 +961,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   Offline
                 </span>
               )}
-              <a href="/whatsapp?tab=numbers" className={`propai-status-pill shrink-0 text-[10px] font-semibold transition-colors sm:text-[11px] ${whatsappHealth === "healthy" ? "text-accent hover:text-accent-hover" : whatsappHealth === "error" ? "text-red-300 hover:text-red-200" : "text-amber-300 hover:text-amber-200"}`}>
-                <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${whatsappHealth === "healthy" ? "bg-accent" : whatsappHealth === "error" ? "bg-red-400" : "bg-amber-300"}`} />
+              <a href="/whatsapp?tab=numbers" className={`propai-status-pill shrink-0 text-[10px] font-semibold transition-colors sm:text-[11px] ${whatsappHealth === "healthy" ? "text-accent hover:text-accent-hover" : whatsappHealth === "error" ? "text-red-300 hover:text-red-200" : whatsappHealth === "checking" ? "text-zinc-400 hover:text-zinc-200" : "text-amber-300 hover:text-amber-200"}`}>
+                <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${whatsappHealth === "healthy" ? "bg-accent" : whatsappHealth === "error" ? "bg-red-400" : whatsappHealth === "checking" ? "bg-zinc-500 animate-pulse" : "bg-amber-300"}`} />
                 <span>{whatsappLabel}</span>
               </a>
-                <a href="/whatsapp?tab=numbers" className={`propai-status-pill shrink-0 text-[10px] font-semibold transition-colors sm:text-[11px] ${captureHealth === "healthy" ? "text-zinc-300 hover:text-white" : captureHealth === "error" ? "text-red-300 hover:text-red-200" : "text-amber-300 hover:text-amber-200"}`} title={extractionStalled ? "WhatsApp capture is connected; optional extraction has pending messages and processed none in the last hour" : undefined}>
-                <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${captureHealth === "healthy" ? "bg-accent" : captureHealth === "error" ? "bg-red-400" : "bg-amber-300"}`} />
+                <a href="/whatsapp?tab=numbers" className={`propai-status-pill shrink-0 text-[10px] font-semibold transition-colors sm:text-[11px] ${captureHealth === "healthy" ? "text-zinc-300 hover:text-white" : captureHealth === "error" ? "text-red-300 hover:text-red-200" : captureHealth === "checking" ? "text-zinc-400 hover:text-zinc-200" : "text-amber-300 hover:text-amber-200"}`} title={extractionStalled ? "WhatsApp capture is connected; optional extraction has pending messages and processed none in the last hour" : undefined}>
+                <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${captureHealth === "healthy" ? "bg-accent" : captureHealth === "error" ? "bg-red-400" : captureHealth === "checking" ? "bg-zinc-500 animate-pulse" : "bg-amber-300"}`} />
                 <span>{captureLabel}</span>
               </a>
               {waConnected && waPhone && (
@@ -984,7 +991,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   <span>{whatsappLabel}</span>
                   <a href="/whatsapp?tab=numbers" className="font-semibold text-accent">Manage</a>
                 </div>
-                <div className={`mt-1 ${captureHealth === "error" ? "text-red-300" : captureHealth === "checking" ? "text-amber-300" : "text-zinc-500"}`}>{captureLabel}</div>
+                <div className={`mt-1 ${captureHealth === "error" ? "text-red-300" : "text-zinc-500"}`}>{captureLabel}</div>
                 {wabaConfig?.outbound_allowed && <div className="mt-1 text-accent">WABA connected</div>}
               </div>
             )}
