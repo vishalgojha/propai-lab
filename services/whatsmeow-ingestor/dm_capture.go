@@ -68,6 +68,11 @@ func normalizeDMPhone(value string) string {
 	if at := strings.Index(value, "@"); at >= 0 {
 		value = value[:at]
 	}
+	// Device/agent-suffixed user JIDs ("9198...:12", "9198....0:12"): the
+	// suffix is not part of the phone identity.
+	if cut := strings.IndexAny(value, ":."); cut >= 0 {
+		value = value[:cut]
+	}
 	var b strings.Builder
 	for _, r := range value {
 		if r >= '0' && r <= '9' {
@@ -132,7 +137,7 @@ func (sm *SessionManager) brokerDMCaptureAllowed(brokerID, senderPhone string) b
 var (
 	propertySignalBHK    = regexp.MustCompile(`(?i)\b\d+(?:\.\d+)?\s*bhk\b|\b\d\s*rk\b`)
 	propertySignalPrice  = regexp.MustCompile(`(?i)₹|\b\d+(?:\.\d+)?\s*(?:cr|crore|crores|lac|lacs|lakh|lakhs)\b|\b\d[\d,]*(?:\.\d+)?\s*(?:k|thousand)\b\s*(?:/|-)?\s*(?:per\s*month|pm|rent)?`)
-	propertySignalIntent = regexp.MustCompile(`(?i)\b(?:rent|rental|lease|leased|sale|sell|selling|buy|buying|purchase|available|availability|requirement|required|inventory|listing|vacant|possession)\b`)
+	propertySignalIntent = regexp.MustCompile(`(?i)\b(?:rent|rental|lease|leased|sale|sell|selling|buy|buying|purchase|available|availability|requirement|required|inventory|listing|vacant|possession|need|needed|looking|searching)\b`)
 	propertySignalSize   = regexp.MustCompile(`(?i)\b\d[\d,]*\s*(?:sq\.?\s*ft\.?|sqft|sq\.?\s*ft|carpet|built-?\s*up)\b`)
 )
 

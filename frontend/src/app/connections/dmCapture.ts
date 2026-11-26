@@ -44,7 +44,10 @@ export const EMPTY_DM_CAPTURE: DMCaptureState = {
  * ignored, country/trunk digits are never guessed.
  */
 export function normalizeDMSenderPhone(value: string): string {
-  const digits = String(value || "").split("@")[0].replace(/[^0-9]/g, "");
+  // Device/agent-suffixed user JIDs ("9198...:12", "9198....0:12"): the
+  // suffix is not part of the phone identity.
+  const base = String(value || "").split("@")[0].split(":")[0].split(".")[0];
+  const digits = base.replace(/[^0-9]/g, "");
   return digits.length >= 10 && digits.length <= 15 ? digits : "";
 }
 

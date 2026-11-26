@@ -213,5 +213,8 @@ def normalize_dm_sender_phone(value):
     spaces. Country/trunk digits are not guessed; anything that cannot be a
     phone identity is rejected rather than repaired.
     """
-    digits = re.sub(r"[^0-9]", "", str(value or "").split("@")[0])
+    # Device/agent-suffixed user JIDs ("9198...:12", "9198....0:12"): the
+    # suffix is not part of the phone identity.
+    base = str(value or "").split("@")[0].split(":")[0].split(".")[0]
+    digits = re.sub(r"[^0-9]", "", base)
     return digits if 10 <= len(digits) <= 15 else ""

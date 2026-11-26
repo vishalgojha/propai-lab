@@ -335,8 +335,16 @@ func TestLooksLikePropertyListing(t *testing.T) {
 		{"bhk+sale+cr", "3 BHK for sale in Powai, 2.4 cr, garden facing, immediate possession available", true},
 		{"size+lease", "Office space 1200 sqft available for lease in BKC, prime location, call broker", true},
 		{"price+availability", "Flat available in Juhu, 1.5 crore, sea facing, ready to move, serious buyers", true},
+		// Requirement posts (the other half of broadcast inventory): a seeker,
+		// not an offer. Each carries at least two independent signals.
+		{"requirement+bhk+budget", "Requirement: 2 BHK in Bandra West, budget 90k per month, family, immediate move", true},
+		{"looking+lease+lac", "Looking for 3 BHK on lease in Powai, budget 1.5 lac, ready possession", true},
+		{"need+size+budget", "Need office space 800 sqft in BKC, budget 2 lakh, ready to move in", true},
+		{"hinglish requirement", "2bhk chahiye Bandra mein, rent 80k tak, family hai, jaldi chahiye", true},
+		{"requirement without price or size stays out", "Requirement for a flat in Bandra West for a small family moving next month", false},
 		{"personal greeting", "Good morning sir, hope you are doing well, let's catch up soon", false},
 		{"single signal only", "This 2 BHK is the one I was telling you about yesterday evening", false},
+		{"looking alone is one signal", "Looking for a good place to eat dinner tonight around Bandra side, any suggestions", false},
 		{"too short", "2 BHK 75k rent", false},
 		{"empty", "", false},
 		{"generic chat with number", "call me at 98200 12345 when you are free this weekend, no rush", false},
@@ -356,6 +364,8 @@ func TestNormalizeDMPhone(t *testing.T) {
 		want string
 	}{
 		{"919812345678@s.whatsapp.net", "919812345678"},
+		{"919812345678:12@s.whatsapp.net", "919812345678"},
+		{"919812345678.0:12@s.whatsapp.net", "919812345678"},
 		{"919812345678", "919812345678"},
 		{"+91 98123 45678", "919812345678"},
 		{"", ""},
