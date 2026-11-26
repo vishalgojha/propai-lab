@@ -1847,8 +1847,8 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         </div>
         <p className="mt-1 leading-5">
           {captureConnected
-            ? "New messages from this phone’s confirmed groups are saved for chat search. Messages from other groups and private chats are never saved."
-            : "Reconnect this phone to resume saving new group messages for chat search. Private messages are not captured."}
+            ? "New messages from this phone’s confirmed groups are saved for chat search. Messages from other groups and private chats are never saved, except property-looking messages from broker senders you select below."
+            : "Reconnect this phone to resume saving new group messages for chat search. Private messages are not captured, except property-looking messages from broker senders you select."}
           {" "}Confirm your group choices below to allow saving; you can change them or turn saving off at any time. Starting extraction does not import chat history.
         </p>
       </div>
@@ -1968,7 +1968,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
 
       {data && data.groups.length > 0 && (
         <div className="mt-3 border-y border-cyan-500/20 bg-cyan-500/[0.03] px-3 py-2 text-[11px] text-cyan-100">
-          Confirm group choices to configure extraction. This does not request a history import and applies only to group messages. Private messages are not captured. Groups already covered by another active connection are unavailable for this extraction selection.
+          Confirm group choices to configure extraction. This does not request a history import and applies only to group messages. Private messages are not captured, except property-looking messages from broker senders you select. Groups already covered by another active connection are unavailable for this extraction selection.
         </div>
       )}
 
