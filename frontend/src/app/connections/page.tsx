@@ -2287,9 +2287,17 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
 
   const fetchStats = useCallback(async () => {
     try {
+      // Aggregate counters are exact counts and a cold pass can exceed 8s.
+      // Give them a longer budget plus one immediate retry, so a slow first
+      // load keeps the truthful "Loading" state instead of flipping the
+      // health row to a false "unavailable" warning.
+      const fetchAggregate = <T,>(path: string): Promise<T | Record<string, never>> =>
+        fetchJSON<T>(path, undefined, 20000).catch(() =>
+          fetchJSON<T>(path, undefined, 20000).catch(() => ({})),
+        );
       const [stats, extProgress] = await Promise.all([
-        fetchJSON<any>("/stats", undefined, 8000).catch(() => ({})),
-        fetchJSON<any>("/extraction/progress", undefined, 8000).catch(() => ({})),
+        fetchAggregate<any>("/stats"),
+        fetchAggregate<any>("/extraction/progress"),
       ]);
       getRecentParsedMessages(10).then(setRecentParsedMessages).catch(() => undefined);
       const snapshotPatch: ConnectionSnapshot = {};
