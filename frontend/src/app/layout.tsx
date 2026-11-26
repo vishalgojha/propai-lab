@@ -291,12 +291,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const captureLabel = !hasConfiguredWhatsApp
     ? "No WhatsApp number"
     : captureHealth === "checking"
-      ? "Checking raw capture"
+      ? "Checking capture service"
       : captureHealth === "healthy"
-        ? "Raw capture active"
+        ? "Capture service online"
         : captureHealth === "warning"
-          ? "Raw capture unknown"
-          : "Raw capture disconnected";
+          ? "Capture service unknown"
+          : "Capture service offline";
   const whatsappLabel = !hasConfiguredWhatsApp
     ? "Add WhatsApp number"
     : waConnected === null

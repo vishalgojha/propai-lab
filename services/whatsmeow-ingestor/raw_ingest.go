@@ -105,43 +105,49 @@ const (
 	groupCaptureDenyTTL  = 30 * time.Second
 )
 
-// captureConsentCutoff is the deploy-time env PROPAI_CAPTURE_CONSENT_AFTER
-// (RFC3339). Only selections confirmed at or after this instant count as
-// capture consent: confirmations before it were made under copy that said
-// capture happened either way, so they are not consent to storage. Unset or
-// unparsable means fail closed.
-var consentAfterOnce sync.Once
-var consentAfter time.Time
+// defaultCaptureConsentVersion is the capture-consent wording version a
+// completed selection receipt must carry before any group message is
+// persisted. The API records it on the receipt only when the confirming
+// client explicitly acknowledged the current wording, so a confirmation
+// submitted by an older client that never showed the wording (version NULL)
+// saves the selection but is not capture consent. PROPAI_CAPTURE_CONSENT_VERSION
+// overrides the version for a future wording change; an explicitly empty
+// override is ignored (the default still applies), and a receipt carrying
+// no version never passes.
+const defaultCaptureConsentVersion = "broker-group-capture-v1"
 
-func captureConsentCutoff() time.Time {
-	consentAfterOnce.Do(func() {
-		consentAfter, _ = time.Parse(time.RFC3339, strings.TrimSpace(os.Getenv("PROPAI_CAPTURE_CONSENT_AFTER")))
-		if consentAfter.IsZero() {
-			log.Printf("PROPAI_CAPTURE_CONSENT_AFTER unset or invalid; group capture is disabled until configured")
+var consentVersionOnce sync.Once
+var consentVersion string
+
+func captureConsentVersion() string {
+	consentVersionOnce.Do(func() {
+		consentVersion = strings.TrimSpace(os.Getenv("PROPAI_CAPTURE_CONSENT_VERSION"))
+		if consentVersion == "" {
+			consentVersion = defaultCaptureConsentVersion
 		}
 	})
-	return consentAfter
+	return consentVersion
 }
 
 // groupCaptureAllowed reports whether the broker may capture this group.
 // Both must hold:
 //  1. a current, completed selection confirmation (receipt with a non-blanked
-//     state_fingerprint) completed at or after the consent cutoff - that
-//     confirmation is the broker's one-tap Allow under the capture-consent
-//     wording; and
+//     state_fingerprint) carrying the current capture-consent version - that
+//     version is recorded only when the broker's one-tap Allow acknowledged
+//     the capture-consent wording; and
 //  2. an active, non-opted-out selection row for this specific group.
 //
 // The receipt's state_fingerprint is blanked by database triggers whenever
 // the selection, connection, device or allowlist changes, so a non-blank
 // receipt always matches the current saved state; the API revokes consent by
-// blanking it (the row is kept as the audit record). opted_out uses COALESCE
-// to match the API's None-is-false semantics. Extraction and sharing keep
-// their own separate permissions and are not consulted. The check fails
-// closed: missing cutoff, lookup error or missing rows mean the message is
-// not persisted.
+// blanking it and the version (the row is kept as the audit record).
+// opted_out uses COALESCE to match the API's None-is-false semantics.
+// Extraction and sharing keep their own separate permissions and are not
+// consulted. The check fails closed: lookup error or missing rows mean the
+// message is not persisted.
 func (sm *SessionManager) groupCaptureAllowed(brokerID, groupJID string) bool {
-	cutoff := captureConsentCutoff()
-	if cutoff.IsZero() {
+	version := captureConsentVersion()
+	if version == "" {
 		return false
 	}
 	key := brokerID + "|" + groupJID
@@ -171,8 +177,8 @@ func (sm *SessionManager) groupCaptureAllowed(brokerID, groupJID string) bool {
 				  ON rowc.id = r.whatsapp_connection_id
 				WHERE rowc.broker_id = $1
 				  AND r.state_fingerprint <> ''
-				  AND r.completed_at >= $3
-			)`, brokerID, groupJID, cutoff).Scan(&exists)
+				  AND r.capture_consent_version = $3
+			)`, brokerID, groupJID, version).Scan(&exists)
 		if err != nil {
 			log.Printf("[broker %s] group capture permission check failed for %s: %v (failing closed)", brokerID, groupJID, err)
 		} else {

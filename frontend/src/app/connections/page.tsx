@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square, Search, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, getGroupSelectionConfirmation, checkOnboardingGroup, optOutOnboardingGroup, deselectOnboardingGroup, selectOnboardingGroups, revokeCaptureConsent, getMarketRawSources, confirmMarketRawSources, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry, type MarketShareClass } from "@/lib/api";
+import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, getGroupSelectionConfirmation, checkOnboardingGroup, optOutOnboardingGroup, deselectOnboardingGroup, selectOnboardingGroups, revokeCaptureConsent, CAPTURE_CONSENT_VERSION, getMarketRawSources, confirmMarketRawSources, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry, type MarketShareClass } from "@/lib/api";
 import QRCode from "qrcode";
 import { connectionHealth, connectionMetric, phoneConnectionView } from "@/lib/connectionHealth";
 
@@ -1391,7 +1391,11 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     const selectedJids = Array.from(selectedGroups);
     const requestId = crypto.randomUUID();
     try {
-      const result = await selectOnboardingGroups(phone.id, selectedJids, requestId);
+      // This handler only runs from the "Allow saving group messages"
+      // dialog, whose Allow button is the capture-consent acknowledgement.
+      // Bind that ack to the receipt so the capture gate can tell an
+      // informed Allow apart from a selection saved by an older client.
+      const result = await selectOnboardingGroups(phone.id, selectedJids, requestId, { version: CAPTURE_CONSENT_VERSION, confirmed: true });
       // The response is authoritative. Update the local directory immediately
       // so a transient refresh failure cannot make a successful confirmation
       // look like an unsaved draft.

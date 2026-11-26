@@ -51,6 +51,11 @@ class GroupSelectionRequest(BaseModel):
     group_jids: list[str] = []
     confirm: bool = False
     request_id: str
+    # Optional capture-consent acknowledgement. Older clients omit both
+    # fields: the selection is still saved, but the receipt records no
+    # capture consent and the capture gate keeps that connection off.
+    capture_consent_version: str | None = None
+    capture_consent_confirmed: bool = False
 
 
 class ExtractionControlRequest(BaseModel):
@@ -63,39 +68,31 @@ class ExtractionControlRequest(BaseModel):
 # state_fingerprint is blanked by database triggers whenever the selection,
 # connection, device or allowlist changes, so a non-blank receipt always
 # matches the current saved state. A confirmation counts as capture consent
-# only when its receipt was completed at or after
-# PROPAI_CAPTURE_CONSENT_AFTER, the deploy instant of the consent wording:
-# confirmations before it were made under copy that said capture happened
-# either way, so they are not consent to storage. Revoking consent blanks
-# the fingerprint, the designed invalidated state: the receipt row stays as
-# the audit record, capture stops, and starting extraction again needs a
-# fresh confirmation, exactly as after any selection change. The ingestor
-# requires BOTH this current post-cutoff receipt and an active selection
-# row for a group before it persists that group's messages. No marker rows,
-# no schema change, and broker sharing consent (broker_market_*) is never
-# touched.
-def _capture_consent_cutoff() -> datetime | None:
-    raw = os.getenv("PROPAI_CAPTURE_CONSENT_AFTER", "").strip()
-    if not raw:
-        return None
-    try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        _logger.error("PROPAI_CAPTURE_CONSENT_AFTER is not a valid timestamp; capture consent reads as inactive")
-        return None
+# only when the client explicitly acknowledged the current capture-consent
+# wording: the API then records CAPTURE_CONSENT_VERSION on the receipt via
+# the RPC's p_capture_consent_version parameter. A clock cutoff cannot
+# stand in for that acknowledgement: the confirm endpoint is also reachable
+# from older clients that never showed the wording, so only the recorded
+# version binds the receipt to an informed Allow. Confirmations without the
+# ack (capture_consent_version NULL) still save the selection but are not
+# capture consent. Revoking consent blanks the fingerprint and the version,
+# the designed invalidated state: the receipt row stays as the audit
+# record, capture stops, and starting extraction again needs a fresh
+# confirmation, exactly as after any selection change. The ingestor
+# requires BOTH this current acked receipt and an active selection row for
+# a group before it persists that group's messages. Broker sharing consent
+# (broker_market_*) is never touched.
+CAPTURE_CONSENT_VERSION = "broker-group-capture-v1"
 
 
 def _capture_consent_active(org_id: str, connection_id: int) -> bool:
-    cutoff = _capture_consent_cutoff()
-    if cutoff is None:
-        return False
     rows = (
         storage.client.table("whatsapp_group_selection_receipts")
-        .select("completed_at")
+        .select("capture_consent_version")
         .eq("organization_id", org_id)
         .eq("whatsapp_connection_id", connection_id)
         .neq("state_fingerprint", "")
-        .gte("completed_at", cutoff.isoformat())
+        .eq("capture_consent_version", CAPTURE_CONSENT_VERSION)
         .limit(1)
         .execute()
     )
@@ -104,7 +101,7 @@ def _capture_consent_active(org_id: str, connection_id: int) -> bool:
 
 def _revoke_capture_consent(org_id: str, connection_id: int) -> None:
     storage.client.table("whatsapp_group_selection_receipts").update(
-        {"state_fingerprint": ""}
+        {"state_fingerprint": "", "capture_consent_version": None}
     ).eq("organization_id", org_id).eq(
         "whatsapp_connection_id", connection_id
     ).execute()
@@ -1530,15 +1527,26 @@ async def select_groups(
         request_id = str(UUID(body.request_id))
     except (ValueError, TypeError):
         raise HTTPException(400, "A valid confirmation request ID is required")
+    # Capture consent requires an explicit ack of the current wording. A
+    # mismatched version or an unconfirmed ack is rejected outright; a
+    # request with no ack at all (older client) saves the selection without
+    # granting capture consent.
+    consent_version: str | None = None
+    if body.capture_consent_version is not None:
+        if body.capture_consent_version != CAPTURE_CONSENT_VERSION or not body.capture_consent_confirmed:
+            raise HTTPException(400, "Capture consent acknowledgement does not match the current saving consent wording")
+        consent_version = CAPTURE_CONSENT_VERSION
     confirmation = await asyncio.to_thread(storage.client.rpc, "confirm_whatsapp_group_selection", {
         "p_tenant": org_id, "p_connection": body.whatsapp_connection_id,
         "p_groups": requested, "p_actor": user["id"], "p_request": request_id,
         "p_broker": str(connection.get("broker_id") or ""),
+        "p_capture_consent_version": consent_version,
     })
     if not isinstance(confirmation, dict) or not confirmation.get("complete"):
         raise HTTPException(409, "Confirmation changed; review the saved state")
     # The RPC's completed receipt is also the broker's one-tap capture
-    # consent (see _capture_consent_active). No separate consent write.
+    # consent when it carries the acked version (see
+    # _capture_consent_active). No separate consent write.
     # Do not append fallible directory/cap network reads after the transaction.
     return {
         "ok": True,

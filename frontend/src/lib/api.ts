@@ -345,7 +345,14 @@ export function getGroupSelectionConfirmation(whatsappConnectionId: number) {
   return fetchJSON<GroupSelectionConfirmation>(`/onboarding/groups/confirmation?whatsapp_connection_id=${whatsappConnectionId}`);
 }
 
-export function selectOnboardingGroups(whatsappConnectionId: number, groupJids: string[], requestId: string) {
+// Capture-consent wording version. The "Allow saving group messages" dialog
+// is the acknowledgement surface for this version; the API records it on the
+// selection receipt, and the capture gate requires it. Older clients that
+// never showed the wording omit it: their selection is saved but grants no
+// capture consent.
+export const CAPTURE_CONSENT_VERSION = "broker-group-capture-v1";
+
+export function selectOnboardingGroups(whatsappConnectionId: number, groupJids: string[], requestId: string, captureConsent?: { version: string; confirmed: boolean }) {
   return fetchJSON<{ ok: boolean; selected_group_jids: string[]; selected_count: number; selection_confirmation: GroupSelectionConfirmation }>("/onboarding/groups/select", {
     method: "POST",
     body: JSON.stringify({
@@ -353,6 +360,10 @@ export function selectOnboardingGroups(whatsappConnectionId: number, groupJids: 
       group_jids: groupJids,
       request_id: requestId,
       confirm: true,
+      ...(captureConsent ? {
+        capture_consent_version: captureConsent.version,
+        capture_consent_confirmed: captureConsent.confirmed,
+      } : {}),
     }),
   });
 }
