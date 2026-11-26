@@ -9,6 +9,7 @@ import { useAuth } from "@/lib/AuthProvider";
 import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, getGroupSelectionConfirmation, checkOnboardingGroup, optOutOnboardingGroup, deselectOnboardingGroup, selectOnboardingGroups, revokeCaptureConsent, CAPTURE_CONSENT_VERSION, getMarketRawSources, confirmMarketRawSources, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry, type MarketShareClass } from "@/lib/api";
 import QRCode from "qrcode";
 import { connectionHealth, connectionMetric, phoneConnectionView } from "@/lib/connectionHealth";
+import { buildSharingOutcomeMessage } from "./sharingOutcome";
 
 type HealthStatus = "healthy" | "warning" | "error" | "checking";
 
@@ -1212,6 +1213,26 @@ function EmptyConnectionsHint({ onNumbersPage = false }: { onNumbersPage?: boole
   );
 }
 
+type MarketSharingState = {
+  available: boolean;
+  consentVersion: string;
+  consentText: string;
+  activeJids: Set<string>;
+  revokedJids: Set<string>;
+  shareClassByJid: Record<string, MarketShareClass>;
+  shareTopicByJid: Record<string, string>;
+};
+
+const EMPTY_MARKET_SHARING: MarketSharingState = {
+  available: false,
+  consentVersion: "",
+  consentText: "",
+  activeJids: new Set<string>(),
+  revokedJids: new Set<string>(),
+  shareClassByJid: {},
+  shareTopicByJid: {},
+};
+
 function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; liveStatus: WhatsAppStatus | null; onRefresh: () => Promise<void> | void; }) {
   // The group directory is persisted independently of the live socket. A
   // paired phone may be temporarily disconnected or have an unavailable
@@ -1231,13 +1252,13 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   const [savingSelection, setSavingSelection] = useState(false);
   const [checkingGroup, setCheckingGroup] = useState<string | null>(null);
-  const [marketSharing, setMarketSharing] = useState<{ available: boolean; consentVersion: string; consentText: string; activeJids: Set<string>; revokedJids: Set<string>; shareClassByJid: Record<string, MarketShareClass>; shareTopicByJid: Record<string, string> }>({ available: false, consentVersion: "", consentText: "", activeJids: new Set<string>(), revokedJids: new Set<string>(), shareClassByJid: {}, shareTopicByJid: {} });
+  const [marketSharing, setMarketSharing] = useState<MarketSharingState>(EMPTY_MARKET_SHARING);
   const [sharingError, setSharingError] = useState<string | null>(null);
   const [pendingSharing, setPendingSharing] = useState<{ jids: string[]; allowUnclear: string[] } | null>(null);
   const [includedUnclear, setIncludedUnclear] = useState<Set<string>>(new Set());
   const [savingSharing, setSavingSharing] = useState(false);
 
-  const loadMarketSharing = useCallback(async () => {
+  const loadMarketSharing = useCallback(async (): Promise<MarketSharingState> => {
     try {
       const state = await getMarketRawSources(phone.id);
       const shareClassByJid: Record<string, MarketShareClass> = {};
@@ -1246,7 +1267,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         if (row.share_class) shareClassByJid[row.group_jid] = row.share_class;
         if (row.share_class_topic) shareTopicByJid[row.group_jid] = row.share_class_topic;
       }
-      setMarketSharing({
+      const snapshot: MarketSharingState = {
         available: true,
         consentVersion: state.consent_version,
         consentText: state.consent_text,
@@ -1254,31 +1275,37 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         revokedJids: new Set((state.revoked_sources || []).map((s) => s.group_jid)),
         shareClassByJid,
         shareTopicByJid,
-      });
+      };
+      setMarketSharing(snapshot);
+      return snapshot;
     } catch {
       // Sharing controls hidden when the feature is unavailable; nothing changes.
-      setMarketSharing({ available: false, consentVersion: "", consentText: "", activeJids: new Set<string>(), revokedJids: new Set<string>(), shareClassByJid: {}, shareTopicByJid: {} });
+      setMarketSharing(EMPTY_MARKET_SHARING);
+      return EMPTY_MARKET_SHARING;
     }
   }, [phone.id]);
 
-  const confirmSharing = useCallback(async (jids: string[], allowUnclear: string[] = []): Promise<boolean> => {
-    if (!marketSharing.available || jids.length === 0) return true;
+  const confirmSharing = useCallback(async (jids: string[], allowUnclear: string[] = []): Promise<{ ok: boolean; state: MarketSharingState; beforeActive: Set<string>; attempted: string[] }> => {
+    const beforeActive = new Set(marketSharing.activeJids);
+    if (!marketSharing.available || jids.length === 0) return { ok: true, state: marketSharing, beforeActive, attempted: [] };
     setSavingSharing(true);
     setSharingError(null);
     try {
       await confirmMarketRawSources(phone.id, jids, marketSharing.consentVersion, allowUnclear);
       setPendingSharing(null);
-      await loadMarketSharing();
-      return true;
+      const state = await loadMarketSharing();
+      return { ok: true, state, beforeActive, attempted: jids };
     } catch {
       // Never claim sharing from intent. Status below reads actual consent rows.
       setPendingSharing({ jids, allowUnclear });
-      setSharingError("Selection is confirmed, but sharing could not be enabled. Nothing new was shared. Retry sends your explicit confirmation again for the same groups.");
-      return false;
+      setSharingError("Selection is confirmed, but sharing could not be enabled for the requested groups. Groups already shared stay shared, and the status below shows the recorded state. Retry sends your explicit confirmation again for the same groups.");
+      // Best-effort refresh so the visible status is the recorded state, not a guess.
+      const state = await loadMarketSharing();
+      return { ok: false, state, beforeActive, attempted: jids };
     } finally {
       setSavingSharing(false);
     }
-  }, [loadMarketSharing, marketSharing.available, marketSharing.consentVersion, phone.id]);
+  }, [loadMarketSharing, marketSharing, phone.id]);
 
   // Sharing set for a confirmation: property groups are in by default,
   // unclear names only with the broker's explicit per-group include, and
@@ -1295,6 +1322,23 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     }
     return { shareable, allowUnclear };
   }, [includedUnclear, marketSharing.shareClassByJid]);
+
+  // Run the sharing confirmation and report its VERIFIED outcome: counts come
+  // from the reloaded server state, never from the attempted set, so a
+  // re-confirm of already-shared groups reads as the no-op it is and the
+  // remaining unshared groups are named with their real state (paused vs
+  // never shared) and review path.
+  const runSharingOutcome = useCallback(async (confirmed: Iterable<string>, baseMessage: string) => {
+    const confirmedJids = Array.from(confirmed);
+    const sharingSet = computeSharingSet(confirmedJids);
+    const result = await confirmSharing(sharingSet.shareable, sharingSet.allowUnclear);
+    if (!result.ok || !marketSharing.available || sharingSet.shareable.length === 0) return;
+    if (!result.state.available) {
+      setMessage(`${baseMessage} Sharing confirmation was recorded; reload the page to see the updated sharing status.`);
+      return;
+    }
+    setMessage(`${baseMessage} ${buildSharingOutcomeMessage({ confirmedJids, attemptedShared: result.attempted, beforeActive: result.beforeActive, afterActive: result.state.activeJids, afterRevoked: result.state.revokedJids, afterShareClassByJid: result.state.shareClassByJid })}`);
+  }, [computeSharingSet, confirmSharing, marketSharing.available]);
 
   const applyDirectorySelection = useCallback((next: OnboardingGroupState) => {
     const selectable = (next.groups || []).filter((group) => group.selectable !== false && !group.opted_out);
@@ -1413,17 +1457,14 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       } : current);
       const refreshed = await loadGroups();
       setSelectedGroups(confirmed);
+      const baseMessage = !refreshed
+        ? "Selection saved and confirmed. Group refresh is temporarily unavailable; the saved selection remains active."
+        : "Selection saved and confirmed. New messages from these groups will be saved for you and your assistant to search. Extraction stays under your separate Start control.";
       if (!refreshed) {
         setError(null);
-        setMessage("Selection saved and confirmed. Group refresh is temporarily unavailable; the saved selection remains active.");
-      } else {
-        setMessage("Selection saved and confirmed. New messages from these groups will be saved for you and your assistant to search. Extraction stays under your separate Start control.");
       }
-      const sharingSet = computeSharingSet(confirmed);
-      const sharingOk = await confirmSharing(sharingSet.shareable, sharingSet.allowUnclear);
-      if (sharingOk && marketSharing.available && sharingSet.shareable.length > 0) {
-        setMessage(`Selection confirmed. New messages from the ${sharingSet.shareable.length} shared group${sharingSet.shareable.length === 1 ? "" : "s"} are searchable by other authenticated PropAI brokers' assistants from now. Non-property groups, old messages and private chats stay private.`);
-      }
+      setMessage(baseMessage);
+      await runSharingOutcome(confirmed, baseMessage);
       void Promise.resolve(onRefresh()).catch(() => undefined);
     } catch (err) {
       // A lost HTTP response is not a failed transaction. Read only, never POST
@@ -1435,13 +1476,10 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         if (receipt?.complete && receipt.request_id === requestId && exact) {
           setSelectedGroups(new Set(receipt.selected_group_jids));
           setData((current) => current ? {...current, selected_count: receipt.selected_group_jids.length, selection_confirmation: receipt, capture_consent_active: true, groups: current.groups.map((group) => ({...group, connected: receipt.selected_group_jids.includes(group.group_jid), opted_out: receipt.selected_group_jids.includes(group.group_jid) ? false : group.opted_out}))} : current);
-          setMessage("Selection saved and confirmed. Extraction remains under your separate Start control.");
+          const receiptBaseMessage = "Selection saved and confirmed. Extraction remains under your separate Start control.";
+          setMessage(receiptBaseMessage);
           setError(null);
-          const sharingSet = computeSharingSet(receipt.selected_group_jids);
-          const sharingOk = await confirmSharing(sharingSet.shareable, sharingSet.allowUnclear);
-          if (sharingOk && marketSharing.available && sharingSet.shareable.length > 0) {
-            setMessage(`Selection confirmed. New messages from the ${sharingSet.shareable.length} shared group${sharingSet.shareable.length === 1 ? "" : "s"} are searchable by other authenticated PropAI brokers' assistants from now. Non-property groups, old messages and private chats stay private.`);
-          }
+          await runSharingOutcome(receipt.selected_group_jids, receiptBaseMessage);
         } else {
           setError("Could not verify this confirmation completed. Saved choices are shown below. Extraction has not been started.");
         }
@@ -1728,20 +1766,37 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/[0.08] px-3 py-2 text-xs text-amber-200">
           {sharingError}
           {pendingSharing && (
-            <button type="button" disabled={savingSharing} onClick={() => void confirmSharing(pendingSharing.jids, pendingSharing.allowUnclear)} className="ml-2 rounded-md border border-amber-400/40 px-2 py-0.5 font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-40">
+            <button type="button" disabled={savingSharing} onClick={() => void confirmSharing(pendingSharing.jids, pendingSharing.allowUnclear).then((result) => {
+              if (result.ok && result.state.available) {
+                setMessage(buildSharingOutcomeMessage({ confirmedJids: Array.from(selectedGroups), attemptedShared: result.attempted, beforeActive: result.beforeActive, afterActive: result.state.activeJids, afterRevoked: result.state.revokedJids, afterShareClassByJid: result.state.shareClassByJid }));
+              }
+            })} className="ml-2 rounded-md border border-amber-400/40 px-2 py-0.5 font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-40">
               {savingSharing ? "Confirming..." : "Retry sharing confirmation"}
             </button>
           )}
         </div>
       )}
-      {marketSharing.available && !sharingError && Array.from(selectedGroups).some((jid) => marketSharing.revokedJids.has(jid)) && (
-        <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/[0.08] px-3 py-2 text-xs text-amber-200">
-          Sharing is paused for {Array.from(selectedGroups).filter((jid) => marketSharing.revokedJids.has(jid)).length} selected group{Array.from(selectedGroups).filter((jid) => marketSharing.revokedJids.has(jid)).length === 1 ? "" : "s"} (a WhatsApp reconnect or deselect revokes sharing). Their messages stay in your account but other brokers cannot search them until you confirm again.
-          <button type="button" onClick={requestSelectionConfirmation} disabled={savingSelection || savingSharing} className="ml-2 rounded-md border border-amber-400/40 px-2 py-0.5 font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-40">
-            Re-confirm sharing
-          </button>
-        </div>
-      )}
+      {marketSharing.available && !sharingError && (() => {
+        const pausedJids = Array.from(selectedGroups).filter((jid) => marketSharing.revokedJids.has(jid));
+        if (pausedJids.length === 0) return null;
+        const pausedProperty = pausedJids.filter((jid) => marketSharing.shareClassByJid[jid] === "property").length;
+        const pausedNever = pausedJids.filter((jid) => marketSharing.shareClassByJid[jid] === "non_property").length;
+        const pausedReview = pausedJids.length - pausedProperty - pausedNever;
+        const activeSelected = Array.from(selectedGroups).filter((jid) => marketSharing.activeJids.has(jid)).length;
+        return (
+          <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/[0.08] px-3 py-2 text-xs text-amber-200">
+            <p>Sharing is paused for {pausedJids.length} selected group{pausedJids.length === 1 ? "" : "s"} (a WhatsApp reconnect or deselect pauses sharing). Their messages stay in your account but other brokers cannot search them until you confirm again. Currently shared: {activeSelected} of your {selectedGroups.size} selected group{selectedGroups.size === 1 ? "" : "s"}.</p>
+            <p className="mt-1">
+              {pausedProperty > 0 && <>Re-confirming restores the {pausedProperty} property-named group{pausedProperty === 1 ? "" : "s"}. </>}
+              {pausedReview > 0 && <>To share any of the other {pausedReview} paused group{pausedReview === 1 ? "" : "s"}, tick {pausedReview === 1 ? "it" : "them"} individually in the confirmation dialog. </>}
+              {pausedNever > 0 && <>{pausedNever} {pausedNever === 1 ? "is" : "are"} not a property group and can never be shared.</>}
+            </p>
+            <button type="button" onClick={requestSelectionConfirmation} disabled={savingSelection || savingSharing} className="mt-1.5 rounded-md border border-amber-400/40 px-2 py-0.5 font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-40">
+              {pausedProperty > 0 ? `Re-confirm ${pausedProperty} property group${pausedProperty === 1 ? "" : "s"}; review the rest` : "Review sharing groups"}
+            </button>
+          </div>
+        );
+      })()}
 
       <div className={`mt-4 rounded-lg border px-3 py-2.5 text-xs ${
         captureConnected
