@@ -106,3 +106,30 @@ def test_gate_holds_newly_unclear_industry_groups_without_explicit_include():
     blocked, held = policy.validate_group_share_eligibility(['3@g.us', '4@g.us'], [], names)
     assert blocked == [] and len(held) == 2
     assert policy.validate_group_share_eligibility(['3@g.us'], ['3@g.us'], names) == ([], [])
+
+
+def test_bulk_restore_payload_boundary():
+    # A restore-review bulk confirm sends every ticked group at once. The gate
+    # must pass property groups plus explicitly-included unclear groups, and
+    # must still block any non-property group smuggled into the same payload.
+    names = {
+        'p1@g.us': 'Mumbai Buy Sell Flat 2bhk',
+        'p2@g.us': 'Gurgaon Property Listings',
+        'u1@g.us': 'City Deals Network',
+        'n1@g.us': 'Singles Mumbai Group 🤗',
+    }
+    blocked, held = policy.validate_group_share_eligibility(
+        ['p1@g.us', 'p2@g.us', 'u1@g.us'], ['u1@g.us'], names)
+    assert blocked == [] and held == []
+    # The unclear group without its exact include is held back, not shared.
+    blocked, held = policy.validate_group_share_eligibility(
+        ['p1@g.us', 'p2@g.us', 'u1@g.us'], [], names)
+    assert blocked == [] and held == ['City Deals Network']
+    # A non-property group inside the same bulk payload blocks the write.
+    blocked, held = policy.validate_group_share_eligibility(
+        ['p1@g.us', 'u1@g.us', 'n1@g.us'], ['u1@g.us', 'n1@g.us'], names)
+    assert len(blocked) == 1 and 'Singles Mumbai Group' in blocked[0] and held == []
+    # Groups absent from the name directory are left to the existence check.
+    blocked, held = policy.validate_group_share_eligibility(
+        ['p1@g.us', 'zz9@g.us'], [], names)
+    assert blocked == [] and held == []

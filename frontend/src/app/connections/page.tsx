@@ -9,7 +9,7 @@ import { useAuth } from "@/lib/AuthProvider";
 import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, getGroupSelectionConfirmation, checkOnboardingGroup, optOutOnboardingGroup, deselectOnboardingGroup, selectOnboardingGroups, revokeCaptureConsent, CAPTURE_CONSENT_VERSION, getMarketRawSources, confirmMarketRawSources, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry, type MarketShareClass } from "@/lib/api";
 import QRCode from "qrcode";
 import { connectionHealth, connectionMetric, phoneConnectionView } from "@/lib/connectionHealth";
-import { buildSharingOutcomeMessage } from "./sharingOutcome";
+import { buildRestorePayload, buildRestorePlan, buildSharingOutcomeMessage, PROPAI_INTERNAL_GROUP_PATTERN } from "./sharingOutcome";
 
 type HealthStatus = "healthy" | "warning" | "error" | "checking";
 
@@ -261,7 +261,6 @@ const REAL_ESTATE_GROUP_NAME_PATTERN = /\b(real\s*estate|realty|realtors?|estate
 
 // PropAI/Propi product groups (the workspace's own product groups) are never
 // pre-checked in a sharing restore; the broker ticks them explicitly if wanted.
-const PROPAI_INTERNAL_GROUP_PATTERN = /^prop\s?(ai|i)\b/i;
 
 const NON_PROPERTY_GROUP_NAME_HINTS: Array<{ pattern: RegExp; topic: string }> = [
   { pattern: /\b(family|families|relatives|cousins?|friends?|personal)\b/i, topic: "personal or family" },
@@ -1365,17 +1364,16 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
   // tick here, same as the per-group include in the selection dialog.
   const openRestore = useCallback(() => {
     const nameByJid = new Map((data?.groups ?? []).map((group) => [group.group_jid, whatsappGroupDisplayName(group)]));
-    const restorable = Array.from(selectedGroups).filter((jid) => marketSharing.revokedJids.has(jid) && marketSharing.shareClassByJid[jid] !== "non_property");
-    setRestoreChecked(new Set(restorable.filter((jid) => marketSharing.shareClassByJid[jid] === "property" && !PROPAI_INTERNAL_GROUP_PATTERN.test(nameByJid.get(jid) ?? ""))));
+    const plan = buildRestorePlan({ selectedJids: selectedGroups, revokedJids: marketSharing.revokedJids, shareClassByJid: marketSharing.shareClassByJid, nameByJid });
+    setRestoreChecked(new Set(plan.preTicked));
     setRestoreOpen(true);
   }, [data, marketSharing, selectedGroups]);
 
   const confirmRestore = useCallback(async () => {
-    const jids = Array.from(restoreChecked);
+    const { groupJids, allowUnclear } = buildRestorePayload(Array.from(restoreChecked), marketSharing.shareClassByJid);
     setRestoreOpen(false);
-    if (jids.length === 0) return;
-    const allowUnclear = jids.filter((jid) => marketSharing.shareClassByJid[jid] !== "property");
-    const result = await confirmSharing(jids, allowUnclear);
+    if (groupJids.length === 0) return;
+    const result = await confirmSharing(groupJids, allowUnclear);
     if (result.ok && result.state.available) {
       setMessage(buildSharingOutcomeMessage({ confirmedJids: Array.from(selectedGroups), attemptedShared: result.attempted, beforeActive: result.beforeActive, afterActive: result.state.activeJids, afterRevoked: result.state.revokedJids, afterShareClassByJid: result.state.shareClassByJid }));
     }
@@ -2283,14 +2281,15 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
               {(() => {
                 const nameByJid = new Map((data?.groups ?? []).map((group) => [group.group_jid, whatsappGroupDisplayName(group)]));
-                const restorable = Array.from(selectedGroups).filter((jid) => marketSharing.revokedJids.has(jid) && marketSharing.shareClassByJid[jid] !== "non_property");
+                const plan = buildRestorePlan({ selectedJids: selectedGroups, revokedJids: marketSharing.revokedJids, shareClassByJid: marketSharing.shareClassByJid, nameByJid });
+                const restorable = plan.restorable;
                 const neverJids = Array.from(selectedGroups).filter((jid) => marketSharing.revokedJids.has(jid) && marketSharing.shareClassByJid[jid] === "non_property");
-                const internalCount = restorable.filter((jid) => PROPAI_INTERNAL_GROUP_PATTERN.test(nameByJid.get(jid) ?? "")).length;
+                const internalCount = plan.internalCount;
                 return (
                   <>
                     <p className="text-xs leading-5 text-zinc-400">These {restorable.length} group{restorable.length === 1 ? "" : "s"} were shared before and are paused now. Only the ticked groups are shared again when you confirm: other authenticated PropAI brokers' assistants can search their new messages for property requests. Property-named groups are pre-ticked; the rest start unticked. Tick them one by one, or all at once below, and untick any you don't want. Nothing is posted anywhere, and your saved group selection is unchanged.</p>
                     {(() => {
-                      const bulkJids = restorable.filter((jid) => !PROPAI_INTERNAL_GROUP_PATTERN.test(nameByJid.get(jid) ?? ""));
+                      const bulkJids = plan.bulkJids;
                       const allTicked = bulkJids.length > 0 && bulkJids.every((jid) => restoreChecked.has(jid));
                       return bulkJids.length > 1 ? (
                         <label className="mt-3 flex items-center gap-2 rounded-lg border border-amber-400/30 bg-amber-500/[0.06] px-3 py-2 text-xs font-semibold text-amber-100">
