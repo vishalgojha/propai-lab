@@ -8,7 +8,7 @@ import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartp
 import { useAuth } from "@/lib/AuthProvider";
 import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, getGroupSelectionConfirmation, checkOnboardingGroup, optOutOnboardingGroup, deselectOnboardingGroup, selectOnboardingGroups, getMarketRawSources, confirmMarketRawSources, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry, type MarketShareClass } from "@/lib/api";
 import QRCode from "qrcode";
-import { connectionHealth, connectionMetric } from "@/lib/connectionHealth";
+import { connectionHealth, connectionMetric, phoneConnectionView } from "@/lib/connectionHealth";
 
 type HealthStatus = "healthy" | "warning" | "error" | "checking";
 
@@ -290,9 +290,13 @@ function PhoneCard({
   liveStatus,
   onRefresh,
   onDeleted,
+  liveStatusChecked,
+  liveStatusError,
 }: {
   phone: Phone;
   liveStatus: WhatsAppStatus | null;
+  liveStatusChecked: boolean;
+  liveStatusError: boolean;
   onRefresh: () => Promise<void> | void;
   onDeleted: (phoneId: number) => void;
 }) {
@@ -655,11 +659,21 @@ function PhoneCard({
     }
   };
 
-  const statusAvailable = phone.live_status_available !== false;
-  // Keep the card's truth identical to the page summary. The API may have a
-  // transiently unavailable status probe while the persisted connection state
-  // (or the last live event) still confirms the linked session.
-  const isConnected = isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus);
+  // Keep the card's truth identical to the page summary: both derive from the
+  // shared connection model. A stored row is last-known state only; a fresh
+  // "Connected" requires live probe confirmation, a definitive offline probe
+  // always supersedes the stored row, and a failed/unknown probe can only
+  // show "Last known connected".
+  const view = phoneConnectionView({
+    storedConnected: isConnectedPhone(phone),
+    placeholder: isPlaceholderPhone(phone.phone_number),
+    matchesProbe: matchesLiveStatus(phone, liveStatus),
+    status: liveStatus,
+    checked: liveStatusChecked,
+    error: liveStatusError,
+  });
+  const isConnected = view === "connected";
+  const statusAvailable = view !== "unavailable";
   // An unpaired connection has no canonical WhatsApp account yet. Never use a
   // transient ingestor status value as its identity: that can belong to a
   // stale device/session and makes the card appear to have selected a random
@@ -668,24 +682,31 @@ function PhoneCard({
   const phoneDisplay = isPlaceholderPhone(canonicalPhone)
     ? canonicalPhone
     : (phone.phone_number_live || canonicalPhone);
-  const isUnpaired = !isConnected && isPlaceholderPhone(canonicalPhone);
+  const isUnpaired = view === "unpaired";
   // A reset response arrives before the parent refresh finishes. Keep this
   // field editable during that short window even if the old prop is still
   // present, so the user can never be trapped with a stale phone identity.
   const pairingPhoneEditable = isPlaceholderPhone(phone.phone_number) || Boolean(resetReceipt);
-  const isReconnecting = statusAvailable && ["connecting", "reconnecting"].includes(phone.connection_state);
-  const statusLabel = isConnected
-    ? "Connected"
-    : !statusAvailable
-      ? "Service unavailable"
-      : isReconnecting
-        ? "Reconnecting"
-        : "Disconnected";
-  const health: HealthStatus = isConnected ? "healthy" : (!statusAvailable || isUnpaired || isReconnecting) ? "warning" : "error";
+  const statusLabel =
+    view === "connected"
+      ? "Connected"
+      : view === "checking"
+        ? "Checking…"
+        : view === "pairing"
+          ? "Reconnecting"
+          : view === "last-known"
+            ? "Last known connected"
+            : view === "unavailable"
+              ? "Service unavailable"
+              : "Disconnected";
+  const health: HealthStatus =
+    view === "connected" ? "healthy" : view === "checking" ? "checking" : view === "disconnected" ? "error" : "warning";
   // Live-status availability is not proof that a saved connection is paired.
   // Keep pairing discoverable whenever no connected session is confirmed; the
   // authenticated backend/ingestor remains authoritative and rejects races.
-  const canPair = !isConnected;
+  // While the first probe is still in flight, show neither the connected
+  // controls nor the pairing panel: nothing is confirmed yet.
+  const canPair = view !== "connected" && view !== "checking";
 
   const closePairCodeDialog = () => {
     setShowPairCodeDialog(false);
@@ -795,7 +816,7 @@ function PhoneCard({
         </div>
       </div>
 
-      {!isConnected && (
+      {!isConnected && view !== "checking" && (
         <div className="whatsapp-pairing-panel mt-4 rounded-xl border p-4">
           <div className="flex items-start gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-400/25 bg-emerald-500/10">
@@ -832,7 +853,7 @@ function PhoneCard({
               <LogOut className="h-4 w-4 text-zinc-300" />
             )}
           </button>
-        ) : !isUnpaired && statusAvailable ? (
+        ) : !isUnpaired && statusAvailable && view !== "checking" ? (
           <button
             onClick={() => handleAction("connect")}
             disabled={actionLoading !== null}
@@ -2402,12 +2423,22 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
 
   if (authLoading || !user) return null;
 
-  const connectedCount = phones.filter((p) => isConnectedPhone(p) || matchesLiveStatus(p, liveStatus)).length;
+  const phoneViews = phones.map((p) =>
+    phoneConnectionView({
+      storedConnected: isConnectedPhone(p),
+      placeholder: isPlaceholderPhone(p.phone_number),
+      matchesProbe: matchesLiveStatus(p, liveStatus),
+      status: liveStatus,
+      checked: liveStatusChecked,
+      error: liveStatusError,
+    }),
+  );
+  const connectedCount = phoneViews.filter((v) => v === "connected").length;
   // Connection status counters are not populated by the current WhatsMeow
   // path. The extraction progress endpoint is the live database-backed count.
   const phoneMessageTotal = phones.reduce((sum, p) => sum + (p.total_messages_received || 0), 0);
   const totalMessages = progressAvailable ? rawTotal : phoneMessageTotal || rawTotal;
-  const health = connectionHealth({ phonesLoading, liveStatusChecked, phonesError, liveStatusError, connectedCount });
+  const health = connectionHealth({ phonesLoading, liveStatusChecked, phonesError, liveStatusError, views: phoneViews });
   const displayMetric = (value: number, live: boolean) => connectionMetric(value, live, statsLoading);
 
   return (
@@ -2465,6 +2496,8 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
                   key={phone.id}
                   phone={phone}
                   liveStatus={liveStatus}
+                  liveStatusChecked={liveStatusChecked}
+                  liveStatusError={liveStatusError}
                   onRefresh={refreshData}
                   onDeleted={handlePhoneDeleted}
                 />
