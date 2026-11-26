@@ -3,10 +3,27 @@ package main
 import (
 	"errors"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 )
+
+var testConsentCutoff = time.Date(2026, time.November, 26, 10, 0, 0, 0, time.UTC)
+
+// useTestConsentCutoff points the gate at a fixed cutoff and restores the
+// environment afterwards.
+func useTestConsentCutoff(t *testing.T) {
+	t.Helper()
+	t.Setenv("PROPAI_CAPTURE_CONSENT_AFTER", testConsentCutoff.Format(time.RFC3339))
+	consentAfterOnce = sync.Once{}
+	consentAfter = time.Time{}
+	t.Cleanup(func() {
+		consentAfterOnce = sync.Once{}
+		consentAfter = time.Time{}
+	})
+}
 
 func captureTestPayload(groupJID string) map[string]interface{} {
 	return map[string]interface{}{
@@ -37,12 +54,13 @@ func expectTenantLookup(mock sqlmock.Sqlmock, brokerID string) {
 }
 
 func expectGateQuery(mock sqlmock.Sqlmock, brokerID, groupJID string, allowed bool) {
-	mock.ExpectQuery("organization_group_connections").
-		WithArgs(brokerID, groupJID, brokerID).
+	mock.ExpectQuery("whatsapp_group_selection_receipts").
+		WithArgs(brokerID, groupJID, testConsentCutoff).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(allowed))
 }
 
-func TestGateQueryRequiresConsentMarkerAndSelection(t *testing.T) {
+func TestGateQueryRequiresCurrentReceiptAndSelection(t *testing.T) {
+	useTestConsentCutoff(t)
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -50,8 +68,8 @@ func TestGateQueryRequiresConsentMarkerAndSelection(t *testing.T) {
 	defer db.Close()
 	sm := &SessionManager{db: db}
 
-	mock.ExpectQuery("capture-consent@internal").
-		WithArgs("broker-gate-shape", "shape@g.us", "broker-gate-shape").
+	mock.ExpectQuery("state_fingerprint <> ''").
+		WithArgs("broker-gate-shape", "shape@g.us", testConsentCutoff).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
 
 	sm.groupCaptureAllowed("broker-gate-shape", "shape@g.us")
@@ -60,7 +78,29 @@ func TestGateQueryRequiresConsentMarkerAndSelection(t *testing.T) {
 	}
 }
 
+func TestGateFailsClosedWithoutCutoffEnv(t *testing.T) {
+	// PROPAI_CAPTURE_CONSENT_AFTER unset must disable capture without even
+	// querying the database.
+	t.Setenv("PROPAI_CAPTURE_CONSENT_AFTER", "")
+	consentAfterOnce = sync.Once{}
+	consentAfter = time.Time{}
+	t.Cleanup(func() {
+		consentAfterOnce = sync.Once{}
+		consentAfter = time.Time{}
+	})
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	sm := &SessionManager{db: db}
+	if sm.groupCaptureAllowed("broker-gate-nocutoff", "000@g.us") {
+		t.Fatal("missing consent cutoff env must fail closed")
+	}
+}
+
 func TestGroupCaptureAllowedForConsentedSelectedGroup(t *testing.T) {
+	useTestConsentCutoff(t)
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -86,6 +126,7 @@ func TestGroupCaptureAllowedForConsentedSelectedGroup(t *testing.T) {
 func TestGroupCaptureDeniedWithoutConsentEvenIfSelected(t *testing.T) {
 	// Legacy accounts confirmed selections under copy that said capture
 	// happened either way, so a selection row alone must not admit capture.
+	useTestConsentCutoff(t)
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -104,6 +145,9 @@ func TestGroupCaptureDeniedWithoutConsentEvenIfSelected(t *testing.T) {
 }
 
 func TestGroupCaptureDeniedAfterConsentRevoked(t *testing.T) {
+	// Revocation blanks the receipt fingerprint, so the combined EXISTS is
+	// false and capture stops even for selected groups.
+	useTestConsentCutoff(t)
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -124,6 +168,7 @@ func TestGroupCaptureDeniedAfterConsentRevoked(t *testing.T) {
 func TestGroupCaptureIsPerBroker(t *testing.T) {
 	// Tenant isolation: another broker's consent + selection for the same
 	// group JID must never admit capture for this broker's session.
+	useTestConsentCutoff(t)
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -142,6 +187,7 @@ func TestGroupCaptureIsPerBroker(t *testing.T) {
 }
 
 func TestGroupCaptureFailsClosedOnLookupError(t *testing.T) {
+	useTestConsentCutoff(t)
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -149,8 +195,8 @@ func TestGroupCaptureFailsClosedOnLookupError(t *testing.T) {
 	defer db.Close()
 	sm := &SessionManager{db: db}
 
-	mock.ExpectQuery("organization_group_connections").
-		WithArgs("broker-gate-err", "444@g.us", "broker-gate-err").
+	mock.ExpectQuery("whatsapp_group_selection_receipts").
+		WithArgs("broker-gate-err", "444@g.us", testConsentCutoff).
 		WillReturnError(errors.New("connection reset"))
 
 	if sm.groupCaptureAllowed("broker-gate-err", "444@g.us") {
@@ -162,6 +208,7 @@ func TestGroupCaptureFailsClosedOnLookupError(t *testing.T) {
 }
 
 func TestGroupCaptureDeniedWithNilDB(t *testing.T) {
+	useTestConsentCutoff(t)
 	sm := &SessionManager{}
 	if sm.groupCaptureAllowed("broker-gate-nildb", "555@g.us") {
 		t.Fatal("missing database must fail closed")
@@ -169,6 +216,7 @@ func TestGroupCaptureDeniedWithNilDB(t *testing.T) {
 }
 
 func TestInsertRawMessageSkipsUnconsentedGroup(t *testing.T) {
+	useTestConsentCutoff(t)
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -193,6 +241,7 @@ func TestInsertRawMessageSkipsUnconsentedGroup(t *testing.T) {
 }
 
 func TestInsertRawMessageSkipsHistorySyncForUnconsentedGroup(t *testing.T) {
+	useTestConsentCutoff(t)
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -213,6 +262,7 @@ func TestInsertRawMessageSkipsHistorySyncForUnconsentedGroup(t *testing.T) {
 }
 
 func TestInsertRawMessagePersistsConsentedSelectedGroup(t *testing.T) {
+	useTestConsentCutoff(t)
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -238,6 +288,7 @@ func TestInsertRawMessagePersistsConsentedSelectedGroup(t *testing.T) {
 }
 
 func TestInsertRawMessageStillRejectsDirectMessages(t *testing.T) {
+	useTestConsentCutoff(t)
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -258,7 +309,8 @@ func TestInsertRawMessageStillRejectsDirectMessages(t *testing.T) {
 
 func TestGateDenyLogDoesNotLeakMessageContent(t *testing.T) {
 	// The deny path logs broker and group JID only; this test pins that the
-	// skip log format string carries no message text.
+	// gate never receives message content, so its log path cannot include it.
+	useTestConsentCutoff(t)
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -269,8 +321,6 @@ func TestGateDenyLogDoesNotLeakMessageContent(t *testing.T) {
 	expectGateQuery(mock, "broker-gate-log", "999@g.us", false)
 	sm.groupCaptureAllowed("broker-gate-log", "999@g.us")
 
-	// Indirect check: the gate never receives message content, so nothing in
-	// its log path can include it. Guard the function signature drift.
 	payload := captureTestPayload("999@g.us")
 	if strings.Contains(payload["data"].(map[string]interface{})["key"].(map[string]interface{})["id"].(string), "3 BHK") {
 		t.Fatal("test payload corrupted")

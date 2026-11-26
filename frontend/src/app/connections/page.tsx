@@ -1781,7 +1781,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
           </div>
           {persistedSelectedCount === 0 && !hasUnpersistedSelection && (
             <div className="mt-3 border-l-2 border-amber-400/50 bg-amber-400/[0.04] px-3 py-2 text-[11px] text-amber-200">
-              Select and confirm at least one group before starting optional extraction. Live raw capture for Instinct and MCP continues independently.
+              Select and confirm at least one group to allow saving and before starting optional extraction. No group messages are saved until you allow saving here.
             </div>
           )}
           {hasUnpersistedSelection && (
@@ -1800,7 +1800,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
               )}
             </div>
           )}
-          {selectionConfirmed && data && !data.capture_consent_active && (
+          {selectionConfirmed && data && data.capture_consent_active === false && (
             <div className="mt-3 border-l-2 border-amber-400/50 bg-amber-400/[0.06] px-3 py-2 text-[11px] text-amber-200">
               Saving is off, so new group messages are not being saved. Confirm your group selection to turn it back on.
             </div>

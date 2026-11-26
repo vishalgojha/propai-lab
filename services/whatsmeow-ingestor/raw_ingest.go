@@ -105,21 +105,45 @@ const (
 	groupCaptureDenyTTL  = 30 * time.Second
 )
 
+// captureConsentCutoff is the deploy-time env PROPAI_CAPTURE_CONSENT_AFTER
+// (RFC3339). Only selections confirmed at or after this instant count as
+// capture consent: confirmations before it were made under copy that said
+// capture happened either way, so they are not consent to storage. Unset or
+// unparsable means fail closed.
+var consentAfterOnce sync.Once
+var consentAfter time.Time
+
+func captureConsentCutoff() time.Time {
+	consentAfterOnce.Do(func() {
+		consentAfter, _ = time.Parse(time.RFC3339, strings.TrimSpace(os.Getenv("PROPAI_CAPTURE_CONSENT_AFTER")))
+		if consentAfter.IsZero() {
+			log.Printf("PROPAI_CAPTURE_CONSENT_AFTER unset or invalid; group capture is disabled until configured")
+		}
+	})
+	return consentAfter
+}
+
 // groupCaptureAllowed reports whether the broker may capture this group.
 // Both must hold:
-//  1. an active capture consent for the connection - the marker row written
-//     when the broker taps Allow on the consent dialog (synthetic group JID
-//     capture-consent@internal, opted_out=false); and
+//  1. a current, completed selection confirmation (receipt with a non-blanked
+//     state_fingerprint) completed at or after the consent cutoff - that
+//     confirmation is the broker's one-tap Allow under the capture-consent
+//     wording; and
 //  2. an active, non-opted-out selection row for this specific group.
 //
-// Selections confirmed before the consent dialog existed were made under copy
-// that said capture happened either way, so they are NOT treated as capture
-// consent: legacy accounts stop capturing until they tap Allow once under the
-// new wording. opted_out uses COALESCE to match the API's None-is-false
-// semantics. Extraction and sharing keep their own separate permissions and
-// are not consulted. The check fails closed: any lookup error or missing row
-// means the message is not persisted.
+// The receipt's state_fingerprint is blanked by database triggers whenever
+// the selection, connection, device or allowlist changes, so a non-blank
+// receipt always matches the current saved state; the API revokes consent by
+// blanking it (the row is kept as the audit record). opted_out uses COALESCE
+// to match the API's None-is-false semantics. Extraction and sharing keep
+// their own separate permissions and are not consulted. The check fails
+// closed: missing cutoff, lookup error or missing rows mean the message is
+// not persisted.
 func (sm *SessionManager) groupCaptureAllowed(brokerID, groupJID string) bool {
+	cutoff := captureConsentCutoff()
+	if cutoff.IsZero() {
+		return false
+	}
 	key := brokerID + "|" + groupJID
 	if cached, ok := groupCaptureCache.Load(key); ok {
 		if decision, ok := cached.(captureDecision); ok && time.Now().Before(decision.expires) {
@@ -142,19 +166,19 @@ func (sm *SessionManager) groupCaptureAllowed(brokerID, groupJID string) bool {
 				  AND NOT COALESCE(ogc.opted_out, false)
 			) AND EXISTS(
 				SELECT 1
-				FROM public.organization_group_connections consent
-				JOIN public.org_whatsapp_connections consent_owc
-				  ON consent_owc.id = consent.whatsapp_connection_id
-				WHERE consent_owc.broker_id = $1
-				  AND consent.group_jid = 'capture-consent@internal'
-				  AND NOT COALESCE(consent.opted_out, false)
-			)`, brokerID, groupJID, brokerID).Scan(&exists)
+				FROM public.whatsapp_group_selection_receipts r
+				JOIN public.org_whatsapp_connections rowc
+				  ON rowc.id = r.whatsapp_connection_id
+				WHERE rowc.broker_id = $1
+				  AND r.state_fingerprint <> ''
+				  AND r.completed_at >= $3
+			)`, brokerID, groupJID, cutoff).Scan(&exists)
 		if err != nil {
 			log.Printf("[broker %s] group capture permission check failed for %s: %v (failing closed)", brokerID, groupJID, err)
 		} else {
 			allowed = exists
 			if !allowed {
-				log.Printf("[broker %s] capture skipped: group %s is not selected for capture", brokerID, groupJID)
+				log.Printf("[broker %s] capture skipped: no current capture consent or group %s not selected", brokerID, groupJID)
 			}
 		}
 	}

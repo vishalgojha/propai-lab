@@ -57,47 +57,57 @@ class ExtractionControlRequest(BaseModel):
     whatsapp_connection_id: int
 
 
-# One-tap capture consent. The broker's Allow tap on the selection
-# confirmation dialog is recorded as a marker row on the existing selection
-# table: a synthetic JID that never matches a real group, with is_active
-# False so selection counts and directory views are unaffected. opted_out
-# False means consent is active; revoking flips it to True. The ingestor
-# requires BOTH this marker and an active selection row for a group before it
-# persists that group's messages. Selections confirmed before this consent
-# existed were made under copy that said capture happened either way, so they
-# do not count as capture consent: those accounts capture nothing until they
-# confirm once under the new wording.
-CAPTURE_CONSENT_GROUP_JID = "capture-consent@internal"
-CAPTURE_CONSENT_VERSION = "broker-group-capture-v1"
-
-
-def _write_capture_consent(org_id: str, connection_id: int, active: bool) -> None:
-    now = datetime.now(timezone.utc).isoformat()
-    storage.client.table("organization_group_connections").upsert({
-        "organization_id": org_id,
-        "whatsapp_connection_id": connection_id,
-        "group_jid": CAPTURE_CONSENT_GROUP_JID,
-        "group_name": CAPTURE_CONSENT_VERSION,
-        "opted_out": not active,
-        "is_active": False,
-        "public_market_source": False,
-        "updated_at": now,
-        "connected_at": now,
-    }, on_conflict="organization_id,whatsapp_connection_id,group_jid").execute()
+# One-tap capture consent is the selection confirmation itself, made under
+# the capture-consent wording. confirm_whatsapp_group_selection writes a
+# completed receipt (whatsapp_group_selection_receipts) whose
+# state_fingerprint is blanked by database triggers whenever the selection,
+# connection, device or allowlist changes, so a non-blank receipt always
+# matches the current saved state. A confirmation counts as capture consent
+# only when its receipt was completed at or after
+# PROPAI_CAPTURE_CONSENT_AFTER, the deploy instant of the consent wording:
+# confirmations before it were made under copy that said capture happened
+# either way, so they are not consent to storage. Revoking consent blanks
+# the fingerprint, the designed invalidated state: the receipt row stays as
+# the audit record, capture stops, and starting extraction again needs a
+# fresh confirmation, exactly as after any selection change. The ingestor
+# requires BOTH this current post-cutoff receipt and an active selection
+# row for a group before it persists that group's messages. No marker rows,
+# no schema change, and broker sharing consent (broker_market_*) is never
+# touched.
+def _capture_consent_cutoff() -> datetime | None:
+    raw = os.getenv("PROPAI_CAPTURE_CONSENT_AFTER", "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        _logger.error("PROPAI_CAPTURE_CONSENT_AFTER is not a valid timestamp; capture consent reads as inactive")
+        return None
 
 
 def _capture_consent_active(org_id: str, connection_id: int) -> bool:
+    cutoff = _capture_consent_cutoff()
+    if cutoff is None:
+        return False
     rows = (
-        storage.client.table("organization_group_connections")
-        .select("group_jid")
+        storage.client.table("whatsapp_group_selection_receipts")
+        .select("completed_at")
         .eq("organization_id", org_id)
         .eq("whatsapp_connection_id", connection_id)
-        .eq("group_jid", CAPTURE_CONSENT_GROUP_JID)
-        .eq("opted_out", False)
+        .neq("state_fingerprint", "")
+        .gte("completed_at", cutoff.isoformat())
         .limit(1)
         .execute()
     )
     return bool(rows.data)
+
+
+def _revoke_capture_consent(org_id: str, connection_id: int) -> None:
+    storage.client.table("whatsapp_group_selection_receipts").update(
+        {"state_fingerprint": ""}
+    ).eq("organization_id", org_id).eq(
+        "whatsapp_connection_id", connection_id
+    ).execute()
 
 
 _ACTIVE_GROUP_BACKFILLS: set[tuple[str, int, str]] = set()
@@ -1527,14 +1537,8 @@ async def select_groups(
     })
     if not isinstance(confirmation, dict) or not confirmation.get("complete"):
         raise HTTPException(409, "Confirmation changed; review the saved state")
-    # The confirmed selection is also the broker's one-tap capture consent.
-    # Without this marker the ingestor persists nothing for the connection,
-    # so a failed write must surface as a retryable error, not a silent gap.
-    try:
-        await asyncio.to_thread(_write_capture_consent, org_id, body.whatsapp_connection_id, True)
-    except Exception:
-        _logger.exception("capture consent write failed for org=%s connection=%s", org_id, body.whatsapp_connection_id)
-        raise HTTPException(502, "Consent could not be recorded; please confirm again")
+    # The RPC's completed receipt is also the broker's one-tap capture
+    # consent (see _capture_consent_active). No separate consent write.
     # Do not append fallible directory/cap network reads after the transaction.
     return {
         "ok": True,
@@ -1690,11 +1694,15 @@ async def revoke_capture_consent(
 ):
     """One tap to turn message saving off for this connection. The ingestor
     stops persisting within seconds (gate cache TTL). Selection rows are left
-    intact so re-confirming the selection restores the previous choices."""
+    intact so re-confirming the selection restores the previous choices.
+    Revocation blanks the selection receipt fingerprint, the designed
+    invalidated state: the receipt stays as the audit record, and starting
+    extraction again needs a fresh confirmation, exactly as after any
+    selection change."""
     org_id = _resolve_active_organization_id(user, tenant_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
     _connection(org_id, body.whatsapp_connection_id)
-    await asyncio.to_thread(_write_capture_consent, org_id, body.whatsapp_connection_id, False)
+    await asyncio.to_thread(_revoke_capture_consent, org_id, body.whatsapp_connection_id)
     return {"ok": True, "capture_consent_active": False}
 
 
