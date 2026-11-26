@@ -30,3 +30,79 @@ def test_references_bound_to_reader_kind_expiry_and_signature():
 def test_cursor_query_binding():
     b=PropertySearch(building='Lodha')
     with pytest.raises(ValueError):search_bounds(b,{'query':'wrong'})
+
+
+# --- Share-class boundaries, grounded in the live broker directory ----------
+# Names below are real group names from the production directory. The rule:
+# property-listing groups classify property; personal/social/religious/food/
+# wellness groups classify non_property and can never be shared; industry
+# chatter (proptech events, founder circles) and product/broadcast groups
+# stay unclear and need an explicit per-group include.
+
+import broker_market_policy as policy
+
+
+@pytest.mark.parametrize('name', [
+    'Realtors Community 1',
+    'B2 Divine Estates - Requirement and Availabilty',
+    'STAR ESTATE - DANISH',
+    'BKS estate agents',
+    'QURESHI ESTATE AGENT/ Watsup/7738575534 ,, Normalcal/ 77387 59739',
+    '6 - VIVEK CHHABRIA - SHUBH ESTATES',
+    'MILLIONS ACRE MBRE GROUP',
+    'Chariot 3Bhk Lease',
+    'Expat homes🤝Raymond Mahim',
+    'Fahad Galaxy Realtors Broadcast',
+    'Lakhani Realtors Broadcast Bandra West',
+    'Top Professional Realtors',
+    'Per Sqft (PG / 1BHK Rent)',
+    'Distress/Urgent-Sale/Rent & Requirement',
+])
+def test_grounded_property_names_classify_property(name):
+    assert policy.classify_group_share_topic(name) == ('property', None)
+
+
+@pytest.mark.parametrize('name,topic', [
+    ('❤️❤️❤️Shahrukh Khan - Personal Broadcast', 'personal or family'),
+    ('Singles Mumbai Group 🤗', 'social or dating'),
+    ('Let’s Socialise Mumbai (2nd Community)', 'social or dating'),
+    ('Music Jamming - Mumbai', 'music'),
+    ('Healing Together', 'health or wellness'),
+    ('Vrindavan  Bhagwat Katha group C', 'religious or devotional'),
+])
+def test_grounded_non_property_names_never_shareable(name, topic):
+    assert policy.classify_group_share_topic(name) == ('non_property', topic)
+
+
+@pytest.mark.parametrize('name', [
+    # Industry chatter is not a listing group: no silent property promotion.
+    'India Proptech Demo Day 2026 (3rd Edition)',
+    'RealtyNXT - Proptech/ConTech Founders',
+    'Founder’s Circle',
+    # Product/broadcast names stay on the explicit per-group path.
+    'PropAI', 'PropAI Live', 'Propi - New Launches', 'PropNxT Western',
+    'Dreams2Realty | Exclusive Deals & Requirements | Broadcast 1 | Pravin Makhija',
+    # False-positive guards: food/home businesses must not become property.
+    'Home Bakers Andheri',
+    '3 महाराष्ट्र केटरिंग बिझनेस नेटवर्क',
+])
+def test_non_listing_names_stay_unclear(name):
+    assert policy.classify_group_share_topic(name) == ('unclear', None)
+
+
+def test_food_names_classify_non_property_not_property():
+    # Bare "home" must not promote food businesses; food hints catch them.
+    assert policy.classify_group_share_topic('Home Chefs Tiffin Service')[0] == 'non_property'
+
+
+def test_gate_blocks_non_property_even_with_allow_unclear():
+    names = {'1@g.us': 'Singles Mumbai Group 🤗', '2@g.us': 'Vrindavan  Bhagwat Katha group C'}
+    blocked, held = policy.validate_group_share_eligibility(['1@g.us', '2@g.us'], ['1@g.us', '2@g.us'], names)
+    assert len(blocked) == 2 and held == []
+
+
+def test_gate_holds_newly_unclear_industry_groups_without_explicit_include():
+    names = {'3@g.us': 'India Proptech Demo Day 2026 (3rd Edition)', '4@g.us': 'PropAI Live'}
+    blocked, held = policy.validate_group_share_eligibility(['3@g.us', '4@g.us'], [], names)
+    assert blocked == [] and len(held) == 2
+    assert policy.validate_group_share_eligibility(['3@g.us'], ['3@g.us'], names) == ([], [])

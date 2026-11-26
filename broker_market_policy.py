@@ -140,9 +140,13 @@ def search_bounds(body: PropertySearch, cursor: dict | None) -> tuple[str, str, 
 # includes that exact group. Patterns must stay in sync with
 # frontend/src/app/connections/page.tsx.
 REAL_ESTATE_GROUP_NAME_PATTERN = re.compile(
+    # Grounded in the live broker directory: realtors/estates/acres/bhk/lease/
+    # rentals resolve real property groups. Deliberately NOT matched: bare
+    # "home" (home chefs/bakers false positives), "proptech" (industry event
+    # and founder groups are not listing groups), brand/product names.
     r"\b(real\s*estate|realty|realtors?|estates?|acres?|properties|property|builders?|broker(?:s|age)?|flats?|"
-    r"apartments?|housing|rera|rentals?|lease|sale|commercial|residential|industrial|shops?|"
-    r"offices?|warehouses?|land|plots?|inventory|construction|development|bhk|homes?|proptech)\b",
+    r"apartments?|housing|rera|rent(als?)?|lease|sale|commercial|residential|industrial|shops?|"
+    r"offices?|warehouses?|land|plots?|inventory|construction|development|bhk|homes)\b",
     re.IGNORECASE,
 )
 NON_PROPERTY_GROUP_NAME_HINTS = (

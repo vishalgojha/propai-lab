@@ -254,7 +254,10 @@ function whatsappGroupDisplayName(group: Pick<OnboardingGroup, "group_name">): s
   return name;
 }
 
-const REAL_ESTATE_GROUP_NAME_PATTERN = /\b(real\s*estate|realty|realtors?|estates?|acres?|properties|property|builders?|broker(?:s|age)?|flats?|apartments?|housing|rera|rentals?|lease|sale|commercial|residential|industrial|shops?|offices?|warehouses?|land|plots?|inventory|construction|development|bhk|homes?|proptech)\b/i;
+// Keep in sync with broker_market_policy.py. Deliberately NOT matched: bare
+// "home" (home chefs/bakers false positives), "proptech" (industry event and
+// founder groups are not listing groups), brand/product names.
+const REAL_ESTATE_GROUP_NAME_PATTERN = /\b(real\s*estate|realty|realtors?|estates?|acres?|properties|property|builders?|broker(?:s|age)?|flats?|apartments?|housing|rera|rent(als?)?|lease|sale|commercial|residential|industrial|shops?|offices?|warehouses?|land|plots?|inventory|construction|development|bhk|homes)\b/i;
 
 // PropAI/Propi product groups (the workspace's own product groups) are never
 // pre-checked in a sharing restore; the broker ticks them explicitly if wanted.
@@ -1356,10 +1359,14 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
   // broker just explicitly confirmed them again here. Non-property groups are
   // never listed, and groups never consented before have no paused state, so
   // they only ever enter through the per-group include in the selection dialog.
+  // Default ticks mirror the standing sharing semantics: paused PROPERTY-named
+  // groups (shared by default anyway) are pre-ticked; paused UNCLEAR names and
+  // PropAI/Propi product groups start unticked and need an explicit per-group
+  // tick here, same as the per-group include in the selection dialog.
   const openRestore = useCallback(() => {
     const nameByJid = new Map((data?.groups ?? []).map((group) => [group.group_jid, whatsappGroupDisplayName(group)]));
     const restorable = Array.from(selectedGroups).filter((jid) => marketSharing.revokedJids.has(jid) && marketSharing.shareClassByJid[jid] !== "non_property");
-    setRestoreChecked(new Set(restorable.filter((jid) => !PROPAI_INTERNAL_GROUP_PATTERN.test(nameByJid.get(jid) ?? ""))));
+    setRestoreChecked(new Set(restorable.filter((jid) => marketSharing.shareClassByJid[jid] === "property" && !PROPAI_INTERNAL_GROUP_PATTERN.test(nameByJid.get(jid) ?? ""))));
     setRestoreOpen(true);
   }, [data, marketSharing, selectedGroups]);
 
@@ -2281,7 +2288,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                 const internalCount = restorable.filter((jid) => PROPAI_INTERNAL_GROUP_PATTERN.test(nameByJid.get(jid) ?? "")).length;
                 return (
                   <>
-                    <p className="text-xs leading-5 text-zinc-400">These {restorable.length} group{restorable.length === 1 ? "" : "s"} were shared before and are paused now. Ticked groups are shared again when you confirm: other authenticated PropAI brokers' assistants can search their new messages for property requests. Nothing is posted anywhere, and your saved group selection is unchanged.</p>
+                    <p className="text-xs leading-5 text-zinc-400">These {restorable.length} group{restorable.length === 1 ? "" : "s"} were shared before and are paused now. Only the ticked groups are shared again when you confirm: other authenticated PropAI brokers' assistants can search their new messages for property requests. Property-named groups are pre-ticked; every other group needs your explicit tick. Nothing is posted anywhere, and your saved group selection is unchanged.</p>
                     <div className="mt-3 max-h-60 space-y-0.5 overflow-y-auto rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-200">
                       {restorable.map((jid) => (
                         <label key={jid} className="flex items-center gap-2 py-0.5">
@@ -2296,7 +2303,10 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                       ))}
                     </div>
                     {internalCount > 0 && (
-                      <p className="mt-2 text-[11px] leading-4 text-zinc-500">PropAI/Propi product groups are left unticked. Tick one only if you want it shared.</p>
+                      <p className="mt-2 text-[11px] leading-4 text-zinc-500">PropAI/Propi product groups stay unticked. Tick one only if you want it shared.</p>
+                    )}
+                    {restorable.some((jid) => marketSharing.shareClassByJid[jid] !== "property" && !PROPAI_INTERNAL_GROUP_PATTERN.test(nameByJid.get(jid) ?? "")) && (
+                      <p className="mt-2 text-[11px] leading-4 text-zinc-500">Groups whose names are not clearly property-related stay unticked. Tick one only if you want it shared.</p>
                     )}
                     {neverJids.length > 0 && (
                       <p className="mt-2 text-[11px] leading-4 text-amber-200/80">Not property groups, stay unshared: {neverJids.map((jid) => nameByJid.get(jid) ?? jid).join(", ")}.</p>
