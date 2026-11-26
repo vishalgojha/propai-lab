@@ -1680,6 +1680,11 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       {error && (
         <div className={`mt-3 text-xs ${data ? "text-amber-200" : "text-red-400"}`}>
           {error}
+          {!data && !loading && (
+            <button type="button" onClick={() => void loadGroups()} className="ml-2 rounded-md border border-red-400/30 px-2 py-0.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10">
+              Try again
+            </button>
+          )}
         </div>
       )}
       {data && persistedSelectedCount > 0 && !receiptMatches && (
@@ -2026,7 +2031,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
             {!filteredGroups.length && <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-xs text-zinc-500">No groups match “{groupQuery}”.</div>}
             </div>
           </>
-        ) : !loading && (
+        ) : !loading && !error && (
           <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-xs text-zinc-500">
             <div>No group directory is available on this connection yet.</div>
             <button
