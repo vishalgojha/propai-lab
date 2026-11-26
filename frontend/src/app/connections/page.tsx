@@ -10,6 +10,7 @@ import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectP
 import QRCode from "qrcode";
 import { connectionHealth, connectionMetric, phoneConnectionView } from "@/lib/connectionHealth";
 import { buildRestorePayload, buildRestorePlan, buildSharingOutcomeMessage, PROPAI_INTERNAL_GROUP_PATTERN } from "./sharingOutcome";
+import { DMCaptureSection } from "./dmCaptureSection";
 
 type HealthStatus = "healthy" | "warning" | "error" | "checking";
 
@@ -1851,6 +1852,8 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
           {" "}Confirm your group choices below to allow saving; you can change them or turn saving off at any time. Starting extraction does not import chat history.
         </p>
       </div>
+
+      <DMCaptureSection phoneId={phone.id} />
 
       {data && (
         <div className="mt-4 border-y border-white/10 py-4">

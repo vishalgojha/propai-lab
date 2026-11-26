@@ -382,6 +382,33 @@ export function getMarketRawSources(whatsappConnectionId: number) {
   return fetchJSON<MarketRawSources>(`/external/v1/market/raw-sources?whatsapp_connection_id=${encodeURIComponent(whatsappConnectionId)}`);
 }
 
+export type DMCaptureSenderRow = { sender_phone: string; display_name: string; confirmed_at?: string; revoked_at?: string };
+
+export type DMCaptureSenders = {
+  senders: DMCaptureSenderRow[];
+  revoked_senders?: DMCaptureSenderRow[];
+  suggested_phones?: string[];
+  consent_version: string;
+  consent_text: string;
+};
+
+export function getDMCaptureSenders(whatsappConnectionId: number) {
+  return fetchJSON<DMCaptureSenders>(`/onboarding/dm-capture/senders?whatsapp_connection_id=${encodeURIComponent(whatsappConnectionId)}`);
+}
+
+export function setDMCaptureSenders(whatsappConnectionId: number, senders: { phone: string; name?: string }[], enabled: boolean, consentVersion: string) {
+  return fetchJSON<{ enabled: boolean; changed: number; shared_with_brokers: boolean; search_scope: string }>("/onboarding/dm-capture/senders", {
+    method: "PUT",
+    body: JSON.stringify({
+      whatsapp_connection_id: whatsappConnectionId,
+      senders,
+      consent_version: consentVersion,
+      confirmed: true,
+      enabled,
+    }),
+  });
+}
+
 export function confirmMarketRawSources(whatsappConnectionId: number, groupJids: string[], consentVersion: string, allowUnclear: string[] = []) {
   return fetchJSON<{ enabled: boolean; changed: number }>("/external/v1/market/raw-sources", {
     method: "PUT",

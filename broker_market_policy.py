@@ -194,3 +194,27 @@ def validate_group_share_eligibility(group_jids, allow_unclear, names_by_jid):
         elif share_class == "unclear" and jid not in allowed:
             held.append(name or jid)
     return blocked, held
+
+
+DM_CAPTURE_VERSION = "broker-dm-capture-v1"
+DM_CAPTURE_TEXT = (
+    "Save property-listing messages that arrive as direct messages from the broker senders "
+    "I select below. Only messages that look like property listings are saved; the filter can "
+    "make mistakes, and all other personal chats stay private and are never saved. Saved "
+    "messages are searchable only in my own account and are never shared with other brokers "
+    "or their assistants. Remove a sender here at any time to stop future captures."
+)
+
+
+def normalize_dm_sender_phone(value):
+    """Bare 10-15 digit phone identity for a direct-message sender, or ''.
+
+    Accepts JIDs ("9198...@s.whatsapp.net"), international punctuation and
+    spaces. Country/trunk digits are not guessed; anything that cannot be a
+    phone identity is rejected rather than repaired.
+    """
+    # Device/agent-suffixed user JIDs ("9198...:12", "9198....0:12"): the
+    # suffix is not part of the phone identity.
+    base = str(value or "").split("@")[0].split(":")[0].split(".")[0]
+    digits = re.sub(r"[^0-9]", "", base)
+    return digits if 10 <= len(digits) <= 15 else ""

@@ -1567,6 +1567,16 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		"instance":         instanceName,
 		"broker_id":        s.brokerID,
 	}
+	// Preserve the protocol's broadcast evidence when present: an incoming
+	// broadcast-list message shows up in the direct chat with its sender, and
+	// these flags are the only marker it carries. Recorded as evidence for the
+	// opt-in DM capture path; the sender+content gates decide capture.
+	if info.Multicast {
+		payloadData["multicast"] = true
+	}
+	if info.IsIncomingBroadcast() {
+		payloadData["incoming_broadcast"] = true
+	}
 	if msgType, ok := payloadData["message_type"].(string); ok && msgType != "" && msgType != "unknown" {
 		seenAt := info.Timestamp
 		if seenAt.IsZero() {

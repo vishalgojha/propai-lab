@@ -1749,3 +1749,101 @@ async def opt_in_group(
         "message": "Group re-enabled for extraction",
         "cap": _cap_state(org_id, body.whatsapp_connection_id, unlimited=unlimited),
     }
+
+
+class DMCaptureSender(BaseModel):
+    phone: str
+    name: str | None = None
+
+
+class DMCaptureSendersRequest(BaseModel):
+    whatsapp_connection_id: int
+    senders: list[DMCaptureSender]
+    enabled: bool
+    confirmed: bool = False
+    consent_version: str
+
+
+async def _dm_capture_rpc(name, params):
+    return await asyncio.to_thread(storage.client.rpc, name, params)
+
+
+@router.get("/dm-capture/senders")
+async def dm_capture_senders(whatsapp_connection_id: int, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    """The workspace's own direct-message capture designations.
+
+    Metadata only: sender phones, labels and confirmation times, plus phone
+    suggestions from brokers already seen in the workspace's captured groups.
+    No message content is ever returned here.
+    """
+    from broker_market_policy import DM_CAPTURE_TEXT, DM_CAPTURE_VERSION
+
+    org_id = str(tenant_id or "").strip() or await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    await asyncio.to_thread(_connection, org_id, whatsapp_connection_id)
+
+    def read():
+        active = storage.client.table("broker_dm_capture_senders").select(
+            "sender_phone,display_name,confirmed_at").eq("organization_id", org_id).eq(
+            "whatsapp_connection_id", whatsapp_connection_id).eq("version", DM_CAPTURE_VERSION).is_(
+            "revoked_at", "null").order("confirmed_at", desc=True).limit(200).execute().data or []
+        # Revoked designation metadata lets the owner see capture STOPPED by a
+        # device change or deselect instead of a silent "not capturing".
+        revoked = storage.client.table("broker_dm_capture_senders").select(
+            "sender_phone,display_name,revoked_at").eq("organization_id", org_id).eq(
+            "whatsapp_connection_id", whatsapp_connection_id).eq("version", DM_CAPTURE_VERSION).not_.is_(
+            "revoked_at", "null").order("revoked_at", desc=True).limit(200).execute().data or []
+        presence = storage.client.table("network_broker_group_presence").select(
+            "broker_phone,last_seen_at").eq("organization_id", org_id).order(
+            "last_seen_at", desc=True).limit(500).execute().data or []
+        designated = {str(row.get("sender_phone") or "") for row in active}
+        suggestions: list[str] = []
+        for row in presence:
+            phone = str(row.get("broker_phone") or "")
+            if phone and phone not in designated and phone not in suggestions:
+                suggestions.append(phone)
+            if len(suggestions) >= 50:
+                break
+        return {"senders": active, "revoked_senders": revoked, "suggested_phones": suggestions,
+                "consent_version": DM_CAPTURE_VERSION, "consent_text": DM_CAPTURE_TEXT}
+    return await asyncio.to_thread(read)
+
+
+@router.put("/dm-capture/senders")
+async def set_dm_capture_senders(body: DMCaptureSendersRequest, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    """Designate (or revoke) direct-message capture senders.
+
+    Capture is opt-in per sender, gated a second time on property-listing
+    content, and the captured rows stay inside the owner's own account. The
+    current explicit confirmation is required for every enable.
+    """
+    from broker_market_policy import DM_CAPTURE_VERSION, normalize_dm_sender_phone
+
+    org_id = str(tenant_id or "").strip() or await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    if body.consent_version != DM_CAPTURE_VERSION or (body.enabled and not body.confirmed):
+        raise HTTPException(400, "Current explicit direct-message capture confirmation is required")
+    await asyncio.to_thread(_connection, org_id, body.whatsapp_connection_id)
+    senders: list[dict] = []
+    seen: set[str] = set()
+    for entry in body.senders:
+        phone = normalize_dm_sender_phone(entry.phone)
+        if not phone:
+            raise HTTPException(400, "Choose exact sender phone numbers")
+        if phone in seen:
+            continue
+        seen.add(phone)
+        senders.append({"phone": phone, "name": (entry.name or "").strip()[:120]})
+    if not 1 <= len(senders) <= 100:
+        raise HTTPException(400, "Choose between 1 and 100 exact senders")
+    changed = await _dm_capture_rpc("broker_dm_capture_set_senders", {
+        "p_tenant": org_id, "p_connection": body.whatsapp_connection_id,
+        "p_senders": senders, "p_actor": str(user["id"]),
+        "p_version": DM_CAPTURE_VERSION, "p_enabled": body.enabled,
+    })
+    # A successful RPC commits all requested designations or none. Revoking an
+    # already removed sender is harmless; do not manufacture state on retry.
+    if not isinstance(changed, int) or isinstance(changed, bool) or (body.enabled and changed != len(senders)):
+        raise HTTPException(503, "Direct-message capture result could not be verified; reload its current state")
+    return {"enabled": body.enabled, "changed": changed, "search_scope": "own_account_only",
+            "shared_with_brokers": False, "extraction_changed": False}
