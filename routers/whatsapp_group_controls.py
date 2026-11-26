@@ -57,6 +57,49 @@ class ExtractionControlRequest(BaseModel):
     whatsapp_connection_id: int
 
 
+# One-tap capture consent. The broker's Allow tap on the selection
+# confirmation dialog is recorded as a marker row on the existing selection
+# table: a synthetic JID that never matches a real group, with is_active
+# False so selection counts and directory views are unaffected. opted_out
+# False means consent is active; revoking flips it to True. The ingestor
+# requires BOTH this marker and an active selection row for a group before it
+# persists that group's messages. Selections confirmed before this consent
+# existed were made under copy that said capture happened either way, so they
+# do not count as capture consent: those accounts capture nothing until they
+# confirm once under the new wording.
+CAPTURE_CONSENT_GROUP_JID = "capture-consent@internal"
+CAPTURE_CONSENT_VERSION = "broker-group-capture-v1"
+
+
+def _write_capture_consent(org_id: str, connection_id: int, active: bool) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    storage.client.table("organization_group_connections").upsert({
+        "organization_id": org_id,
+        "whatsapp_connection_id": connection_id,
+        "group_jid": CAPTURE_CONSENT_GROUP_JID,
+        "group_name": CAPTURE_CONSENT_VERSION,
+        "opted_out": not active,
+        "is_active": False,
+        "public_market_source": False,
+        "updated_at": now,
+        "connected_at": now,
+    }, on_conflict="organization_id,whatsapp_connection_id,group_jid").execute()
+
+
+def _capture_consent_active(org_id: str, connection_id: int) -> bool:
+    rows = (
+        storage.client.table("organization_group_connections")
+        .select("group_jid")
+        .eq("organization_id", org_id)
+        .eq("whatsapp_connection_id", connection_id)
+        .eq("group_jid", CAPTURE_CONSENT_GROUP_JID)
+        .eq("opted_out", False)
+        .limit(1)
+        .execute()
+    )
+    return bool(rows.data)
+
+
 _ACTIVE_GROUP_BACKFILLS: set[tuple[str, int, str]] = set()
 _ACTIVE_GROUP_BACKFILLS_LOCK = Lock()
 _NETWORK_OWNED_GROUP_CACHE: dict[tuple[str, str], tuple[float, bool]] = {}
@@ -1285,7 +1328,7 @@ async def onboarding_groups(
         # Both reads are independent once permission and connection identity
         # are checked. Keep synchronous database work off the API event loop;
         # a slow cap lookup must not stall unrelated phones/status requests.
-        groups, cap, confirmation = await asyncio.gather(
+        groups, cap, confirmation, capture_consent = await asyncio.gather(
             asyncio.wait_for(asyncio.to_thread(
                 _group_directory,
                 org_id,
@@ -1298,10 +1341,12 @@ async def onboarding_groups(
                 _cap_state, org_id, whatsapp_connection_id, unlimited=unlimited
             ),
             asyncio.to_thread(_selection_state, org_id, whatsapp_connection_id),
+            asyncio.to_thread(_capture_consent_active, org_id, whatsapp_connection_id),
         )
         return {
             "groups": groups,
             "selection_confirmation": confirmation,
+            "capture_consent_active": capture_consent,
             "extraction_status": connection.get("extraction_status") or "stopped",
             **cap,
         }
@@ -1482,6 +1527,14 @@ async def select_groups(
     })
     if not isinstance(confirmation, dict) or not confirmation.get("complete"):
         raise HTTPException(409, "Confirmation changed; review the saved state")
+    # The confirmed selection is also the broker's one-tap capture consent.
+    # Without this marker the ingestor persists nothing for the connection,
+    # so a failed write must surface as a retryable error, not a silent gap.
+    try:
+        await asyncio.to_thread(_write_capture_consent, org_id, body.whatsapp_connection_id, True)
+    except Exception:
+        _logger.exception("capture consent write failed for org=%s connection=%s", org_id, body.whatsapp_connection_id)
+        raise HTTPException(502, "Consent could not be recorded; please confirm again")
     # Do not append fallible directory/cap network reads after the transaction.
     return {
         "ok": True,
@@ -1627,6 +1680,22 @@ async def deselect_group(
     except Exception:
         _logger.exception("deselect_group crashed for org=%s connection=%s group=%s", org_id, body.whatsapp_connection_id, body.group_jid)
         raise
+
+
+@router.post("/groups/capture-consent/revoke")
+async def revoke_capture_consent(
+    body: ExtractionControlRequest,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """One tap to turn message saving off for this connection. The ingestor
+    stops persisting within seconds (gate cache TTL). Selection rows are left
+    intact so re-confirming the selection restores the previous choices."""
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    _connection(org_id, body.whatsapp_connection_id)
+    await asyncio.to_thread(_write_capture_consent, org_id, body.whatsapp_connection_id, False)
+    return {"ok": True, "capture_consent_active": False}
 
 
 @router.post("/groups/opt-in")

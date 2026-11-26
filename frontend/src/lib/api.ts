@@ -231,6 +231,7 @@ export interface GroupSelectionConfirmation {
 
 export interface OnboardingGroupState extends OnboardingGroupCap {
   selection_confirmation?: GroupSelectionConfirmation;
+  capture_consent_active?: boolean;
   groups: OnboardingGroup[];
   extraction_status: "stopped" | "running" | "paused";
 }
@@ -248,6 +249,13 @@ export function getOnboardingGroups(whatsappConnectionId: number, timeoutMs = AP
     undefined,
     timeoutMs,
   );
+}
+
+export function revokeCaptureConsent(whatsappConnectionId: number) {
+  return fetchJSON<{ ok: boolean; capture_consent_active: boolean }>("/onboarding/groups/capture-consent/revoke", {
+    method: "POST",
+    body: JSON.stringify({ whatsapp_connection_id: whatsappConnectionId }),
+  });
 }
 
 export type ExtractionStatus = "stopped" | "running" | "paused";

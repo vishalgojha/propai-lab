@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square, Search, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, getGroupSelectionConfirmation, checkOnboardingGroup, optOutOnboardingGroup, deselectOnboardingGroup, selectOnboardingGroups, getMarketRawSources, confirmMarketRawSources, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry, type MarketShareClass } from "@/lib/api";
+import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, getGroupSelectionConfirmation, checkOnboardingGroup, optOutOnboardingGroup, deselectOnboardingGroup, selectOnboardingGroups, revokeCaptureConsent, getMarketRawSources, confirmMarketRawSources, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry, type MarketShareClass } from "@/lib/api";
 import QRCode from "qrcode";
 import { connectionHealth, connectionMetric, phoneConnectionView } from "@/lib/connectionHealth";
 
@@ -1401,6 +1401,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         ...current,
         selected_count: result.selected_count,
         selection_confirmation: result.selection_confirmation,
+        capture_consent_active: true,
         groups: current.groups.map((group) => ({
           ...group,
           connected: confirmed.has(group.group_jid),
@@ -1412,7 +1413,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         setError(null);
         setMessage("Selection saved and confirmed. Group refresh is temporarily unavailable; the saved selection remains active.");
       } else {
-        setMessage("Selection saved and confirmed for optional extraction. Raw WhatsApp capture is unaffected.");
+        setMessage("Selection saved and confirmed. New messages from these groups will be saved for you and your assistant to search. Extraction stays under your separate Start control.");
       }
       const sharingSet = computeSharingSet(confirmed);
       const sharingOk = await confirmSharing(sharingSet.shareable, sharingSet.allowUnclear);
@@ -1429,7 +1430,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
           && selectedJids.every((jid) => receipt?.selected_group_jids.includes(jid));
         if (receipt?.complete && receipt.request_id === requestId && exact) {
           setSelectedGroups(new Set(receipt.selected_group_jids));
-          setData((current) => current ? {...current, selected_count: receipt.selected_group_jids.length, selection_confirmation: receipt, groups: current.groups.map((group) => ({...group, connected: receipt.selected_group_jids.includes(group.group_jid), opted_out: receipt.selected_group_jids.includes(group.group_jid) ? false : group.opted_out}))} : current);
+          setData((current) => current ? {...current, selected_count: receipt.selected_group_jids.length, selection_confirmation: receipt, capture_consent_active: true, groups: current.groups.map((group) => ({...group, connected: receipt.selected_group_jids.includes(group.group_jid), opted_out: receipt.selected_group_jids.includes(group.group_jid) ? false : group.opted_out}))} : current);
           setMessage("Selection saved and confirmed. Extraction remains under your separate Start control.");
           setError(null);
           const sharingSet = computeSharingSet(receipt.selected_group_jids);
@@ -1523,6 +1524,21 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       setError(err instanceof Error ? err.message : "Could not opt-out the group.");
     } finally {
       setActiveGroup(null);
+    }
+  };
+
+  const [revokingConsent, setRevokingConsent] = useState(false);
+  const handleRevokeCaptureConsent = async () => {
+    setRevokingConsent(true);
+    setError(null);
+    try {
+      await revokeCaptureConsent(phone.id);
+      setData((current) => current ? {...current, capture_consent_active: false} : current);
+      setMessage("Saving is off. New group messages are no longer saved. Confirm your group selection again any time to turn it back on.");
+    } catch {
+      setError("Could not turn saving off. Please try again.");
+    } finally {
+      setRevokingConsent(false);
     }
   };
 
@@ -1776,7 +1792,17 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
           {selectionConfirmed && (
             <div className="mt-3 flex items-center gap-2 border-l-2 border-emerald-400/50 bg-emerald-400/[0.04] px-3 py-2 text-[11px] text-emerald-200">
               <Check className="h-3.5 w-3.5 shrink-0" />
-              {persistedSelectedCount} group{persistedSelectedCount === 1 ? " is" : "s are"} confirmed for saving and optional extraction.
+              <span className="min-w-0 flex-1">{persistedSelectedCount} group{persistedSelectedCount === 1 ? " is" : "s are"} confirmed for saving and optional extraction.</span>
+              {data?.capture_consent_active && (
+                <button type="button" onClick={() => void handleRevokeCaptureConsent()} disabled={revokingConsent} className="shrink-0 rounded border border-white/15 px-2 py-1 text-[10px] font-semibold text-zinc-300 hover:bg-white/5 disabled:opacity-40">
+                  {revokingConsent ? "Turning off..." : "Turn saving off"}
+                </button>
+              )}
+            </div>
+          )}
+          {selectionConfirmed && data && !data.capture_consent_active && (
+            <div className="mt-3 border-l-2 border-amber-400/50 bg-amber-400/[0.06] px-3 py-2 text-[11px] text-amber-200">
+              Saving is off, so new group messages are not being saved. Confirm your group selection to turn it back on.
             </div>
           )}
           {persistedSelectedCount > 0 && !hasUnpersistedSelection && !receiptMatches && (

@@ -105,13 +105,20 @@ const (
 	groupCaptureDenyTTL  = 30 * time.Second
 )
 
-// groupCaptureAllowed reports whether the broker has explicitly selected this
-// group for capture. The saved group selection (organization_group_connections
-// with is_active and not opted_out, written only through the explicitly
-// confirmed selection flow) is the broker's recorded consent to store messages
-// from that group. Selection governs capture here; extraction and sharing keep
-// their own separate permissions and are not consulted. The check fails closed:
-// any lookup error or missing selection means the message is not persisted.
+// groupCaptureAllowed reports whether the broker may capture this group.
+// Both must hold:
+//  1. an active capture consent for the connection - the marker row written
+//     when the broker taps Allow on the consent dialog (synthetic group JID
+//     capture-consent@internal, opted_out=false); and
+//  2. an active, non-opted-out selection row for this specific group.
+//
+// Selections confirmed before the consent dialog existed were made under copy
+// that said capture happened either way, so they are NOT treated as capture
+// consent: legacy accounts stop capturing until they tap Allow once under the
+// new wording. opted_out uses COALESCE to match the API's None-is-false
+// semantics. Extraction and sharing keep their own separate permissions and
+// are not consulted. The check fails closed: any lookup error or missing row
+// means the message is not persisted.
 func (sm *SessionManager) groupCaptureAllowed(brokerID, groupJID string) bool {
 	key := brokerID + "|" + groupJID
 	if cached, ok := groupCaptureCache.Load(key); ok {
@@ -132,8 +139,16 @@ func (sm *SessionManager) groupCaptureAllowed(brokerID, groupJID string) bool {
 				WHERE owc.broker_id = $1
 				  AND ogc.group_jid = $2
 				  AND ogc.is_active
-				  AND NOT ogc.opted_out
-			)`, brokerID, groupJID).Scan(&exists)
+				  AND NOT COALESCE(ogc.opted_out, false)
+			) AND EXISTS(
+				SELECT 1
+				FROM public.organization_group_connections consent
+				JOIN public.org_whatsapp_connections consent_owc
+				  ON consent_owc.id = consent.whatsapp_connection_id
+				WHERE consent_owc.broker_id = $1
+				  AND consent.group_jid = 'capture-consent@internal'
+				  AND NOT COALESCE(consent.opted_out, false)
+			)`, brokerID, groupJID, brokerID).Scan(&exists)
 		if err != nil {
 			log.Printf("[broker %s] group capture permission check failed for %s: %v (failing closed)", brokerID, groupJID, err)
 		} else {
