@@ -459,6 +459,33 @@ async def external_agent_knowledge():
                              headers={"Cache-Control": "public, max-age=300"})
 
 
+BUILDINGS_INDEX = Path(__file__).resolve().parents[1] / "docs" / "BANDRA_EAST_BKC_BUILDINGS.md"
+BUILDINGS_DIR = Path(__file__).resolve().parents[1] / "docs" / "buildings"
+_BUILDING_SLUG = re.compile(r"^[_a-z0-9][a-z0-9_-]{0,80}$")
+
+
+@router.get("/knowledge/buildings", response_class=PlainTextResponse)
+async def external_agent_building_index():
+    """Public building-knowledge index for Bandra East / BKC. No workspace records."""
+    try:
+        index = BUILDINGS_INDEX.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise HTTPException(503, "Building knowledge index is temporarily unavailable") from exc
+    return PlainTextResponse(index, headers={"Cache-Control": "public, max-age=300"})
+
+
+@router.get("/knowledge/buildings/{slug}", response_class=PlainTextResponse)
+async def external_agent_building_doc(slug: str):
+    """One public building document by slug. No workspace records."""
+    if not _BUILDING_SLUG.match(slug):
+        raise HTTPException(404, "Unknown building")
+    path = (BUILDINGS_DIR / f"{slug}.md").resolve()
+    if BUILDINGS_DIR.resolve() not in path.parents or not path.is_file():
+        raise HTTPException(404, "Unknown building")
+    return PlainTextResponse(path.read_text(encoding="utf-8"),
+                             headers={"Cache-Control": "public, max-age=300"})
+
+
 def _require_scope(key: dict, scope: str):
     if scope not in (key.get("scopes") or []):
         raise HTTPException(403, f"Token does not have {scope} scope")

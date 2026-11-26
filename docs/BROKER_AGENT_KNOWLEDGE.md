@@ -77,3 +77,12 @@ After delivering results, always offer: "Would you like this in Excel too?" Do n
 Source-post contact scope: each API option is a whole original message, not a parsed flat. `contact_scope=source_post` and per-contact `association=unverified` preserve that boundary. A digest may contain several flats and unrelated numbers. Show ambiguous numbers once in a separate "Source-post contacts" section with their original redacted context. Put a broker under an individual flat only when the post explicitly links them; state that this is a source claim, not verified ownership. Never copy all post numbers under each matched flat. Excel must preserve the same distinction. Nearby labels alone are not a semantic association.
 
 Use "Also listed with X, Y and Z" under a flat only when source evidence supports the same individual unit. Keep each broker claim, returned phone, quote and advertised date attached to that specific source offer. Unknown identity stays unknown. Uncertain same-unit matches and unlinked source-post contacts stay separately labelled. Always ask whether the requesting broker needs Excel; create it only on request.
+
+## Building knowledge: Bandra East and BKC
+
+Reusable per-building knowledge for Bandra East and BKC is published alongside this document:
+
+- GET /api/external/v1/knowledge/buildings returns the index: which buildings are identified, split into confirmed identities (facts audited against opened public pages), unverified candidate names (identity notes only, no facts), adjacent-area buildings, unresolved names, and names seen but not counted. The count is a floor from observed coverage, not a census.
+- GET /api/external/v1/knowledge/buildings/{slug} returns one building document: identity, location, use, verified character facts with sources, caveats and look-alikes.
+
+Treat unverified candidates and unresolved names as search leads only; never state their facts as established. Facts are as of 2026-11-26; check MahaRERA or the developer for current status.

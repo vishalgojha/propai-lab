@@ -53,3 +53,30 @@ def test_background_is_account_free_constant_not_a_storage_or_auth_operation(mon
             assert "text/plain" in anon.headers["content-type"]
             assert "FIXTURE_" not in anon.text
     asyncio.run(run())
+
+
+def test_building_index_and_docs_are_public_and_safe():
+    app = FastAPI()
+    app.include_router(external_agent.router)
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            index = await client.get("/api/external/v1/knowledge/buildings")
+            assert index.status_code == 200
+            assert "public, max-age=300" == index.headers["cache-control"]
+            assert "Agami Eternity" in index.text
+            assert "in-boundary: identity from an opened non-broker page (26)" in index.text
+            assert "unverified" in index.text
+            doc = await client.get("/api/external/v1/knowledge/buildings/agami-eternity")
+            assert doc.status_code == 200
+            assert "Agami Eternity" in doc.text and "Kalanagar" in doc.text
+            candidate = await client.get("/api/external/v1/knowledge/buildings/bhim-prerna")
+            assert candidate.status_code == 200
+            assert "no facts are asserted" in candidate.text
+            for bad in ("../BROKER_AGENT_KNOWLEDGE", "no-such-building", "agami-eternity.md", "A" * 200):
+                bad_resp = await client.get(f"/api/external/v1/knowledge/buildings/{bad}")
+                assert bad_resp.status_code == 404, bad
+            # index must not leak private-dataset statistics
+            for leak in ("posts in the window", "One broker post", "repeated many times"):
+                assert leak not in index.text
+            assert leak not in doc.text
+    asyncio.run(run())
