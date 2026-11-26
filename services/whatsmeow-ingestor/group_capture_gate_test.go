@@ -293,6 +293,9 @@ func TestInsertRawMessagePersistsConsentedSelectedGroup(t *testing.T) {
 }
 
 func TestInsertRawMessageStillRejectsDirectMessages(t *testing.T) {
+	// Undesignated direct messages are now skipped silently (opt-in DM
+	// capture: the sender gate fails closed on the lookup error). Only the
+	// tenant lookup runs; no insert is attempted.
 	useTestConsentVersion(t)
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -302,10 +305,15 @@ func TestInsertRawMessageStillRejectsDirectMessages(t *testing.T) {
 	sm := &SessionManager{db: db}
 
 	expectTenantLookup(mock, "broker-gate-dm")
-	// DMs must be rejected before any permission check or insert.
+	// No DM-gate expectation: the sqlmock lookup error must fail the gate
+	// closed, and any write to raw_messages fails this test.
 
-	if _, _, err := sm.insertRawMessage("broker-gate-dm", captureTestPayload("919999999999@s.whatsapp.net")); err == nil {
-		t.Fatal("direct-message ingestion must stay disabled")
+	rawID, duplicate, err := sm.insertRawMessage("broker-gate-dm", captureTestPayload("919999999999@s.whatsapp.net"))
+	if err != nil {
+		t.Fatalf("undesignated DM must be skipped, not errored: %v", err)
+	}
+	if rawID != 0 || duplicate {
+		t.Fatalf("undesignated DM returned rawID=%d duplicate=%v, want 0/false", rawID, duplicate)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

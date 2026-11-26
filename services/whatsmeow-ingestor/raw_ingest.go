@@ -225,15 +225,33 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 			groupJID = v
 		}
 	}
-	if !strings.HasSuffix(groupJID, "@g.us") {
-		return 0, false, fmt.Errorf("direct-message ingestion disabled")
-	}
-
-	// Selection-before-capture: persist only groups the broker explicitly
-	// selected. Covers both live messages and history sync because every
-	// persistence path flows through this function.
-	if !sm.groupCaptureAllowed(brokerID, groupJID) {
-		return 0, false, nil
+	isGroup := strings.HasSuffix(groupJID, "@g.us")
+	dmPhone := ""
+	if isGroup {
+		// Selection-before-capture: persist only groups the broker explicitly
+		// selected. Covers both live messages and history sync because every
+		// persistence path flows through this function.
+		if !sm.groupCaptureAllowed(brokerID, groupJID) {
+			return 0, false, nil
+		}
+	} else {
+		// Opt-in broker DM capture. Broadcast lists arrive as ordinary DMs
+		// (there is no protocol broadcast marker), so capture is allowed only
+		// for senders the owner explicitly designated, and only incoming
+		// messages: the owner's own replies are never captured.
+		if !strings.HasSuffix(groupJID, "@s.whatsapp.net") && !strings.HasSuffix(groupJID, "@lid") {
+			return 0, false, fmt.Errorf("direct-message ingestion disabled")
+		}
+		if fromMe, _ := key["fromMe"].(bool); fromMe {
+			return 0, false, nil
+		}
+		dmPhone = normalizeDMPhone(groupJID)
+		if strings.HasSuffix(groupJID, "@lid") {
+			dmPhone = normalizeDMPhone(resolveLIDPhone(sm.db, groupJID))
+		}
+		if dmPhone == "" || !sm.brokerDMCaptureAllowed(brokerID, dmPhone) {
+			return 0, false, nil
+		}
 	}
 
 	senderJID := ""
@@ -257,17 +275,28 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 	if v, ok := senderData["phone"].(string); ok {
 		senderPhone = v
 	}
+	if senderJID == "" && !isGroup {
+		senderJID = groupJID
+	}
 	if senderPhone == "" {
 		senderPhone = resolveLIDPhone(sm.db, senderJID)
 	}
+	if senderPhone == "" && !isGroup {
+		senderPhone = dmPhone
+	}
 
 	msgText := extractMessageText(msg)
+	// Content gate for designated-sender DMs: only messages that look like
+	// property listings are persisted; personal chatter from the same sender
+	// is dropped here, before storage.
+	if !isGroup && !looksLikePropertyListing(msgText) {
+		return 0, false, nil
+	}
 	msgType := extractMessageType(nil)
 	if mt, ok := data["message_type"].(string); ok && mt != "" {
 		msgType = mt
 	}
 
-	isGroup := true
 	groupName := ""
 	if isGroup {
 		groupName = groupJID
@@ -306,6 +335,13 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 	isHistorySync := strings.EqualFold(strings.TrimSpace(fmt.Sprint(data["source"])), "history_sync")
 	processed := isHistorySync
 	extractionSuppressed := isHistorySync
+	if !isGroup {
+		// Captured DMs are search-only evidence: they never enter the
+		// extraction pipeline, so they are marked processed/suppressed at
+		// ingestion like history-sync rows.
+		processed = true
+		extractionSuppressed = true
+	}
 	pipelineVersion := "go-ingestor"
 	if isHistorySync {
 		pipelineVersion = "history-sync-suppressed"
