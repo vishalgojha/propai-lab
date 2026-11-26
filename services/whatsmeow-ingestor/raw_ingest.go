@@ -88,6 +88,69 @@ func resolveLIDPhone(db *sql.DB, senderJID string) string {
 	return pn
 }
 
+// groupCaptureCache caches the per broker+group capture-permission lookup so
+// busy groups do not hit Postgres for every message.
+type captureDecision struct {
+	allowed bool
+	expires time.Time
+}
+
+var groupCaptureCache sync.Map
+
+const (
+	// Allow entries expire quickly so a deselect/revoke stops capture within
+	// seconds, not minutes. Deny entries last a little longer to absorb
+	// message bursts in groups the broker never selected.
+	groupCaptureAllowTTL = 15 * time.Second
+	groupCaptureDenyTTL  = 30 * time.Second
+)
+
+// groupCaptureAllowed reports whether the broker has explicitly selected this
+// group for capture. The saved group selection (organization_group_connections
+// with is_active and not opted_out, written only through the explicitly
+// confirmed selection flow) is the broker's recorded consent to store messages
+// from that group. Selection governs capture here; extraction and sharing keep
+// their own separate permissions and are not consulted. The check fails closed:
+// any lookup error or missing selection means the message is not persisted.
+func (sm *SessionManager) groupCaptureAllowed(brokerID, groupJID string) bool {
+	key := brokerID + "|" + groupJID
+	if cached, ok := groupCaptureCache.Load(key); ok {
+		if decision, ok := cached.(captureDecision); ok && time.Now().Before(decision.expires) {
+			return decision.allowed
+		}
+		groupCaptureCache.Delete(key)
+	}
+	allowed := false
+	if sm.db != nil {
+		var exists bool
+		err := sm.db.QueryRowContext(context.Background(), `
+			SELECT EXISTS(
+				SELECT 1
+				FROM public.organization_group_connections ogc
+				JOIN public.org_whatsapp_connections owc
+				  ON owc.id = ogc.whatsapp_connection_id
+				WHERE owc.broker_id = $1
+				  AND ogc.group_jid = $2
+				  AND ogc.is_active
+				  AND NOT ogc.opted_out
+			)`, brokerID, groupJID).Scan(&exists)
+		if err != nil {
+			log.Printf("[broker %s] group capture permission check failed for %s: %v (failing closed)", brokerID, groupJID, err)
+		} else {
+			allowed = exists
+			if !allowed {
+				log.Printf("[broker %s] capture skipped: group %s is not selected for capture", brokerID, groupJID)
+			}
+		}
+	}
+	ttl := groupCaptureDenyTTL
+	if allowed {
+		ttl = groupCaptureAllowTTL
+	}
+	groupCaptureCache.Store(key, captureDecision{allowed: allowed, expires: time.Now().Add(ttl)})
+	return allowed
+}
+
 // insertRawMessage writes a WhatsApp message directly into raw_messages.
 // The extraction worker polls raw_messages WHERE processed=false and handles
 // the full extraction pipeline.
@@ -119,6 +182,13 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 	}
 	if !strings.HasSuffix(groupJID, "@g.us") {
 		return 0, false, fmt.Errorf("direct-message ingestion disabled")
+	}
+
+	// Selection-before-capture: persist only groups the broker explicitly
+	// selected. Covers both live messages and history sync because every
+	// persistence path flows through this function.
+	if !sm.groupCaptureAllowed(brokerID, groupJID) {
+		return 0, false, nil
 	}
 
 	senderJID := ""
