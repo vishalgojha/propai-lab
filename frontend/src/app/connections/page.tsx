@@ -2288,7 +2288,22 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                 const internalCount = restorable.filter((jid) => PROPAI_INTERNAL_GROUP_PATTERN.test(nameByJid.get(jid) ?? "")).length;
                 return (
                   <>
-                    <p className="text-xs leading-5 text-zinc-400">These {restorable.length} group{restorable.length === 1 ? "" : "s"} were shared before and are paused now. Only the ticked groups are shared again when you confirm: other authenticated PropAI brokers' assistants can search their new messages for property requests. Property-named groups are pre-ticked; every other group needs your explicit tick. Nothing is posted anywhere, and your saved group selection is unchanged.</p>
+                    <p className="text-xs leading-5 text-zinc-400">These {restorable.length} group{restorable.length === 1 ? "" : "s"} were shared before and are paused now. Only the ticked groups are shared again when you confirm: other authenticated PropAI brokers' assistants can search their new messages for property requests. Property-named groups are pre-ticked; the rest start unticked. Tick them one by one, or all at once below, and untick any you don't want. Nothing is posted anywhere, and your saved group selection is unchanged.</p>
+                    {(() => {
+                      const bulkJids = restorable.filter((jid) => !PROPAI_INTERNAL_GROUP_PATTERN.test(nameByJid.get(jid) ?? ""));
+                      const allTicked = bulkJids.length > 0 && bulkJids.every((jid) => restoreChecked.has(jid));
+                      return bulkJids.length > 1 ? (
+                        <label className="mt-3 flex items-center gap-2 rounded-lg border border-amber-400/30 bg-amber-500/[0.06] px-3 py-2 text-xs font-semibold text-amber-100">
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5 accent-amber-400"
+                            checked={allTicked}
+                            onChange={() => setRestoreChecked((current) => { const next = new Set(current); if (allTicked) { bulkJids.forEach((jid) => next.delete(jid)); } else { bulkJids.forEach((jid) => next.add(jid)); } return next; })}
+                          />
+                          <span>Tick all {bulkJids.length} groups in this list</span>
+                        </label>
+                      ) : null;
+                    })()}
                     <div className="mt-3 max-h-60 space-y-0.5 overflow-y-auto rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-200">
                       {restorable.map((jid) => (
                         <label key={jid} className="flex items-center gap-2 py-0.5">
