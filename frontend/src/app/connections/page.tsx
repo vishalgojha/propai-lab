@@ -1182,27 +1182,31 @@ function PhoneCard({
   );
 }
 
-function EmptyConnectionsHint() {
+function EmptyConnectionsHint({ onNumbersPage = false }: { onNumbersPage?: boolean }) {
   const router = useRouter();
   return (
     <div className="mb-8 rounded-xl border border-white/10 p-5">
-      <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03]">
           <Smartphone className="h-5 w-5 text-zinc-200" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-bold text-white">No WhatsApp phones in this workspace</div>
+          <div className="text-sm font-bold text-white">No WhatsApp phones in this workspace yet</div>
           <p className="mt-1 text-xs text-zinc-500">
-            Add the WhatsApp numbers your brokers use from the My Numbers tab (3 numbers per workspace). Pairing and syncing live here.
+            {onNumbersPage
+              ? "Add your first WhatsApp number below, then pair it here. You can connect up to 3 numbers per workspace."
+              : "Add the WhatsApp numbers your brokers use from the My Numbers tab (3 numbers per workspace). Pairing and syncing live here."}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => router.push("/whatsapp?tab=numbers")}
-          className="flex h-10 items-center gap-2 rounded-lg border border-white bg-white px-4 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200 transition-colors shrink-0"
-        >
-          Open My Numbers
-        </button>
+        {!onNumbersPage && (
+          <button
+            type="button"
+            onClick={() => router.push("/whatsapp?tab=numbers")}
+            className="flex h-10 items-center gap-2 self-start rounded-lg border border-white bg-white px-4 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200 transition-colors shrink-0"
+          >
+            Open My Numbers
+          </button>
+        )}
       </div>
     </div>
   );
@@ -2487,7 +2491,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
             </div>
           )}
           {phones.length === 0 && !phonesError && (
-            <EmptyConnectionsHint />
+            <EmptyConnectionsHint onNumbersPage={view === "numbers"} />
           )}
           {/* Phone Cards - Compact Grid */}
           {view === "numbers" && phones.length > 0 && (
