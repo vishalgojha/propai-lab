@@ -71,11 +71,12 @@ const state = await page.evaluate(() => {
   const grab = (re) => (text.match(re) || ["n/a"])[0];
   return {
     headerLine: grab(/(Checking connection…|Last known connected[^·]*· live status unavailable|Connection status unavailable|Reconnecting…|\d+ connected|0 connected)/),
-    cardLabels: Array.from(document.querySelectorAll("[class*=status], [class*=health], span, p"))
-      .map((e) => e.innerText?.trim())
-      .filter((t) => t === "Connected" || t === "Last known connected" || t === "Disconnected" || t === "Service unavailable" || t === "Checking…" || t === "Reconnecting")
-      .slice(0, 6),
-    phonesStat: grab(/Phones\s*(Checking…|Unavailable|\d+\/\d+)/),
+    globalPill: grab(/(WhatsApp connected|WhatsApp disconnected|WhatsApp status unknown|Checking WhatsApp|Connect WhatsApp|Add WhatsApp number)/),
+    capturePill: grab(/(Raw capture active|Raw capture disconnected|Raw capture unknown|Checking raw capture)/),
+    sidebarCard: grab(/(WhatsApp Connected|WhatsApp Disconnected|WhatsApp status stale)/),
+    pairingPanelShown: text.includes("Connect PropAI to WhatsApp"),
+    reconnectCtaShown: Boolean(document.querySelector(".whatsapp-reconnect-action")),
+    checkStatusShown: text.includes("Check status"),
   };
 });
 console.log("MODE:", MODE);

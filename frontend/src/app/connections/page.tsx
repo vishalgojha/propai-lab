@@ -701,12 +701,13 @@ function PhoneCard({
               : "Disconnected";
   const health: HealthStatus =
     view === "connected" ? "healthy" : view === "checking" ? "checking" : view === "disconnected" ? "error" : "warning";
-  // Live-status availability is not proof that a saved connection is paired.
-  // Keep pairing discoverable whenever no connected session is confirmed; the
-  // authenticated backend/ingestor remains authoritative and rejects races.
-  // While the first probe is still in flight, show neither the connected
-  // controls nor the pairing panel: nothing is confirmed yet.
-  const canPair = view !== "connected" && view !== "checking";
+  // Pairing is offered only where a session genuinely needs (re)linking:
+  // unpaired placeholders, unavailable-with-no-stored-session, or a
+  // definitively offline connection. A last-known session with unknown live
+  // truth gets Check status, not an asserted relink: re-pairing can replace a
+  // session that may still be alive. While the first probe is in flight,
+  // neither connected controls nor the pairing panel show.
+  const canPair = view === "unpaired" || view === "unavailable";
 
   const closePairCodeDialog = () => {
     setShowPairCodeDialog(false);
@@ -816,7 +817,7 @@ function PhoneCard({
         </div>
       </div>
 
-      {!isConnected && view !== "checking" && (
+      {view !== "connected" && view !== "checking" && view !== "last-known" && (
         <div className="whatsapp-pairing-panel mt-4 rounded-xl border p-4">
           <div className="flex items-start gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-400/25 bg-emerald-500/10">
@@ -853,7 +854,7 @@ function PhoneCard({
               <LogOut className="h-4 w-4 text-zinc-300" />
             )}
           </button>
-        ) : !isUnpaired && statusAvailable && view !== "checking" ? (
+        ) : view === "disconnected" || view === "pairing" ? (
           <button
             onClick={() => handleAction("connect")}
             disabled={actionLoading !== null}

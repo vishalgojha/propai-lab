@@ -38,6 +38,7 @@ export function MobileDrawer({
   onClose,
   isSuperAdmin,
   whatsappConnected,
+  whatsappUnknown,
   whatsappPhone,
   captureLabel,
   captureWarning,
@@ -47,6 +48,7 @@ export function MobileDrawer({
   onClose: () => void;
   isSuperAdmin: boolean;
   whatsappConnected: boolean | null;
+  whatsappUnknown?: boolean;
   whatsappPhone?: string | null;
   captureLabel: string;
   captureWarning: boolean;
@@ -179,9 +181,9 @@ export function MobileDrawer({
           onClick={onClose}
           className="mx-3 mt-3 flex min-h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.025] px-3 text-[11px] transition-colors hover:bg-white/[0.05]"
         >
-          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${whatsappConnected ? "bg-[#6B8E63]" : whatsappConnected === false ? "bg-red-400" : "bg-zinc-500"}`} />
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${whatsappConnected ? "bg-[#6B8E63]" : whatsappConnected === false ? "bg-red-400" : whatsappUnknown ? "bg-amber-300" : "bg-zinc-500"}`} />
           <span className="min-w-0 flex-1 truncate text-zinc-300">
-            {whatsappConnected ? `WhatsApp · ${whatsappPhone || "Connected"}` : whatsappConnected === false ? "Connect WhatsApp" : "Checking WhatsApp"}
+            {whatsappConnected ? `WhatsApp · ${whatsappPhone || "Connected"}` : whatsappConnected === false ? "Connect WhatsApp" : whatsappUnknown ? "WhatsApp status unknown" : "Checking WhatsApp"}
           </span>
           <span className={`shrink-0 truncate ${captureWarning ? "text-amber-300" : "text-zinc-600"}`}>{captureLabel}</span>
           <span className="shrink-0 border-l border-white/10 pl-2 font-mono text-[10px] text-zinc-500" title={buildHint}>{buildLabel}</span>

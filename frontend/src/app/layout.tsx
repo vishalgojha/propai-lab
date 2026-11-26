@@ -123,6 +123,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
   const [wabaConfig, setWabaConfig] = useState<BusinessApiConfig | null>(null);
   const [liveStatus, setLiveStatus] = useState<WhatsAppStatus | null>(null);
+  const [liveStatusFailed, setLiveStatusFailed] = useState(false);
   const [extractionHealth, setExtractionHealth] = useState<{ pending: number; recentlyProcessed1h: number } | null>(null);
   const [disconnectNoticeOpen, setDisconnectNoticeOpen] = useState(false);
   const previousWhatsAppState = useRef<boolean | null>(null);
@@ -263,8 +264,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
       : hasPerPhoneLiveStatus
         ? false
         : null;
-  const captureHealth: "checking" | "healthy" | "error" = captureConnected === null
-    ? "checking"
+  const captureHealth: "checking" | "healthy" | "error" | "warning" = captureConnected === null
+    ? liveStatusFailed
+      ? "warning"
+      : "checking"
     : captureConnected
       ? "healthy"
       : "error";
@@ -275,7 +278,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
   );
   const whatsappHealth: "checking" | "healthy" | "warning" | "error" =
     waConnected === null
-      ? "checking"
+      ? liveStatusFailed
+        ? "warning"
+        : "checking"
       : !hasConfiguredWhatsApp
         ? "warning"
         : !waConnected
@@ -289,11 +294,15 @@ function AppShell({ children }: { children: React.ReactNode }) {
       ? "Checking raw capture"
       : captureHealth === "healthy"
         ? "Raw capture active"
-        : "Raw capture disconnected";
+        : captureHealth === "warning"
+          ? "Raw capture unknown"
+          : "Raw capture disconnected";
   const whatsappLabel = !hasConfiguredWhatsApp
     ? "Add WhatsApp number"
     : waConnected === null
-      ? "Checking WhatsApp"
+      ? liveStatusFailed
+        ? "WhatsApp status unknown"
+        : "Checking WhatsApp"
       : waConnected && waPhone
         ? "WhatsApp connected"
         : waConnected
@@ -456,31 +465,46 @@ function AppShell({ children }: { children: React.ReactNode }) {
         // Ignore invalid snapshots and continue with live status checks.
       }
     }, 0);
-    const load = async () => {
-      const [phonesRes, status, extraction] = await Promise.all([
-        getPhones(!isWhatsAppWorkspace, isWhatsAppWorkspace ? 8000 : 15000).catch(() => null),
-        // Focused workspaces do not use the dashboard status probe. Avoid
-        // making inbox/group pages wait on a slow WhatsMeow status request.
-        (isFocusedWorkspace || isWhatsAppWorkspace) ? Promise.resolve(null) : getWhatsAppStatus().catch(() => null),
-        isWhatsAppWorkspace ? Promise.resolve(null) : fetchJSON<{
+    const load = () => {
+      // Each source settles independently: a slow or hung WhatsApp probe must
+      // not delay the phone list (which proves a number is configured), and
+      // vice versa.
+      void getPhones(!isWhatsAppWorkspace, isWhatsAppWorkspace ? 8000 : 15000).then((phonesRes) => {
+        if (phonesRes) {
+          setPhones(phonesRes.phones || []);
+          if (phonesRes.phones?.length) localStorage.setItem(phoneCacheKey, JSON.stringify(phonesRes.phones));
+        }
+      }).catch(() => {});
+      // Focused workspaces do not use the dashboard status probe. Avoid
+      // making inbox/group pages wait on a slow WhatsMeow status request.
+      // WhatsApp workspaces still need it: without the probe the global
+      // indicator can never settle there (per-phone live merge is off).
+      void (isFocusedWorkspace ? Promise.resolve(null) : getWhatsAppStatus().catch(() => "error" as const)).then((status) => {
+        if (status === "error") {
+          // The probe itself failed: the global indicator must settle to an
+          // honest unknown, not spin on "Checking" forever.
+          setLiveStatusFailed(true);
+        } else if (status) {
+          setLiveStatus(status);
+          setLiveStatusFailed(false);
+        }
+      });
+      if (!isWhatsAppWorkspace) {
+        void fetchJSON<{
           pending?: number;
           eligible_pending?: number;
           recently_processed?: number;
           recently_processed_1h?: number;
-        }>("/extraction/progress", undefined, 8000).catch(() => null),
-      ]);
-      if (phonesRes) {
-        setPhones(phonesRes.phones || []);
-        if (phonesRes.phones?.length) localStorage.setItem(phoneCacheKey, JSON.stringify(phonesRes.phones));
-      }
-      if (status) setLiveStatus(status);
-      if (extraction) {
-        setExtractionHealth({
-          // Held/suppressed group rows are intentionally not worker backlog.
-          pending: Number(extraction.eligible_pending ?? extraction.pending ?? 0),
-          // The backend returns `recently_processed`; accept the legacy alias too.
-          recentlyProcessed1h: Number(extraction.recently_processed ?? extraction.recently_processed_1h ?? 0),
-        });
+        }>("/extraction/progress", undefined, 8000).then((extraction) => {
+          if (extraction) {
+            setExtractionHealth({
+              // Held/suppressed group rows are intentionally not worker backlog.
+              pending: Number(extraction.eligible_pending ?? extraction.pending ?? 0),
+              // The backend returns `recently_processed`; accept the legacy alias too.
+              recentlyProcessed1h: Number(extraction.recently_processed ?? extraction.recently_processed_1h ?? 0),
+            });
+          }
+        }).catch(() => {});
       }
     };
     void getBusinessApiConfig(15000).then((config) => {
@@ -677,6 +701,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         onClose={() => setDrawerOpen(false)}
         isSuperAdmin={isSuperAdmin}
         whatsappConnected={waConnected}
+        whatsappUnknown={waConnected === null && liveStatusFailed}
         whatsappPhone={waPhone}
         captureLabel={captureLabel}
         captureWarning={captureHealth !== "healthy"}
@@ -894,7 +919,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   {!hasConfiguredWhatsApp
                   ? "Add WhatsApp number"
                   : waConnected === null
-                  ? "Checking WhatsApp"
+                  ? liveStatusFailed
+                    ? "WhatsApp status unknown"
+                    : "Checking WhatsApp"
                   : waStale
                     ? "WhatsApp status stale"
                     : waConnected
@@ -907,7 +934,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
               )}
             </div>
-            <div className={`h-1.5 w-1.5 shrink-0 rounded-full ${!hasConfiguredWhatsApp ? "bg-amber-300" : waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-zinc-500" : "bg-[#6B8E63]") : "bg-red-400"}`} />
+            <div className={`h-1.5 w-1.5 shrink-0 rounded-full ${!hasConfiguredWhatsApp ? "bg-amber-300" : waConnected === null ? (liveStatusFailed ? "bg-amber-300" : "bg-zinc-500") : waConnected ? (waStale ? "bg-zinc-500" : "bg-[#6B8E63]") : "bg-red-400"}`} />
           </a>
         </div>
       </aside>
