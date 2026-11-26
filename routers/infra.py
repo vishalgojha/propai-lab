@@ -1580,6 +1580,96 @@ async def email_ingest(req: EmailIngestRequest, request: Request):
         raise HTTPException(503, "Email persistence is temporarily unavailable") from exc
     return {"status": "accepted", "raw_id": raw_id, "message_uid": message_uid}
 
+class _TTLCache:
+    """Bounded in-process TTL cache for the webhook hot path.
+
+    Only stable or slowly-changing lookups may use this: tenant resolution,
+    group display names, and LID-to-phone mappings. Consent and revocation
+    checks (group capture consent, extraction consent, DM sender
+    designation) are NEVER cached here, so a revoke always takes effect on
+    the next message. Entries are keyed lookups, not message content.
+    """
+
+    def __init__(self, ttl_seconds: float, max_entries: int = 4096):
+        self._ttl = ttl_seconds
+        self._max = max_entries
+        self._entries: dict = {}
+        self._lock = threading.Lock()
+
+    def get(self, key):
+        now = time.monotonic()
+        with self._lock:
+            hit = self._entries.get(key)
+            if hit is None:
+                return None
+            expires, value = hit
+            if now >= expires:
+                self._entries.pop(key, None)
+                return None
+            return value
+
+    def set(self, key, value):
+        now = time.monotonic()
+        with self._lock:
+            if len(self._entries) >= self._max:
+                expired = [k for k, (exp, _) in self._entries.items() if now >= exp]
+                for k in expired:
+                    self._entries.pop(k, None)
+                if len(self._entries) >= self._max:
+                    oldest = min(self._entries, key=lambda k: self._entries[k][0])
+                    self._entries.pop(oldest, None)
+            self._entries[key] = (now + self._ttl, value)
+
+    def clear(self):
+        with self._lock:
+            self._entries.clear()
+
+
+# broker_id -> organization_id. This lookup does not gate is_active today
+# (the storage resolver returns inactive rows too), so caching it cannot
+# delay a deactivation or any revocation; it only removes a per-message
+# round-trip. 60s bounds staleness for connection re-pointing.
+_TENANT_RESOLVE_CACHE = _TTLCache(ttl_seconds=60, max_entries=512)
+# group JID -> display name. Cosmetic field; a renamed group settles within
+# 5 minutes and is also refreshed whenever a message carries a supplied
+# conversation name.
+_GROUP_NAME_CACHE = _TTLCache(ttl_seconds=300, max_entries=2048)
+# (sender LID, group JID) -> resolved member mapping. LID-to-phone mappings
+# are stable identity data. Only positive results are cached.
+_LID_RESOLVE_CACHE = _TTLCache(ttl_seconds=300, max_entries=4096)
+
+
+async def _resolve_webhook_tenant(broker_id: str) -> str | None:
+    cached = _TENANT_RESOLVE_CACHE.get(broker_id)
+    if cached is not None:
+        return cached
+    conn = await asyncio.to_thread(storage.get_org_whatsapp_connection_by_broker_id, broker_id)
+    tenant = conn.get("organization_id") if conn else None
+    if tenant:
+        _TENANT_RESOLVE_CACHE.set(broker_id, tenant)
+    return tenant
+
+
+async def _resolve_group_name_cached(jid: str) -> str:
+    cached = _GROUP_NAME_CACHE.get(jid)
+    if cached is not None:
+        return cached
+    name = await asyncio.to_thread(_resolve_group_name, jid)
+    _GROUP_NAME_CACHE.set(jid, name)
+    return name
+
+
+async def _resolve_lid_member(sender_jid: str, group_jid: str):
+    key = (str(sender_jid), str(group_jid))
+    cached = _LID_RESOLVE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    gm = await asyncio.to_thread(storage.resolve_lid_from_group_members, str(sender_jid), str(group_jid))
+    if gm:
+        _LID_RESOLVE_CACHE.set(key, gm)
+    return gm
+
+
 @router.post("/webhook")
 async def webhook(request: Request):
     expected_token = (
@@ -1603,9 +1693,7 @@ async def webhook(request: Request):
     resolved_tenant_id = None
     if webhook_broker_id:
         try:
-            conn = await asyncio.to_thread(storage.get_org_whatsapp_connection_by_broker_id, webhook_broker_id)
-            if conn and conn.get("organization_id"):
-                resolved_tenant_id = conn["organization_id"]
+            resolved_tenant_id = await _resolve_webhook_tenant(webhook_broker_id)
         except Exception as exc:
             print(f"[webhook] tenant resolve error: {exc}", flush=True)
             raise HTTPException(503, "WhatsApp webhook tenant resolution is temporarily unavailable")
@@ -1640,7 +1728,7 @@ async def webhook(request: Request):
     if not sender_phone and str(sender_jid).endswith("@lid"):
         group_jid = key.get("remoteJid", "") or msg_data.get("from", "")
         try:
-            gm = await asyncio.to_thread(storage.resolve_lid_from_group_members, str(sender_jid), str(group_jid))
+            gm = await _resolve_lid_member(sender_jid, group_jid)
             if gm:
                 sender_phone = _canonical_phone_from_jid(str(gm.get("member_phone") or ""))
                 if not sender_name or sender_name == "unknown":
@@ -1652,7 +1740,7 @@ async def webhook(request: Request):
     if _is_blocked_whatsapp_conversation(group) or (sender_jid and _is_blocked_whatsapp_conversation(sender_jid)):
         return {"status": "ignored", "reason": "blocked_whatsapp_conversation", "jid": group}
     supplied_conversation_name = (msg_data.get("conversationName") or msg_data.get("chatName") or msg_data.get("conversation_name") or "").strip()
-    group_name = supplied_conversation_name or await asyncio.to_thread(_resolve_group_name, group)
+    group_name = supplied_conversation_name or await _resolve_group_name_cached(group)
     is_dm = str(group).endswith("@s.whatsapp.net") or str(group).endswith("@lid")
     if is_dm:
         # Private WhatsApp DMs are intentionally not PropAI evidence. The owner
