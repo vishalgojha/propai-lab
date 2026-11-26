@@ -32,7 +32,7 @@ const capabilities = [
   {
     Icon: MessageSquare,
     title: "Continue with the broker on WhatsApp",
-    body: "Your assistant hands you the listing link. The WhatsApp button on that page connects you to the broker - phone numbers are never exposed to agents or the API.",
+    body: "Your assistant hands you the listing link. The WhatsApp button on that page opens a direct WhatsApp chat with the broker who shared it.",
   },
 ];
 
