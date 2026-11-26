@@ -1826,7 +1826,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
             <p>Sharing paused for {pausedJids.length} of your {selectedGroups.size} selected group{selectedGroups.size === 1 ? "" : "s"} ({activeSelected} shared). Paused groups stay in your account; other brokers cannot search them until you confirm again.</p>
             <p className="mt-1">
               {pausedProperty > 0 && <>Re-confirming restores the {pausedProperty} property-named group{pausedProperty === 1 ? "" : "s"}. </>}
-              {pausedNever > 0 && <>{pausedNever} {pausedNever === 1 ? "is" : "are"} not a property group and can never be shared.</>}
+              {pausedNever > 0 && (pausedNever === 1 ? <>1 of the paused groups is not a property group and can never be shared.</> : <>{pausedNever} of the paused groups are not property groups and can never be shared.</>)}
             </p>
             <button type="button" onClick={openRestore} disabled={savingSelection || savingSharing} className="mt-1.5 rounded-md border border-amber-400/40 px-2 py-0.5 font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-40">
               {savingSharing ? "Confirming..." : "Review and restore sharing"}

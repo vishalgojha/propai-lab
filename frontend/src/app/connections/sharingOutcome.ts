@@ -48,7 +48,9 @@ export function buildSharingOutcomeMessage(input: SharingOutcomeInput): string {
     parts.push(`${unshared.length} not shared: ${split.join(", ")}.`);
     if (notProperty > 0) {
       parts.push(
-        `${notProperty} ${notProperty === 1 ? "is" : "are"} not a property group${notProperty === 1 ? "" : "s"} and can never be shared.`
+        notProperty === 1
+          ? "1 of these is not a property group and can never be shared."
+          : `${notProperty} of these are not property groups and can never be shared.`
       );
     }
   } else if (confirmedJids.length > 0) {
