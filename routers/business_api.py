@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from routers.common import (
     storage,
     require_user,
+    require_super_admin,
     get_tenant_context,
     _resolve_active_organization_id,
 )
@@ -100,21 +101,41 @@ async def business_api_overview(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    team_count = _count_table("business_api_team_members")
-    active_team = storage.db.execute(
-        "SELECT COUNT(*) AS c FROM business_api_team_members WHERE active = 1"
-    ).fetchone()["c"]
-    pending_conversations = storage.db.execute(
-        "SELECT COUNT(*) AS c FROM business_api_conversations WHERE status IN ('needs_human', 'pending_approval')"
-    ).fetchone()["c"]
-    last_sync_row = storage.db.execute(
-        "SELECT MAX(timestamp) AS ts FROM raw_messages"
-    ).fetchone()
-    last_sync = last_sync_row["ts"] if last_sync_row else None
-    inbound_today = _today_count("business_api_messages", where="direction = 'inbound'")
-    outbound_today = _today_count("business_api_messages", where="direction = 'outbound'")
-    ai_today = _today_count("ai_usage_log")
-    messages_today = _today_count("raw_messages", "timestamp")
+    is_admin_view = await asyncio.to_thread(storage.is_super_admin, user["id"])
+    scoped_org = "" if is_admin_view else _resolve_active_organization_id(user, tenant_id)
+    team_count = _count_table("business_api_team_members") if is_admin_view else 0
+    # Legacy business_api_* tables and ai_usage_log carry no tenant column, so
+    # their platform-wide counts are shown to super-admins only.
+    if is_admin_view:
+        active_team = storage.db.execute(
+            "SELECT COUNT(*) AS c FROM business_api_team_members WHERE active = 1"
+        ).fetchone()["c"]
+        pending_conversations = storage.db.execute(
+            "SELECT COUNT(*) AS c FROM business_api_conversations WHERE status IN ('needs_human', 'pending_approval')"
+        ).fetchone()["c"]
+        last_sync_row = storage.db.execute(
+            "SELECT MAX(timestamp) AS ts FROM raw_messages"
+        ).fetchone()
+        last_sync = last_sync_row["ts"] if last_sync_row else None
+        inbound_today = _today_count("business_api_messages", where="direction = 'inbound'")
+        outbound_today = _today_count("business_api_messages", where="direction = 'outbound'")
+        ai_today = _today_count("ai_usage_log")
+        messages_today = _today_count("raw_messages", "timestamp")
+    else:
+        active_team = pending_conversations = inbound_today = outbound_today = ai_today = 0
+        try:
+            _row = storage.db.execute(
+                "SELECT MAX(timestamp) AS ts FROM raw_messages WHERE tenant_id = ?", (scoped_org,)
+            ).fetchone()
+            last_sync = _row["ts"] if _row else None
+            _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            _row = storage.db.execute(
+                "SELECT COUNT(*) AS c FROM raw_messages WHERE timestamp >= ? AND tenant_id = ?",
+                (_today, scoped_org),
+            ).fetchone()
+            messages_today = _row["c"] if _row else 0
+        except Exception:
+            last_sync, messages_today = None, 0
     is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
     if is_super_admin:
         waba_values = _platform_waba_values()
@@ -135,18 +156,29 @@ async def business_api_overview(
     webhook_health = "ready" if waba_verify_token else "not_configured"
     token_status = "configured" if waba_access_token else "missing"
 
-    inventory_summary = {
-        "my_inventory": _count_table("listings_unified"),
-        "market_listings": _count_table("listings_unified"),
-        "market_buyers": storage.db.execute(
-            "SELECT COUNT(*) AS c FROM requirements_unified"
-        ).fetchone()["c"],
-        "brokers": _count_table("brokers"),
-        "groups": _count_table("source_sync_jobs"),
-        "markets": storage.db.execute(
-            "SELECT COUNT(DISTINCT micro_market) AS c FROM parsed_output_unified WHERE micro_market IS NOT NULL AND micro_market != ''"
-        ).fetchone()["c"],
-    }
+    if is_admin_view:
+        inventory_summary = {
+            "my_inventory": _count_table("listings_unified"),
+            "market_listings": _count_table("listings_unified"),
+            "market_buyers": storage.db.execute(
+                "SELECT COUNT(*) AS c FROM requirements_unified"
+            ).fetchone()["c"],
+            "brokers": _count_table("brokers"),
+            "groups": _count_table("source_sync_jobs"),
+            "markets": storage.db.execute(
+                "SELECT COUNT(DISTINCT micro_market) AS c FROM parsed_output_unified WHERE micro_market IS NOT NULL AND micro_market != ''"
+            ).fetchone()["c"],
+        }
+    else:
+        _stats = await asyncio.to_thread(storage.get_stats, scoped_org)
+        inventory_summary = {
+            "my_inventory": _stats.get("total_listings", 0),
+            "market_listings": _stats.get("total_listings", 0),
+            "market_buyers": _stats.get("total_requirements", 0),
+            "brokers": _stats.get("total_brokers", 0),
+            "groups": 0,
+            "markets": 0,
+        }
 
     return {
         "connection_status": "connected" if outbound_allowed else "not_connected",
@@ -191,7 +223,7 @@ async def waba_session_status(chat_id: str, user: dict = Depends(require_user)):
 
 
 @router.get("/api/waba/sessions")
-async def waba_sessions_bulk(user: dict = Depends(require_user)):
+async def waba_sessions_bulk(user: dict = Depends(require_super_admin)):
     """Get all active session statuses. Returns list of {chat_id, active, remaining_seconds, last_user_at}."""
     try:
         rows = storage.db.execute(
@@ -219,7 +251,7 @@ async def waba_sessions_bulk(user: dict = Depends(require_user)):
 
 
 @router.get("/api/business-api/team")
-async def business_api_team(user: dict = Depends(require_user)):
+async def business_api_team(user: dict = Depends(require_super_admin)):
     rows = storage.db.execute(
         "SELECT * FROM business_api_team_members ORDER BY active DESC, name COLLATE NOCASE"
     ).fetchall()
@@ -227,7 +259,7 @@ async def business_api_team(user: dict = Depends(require_user)):
 
 
 @router.patch("/api/business-api/team/{member_id}")
-async def business_api_update_team_member(member_id: int, req: BusinessApiTeamMemberRequest, user: dict = Depends(require_user)):
+async def business_api_update_team_member(member_id: int, req: BusinessApiTeamMemberRequest, user: dict = Depends(require_super_admin)):
     if req.role not in COMPANION_ROLES:
         raise HTTPException(400, "Invalid role")
     mobile = _mobile_digits(req.mobile_number)
@@ -263,17 +295,17 @@ async def business_api_update_team_member(member_id: int, req: BusinessApiTeamMe
 
 
 @router.get("/api/business-api/roles")
-async def business_api_roles(user: dict = Depends(require_user)):
+async def business_api_roles(user: dict = Depends(require_super_admin)):
     return COMPANION_ROLES
 
 
 @router.get("/api/business-api/tools")
-async def business_api_tools(user: dict = Depends(require_user)):
+async def business_api_tools(user: dict = Depends(require_super_admin)):
     return {"tools": COMPANION_TOOLS}
 
 
 @router.get("/api/business-api/conversations")
-async def business_api_conversations(limit: int = 20, user: dict = Depends(require_user)):
+async def business_api_conversations(limit: int = 20, user: dict = Depends(require_super_admin)):
     rows = storage.db.execute(
         """SELECT c.*, t.name AS team_member_name, t.role AS team_member_role
            FROM business_api_conversations c
@@ -286,7 +318,7 @@ async def business_api_conversations(limit: int = 20, user: dict = Depends(requi
 
 
 @router.get("/api/business-api/audit")
-async def business_api_audit(limit: int = 30, user: dict = Depends(require_user)):
+async def business_api_audit(limit: int = 30, user: dict = Depends(require_super_admin)):
     rows = storage.db.execute(
         """SELECT a.*, t.name AS team_member_name
            FROM business_api_audit_log a

@@ -33,9 +33,20 @@ const PUBLIC_URL = process.env.MCP_SERVER_URL || "https://mcp.propai.live";
 type McpSession = {
   server: ReturnType<typeof createMcpServer>;
   transport: StreamableHTTPServerTransport;
+  // Identity the session was created for; later requests must match it.
+  ownerId?: string | null;
+  publicOnly?: boolean;
 };
 
 const sessions = new Map<string, McpSession>();
+
+// A session id is not a credential: tenant/broker context is baked into the
+// server instance at creation, so every later request must be made by the
+// same identity (or same public-only status) the session was created for.
+function sessionMatchesRequest(session: McpSession, req: Request): boolean {
+  if ((session.publicOnly === true) !== (req.publicOnly === true)) return false;
+  return (session.ownerId ?? null) === (req.user?.id ?? null);
+}
 
 app.use("/assets", express.static("public", { immutable: true, maxAge: "30d" }));
 app.use(express.json({ limit: "1mb" }));
@@ -176,6 +187,9 @@ app.all("/mcp", authMiddleware, async (req: Request, res: Response) => {
 
   const sessionId = req.headers["mcp-session-id"];
   let session = typeof sessionId === "string" ? sessions.get(sessionId) : undefined;
+  if (session && !sessionMatchesRequest(session, req)) {
+    return res.status(403).json({ error: "Session belongs to a different user" });
+  }
   if (typeof sessionId === "string") {
     await touchSessionRecord(sessionId).catch(() => {});
   }
@@ -185,7 +199,7 @@ app.all("/mcp", authMiddleware, async (req: Request, res: Response) => {
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => crypto.randomUUID(),
       onsessioninitialized: async (newSessionId) => {
-        sessions.set(newSessionId, { server, transport });
+        sessions.set(newSessionId, { server, transport, ownerId: req.user?.id ?? null, publicOnly: req.publicOnly === true });
         await createSessionRecord({
           sessionId: newSessionId,
           userId: req.user?.id,
@@ -243,13 +257,16 @@ app.all("/raw-mcp", rawAuthMiddleware, async (req: Request, res: Response) => {
   if (!["GET", "POST", "DELETE"].includes(req.method)) return res.status(405).json({ error: "Method not allowed" });
   const sessionId = req.headers["mcp-session-id"];
   let session = typeof sessionId === "string" ? rawSessions.get(sessionId) : undefined;
+  if (session && !sessionMatchesRequest(session, req)) {
+    return res.status(403).json({ error: "Session belongs to a different user" });
+  }
   if (typeof sessionId === "string") await touchSessionRecord(sessionId).catch(() => {});
   if (!session) {
     const server = createRawMcpServer({ user: req.user });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => crypto.randomUUID(),
       onsessioninitialized: async (newSessionId) => {
-        rawSessions.set(newSessionId, { server, transport });
+        rawSessions.set(newSessionId, { server, transport, ownerId: req.user?.id ?? null, publicOnly: false });
         await createSessionRecord({ sessionId: newSessionId, userId: req.user?.id, userAgent: String(req.headers["user-agent"] || "") }).catch(() => {});
       },
       onsessionclosed: async (closedSessionId) => {

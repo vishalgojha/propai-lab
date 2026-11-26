@@ -230,6 +230,7 @@ async def get_organization(org_id: str, user: dict = Depends(require_user)):
 @router.patch("/api/orgs/{org_id}")
 async def update_organization(org_id: str, body: dict, user: dict = Depends(require_user)):
     _ensure_org_access(org_id, user)
+    await _require_org_permission(user, org_id, "manage_workspace")
     allowed = {"name", "is_active"}
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
@@ -249,6 +250,7 @@ async def list_members(org_id: str, user: dict = Depends(require_user)):
 @router.post("/api/orgs/{org_id}/members")
 async def add_member(org_id: str, body: dict, user: dict = Depends(require_user)):
     _ensure_org_access(org_id, user)
+    await _require_org_permission(user, org_id, "manage_users")
     user_id = body.get("user_id")
     role_id = body.get("role_id")
     if not user_id:
@@ -262,6 +264,7 @@ async def add_member(org_id: str, body: dict, user: dict = Depends(require_user)
 @router.delete("/api/orgs/{org_id}/members/{user_id}")
 async def remove_member(org_id: str, user_id: str, user: dict = Depends(require_user)):
     _ensure_org_access(org_id, user)
+    await _require_org_permission(user, org_id, "manage_users")
     ok = storage.remove_organization_member(org_id, user_id)
     if not ok:
         raise HTTPException(404, "Member not found")
@@ -271,6 +274,7 @@ async def remove_member(org_id: str, user_id: str, user: dict = Depends(require_
 @router.patch("/api/orgs/{org_id}/members/{user_id}/role")
 async def update_member_role(org_id: str, user_id: str, body: dict, user: dict = Depends(require_user)):
     _ensure_org_access(org_id, user)
+    await _require_org_permission(user, org_id, "manage_roles")
     role_id = body.get("role_id")
     if not role_id:
         raise HTTPException(400, "role_id is required")
@@ -291,6 +295,7 @@ async def list_org_roles(org_id: str, user: dict = Depends(require_user)):
 @router.post("/api/orgs/{org_id}/roles")
 async def create_org_role(org_id: str, body: dict, user: dict = Depends(require_user)):
     _ensure_org_access(org_id, user)
+    await _require_org_permission(user, org_id, "manage_roles")
     name = body.get("name")
     slug = body.get("slug")
     if not name or not slug:

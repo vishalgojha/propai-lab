@@ -415,6 +415,13 @@ async def get_tenant_context(
     return tid
 
 
+async def require_super_admin(user: dict = Depends(require_user)) -> dict:
+    """Platform-wide operational views are super-admin only."""
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Platform admin access required")
+    return user
+
+
 async def require_tenant(
     tenant_id: str | None = Depends(get_tenant_context),
 ) -> str:
