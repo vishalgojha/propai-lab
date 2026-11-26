@@ -82,7 +82,9 @@ export default function SetupGuide({ variant = "page" }: { variant?: "page" | "c
   const whatsappConnectedEarly = access?.whatsapp_connected === true;
   const forceVisible = statusKnownEarly && !whatsappConnectedEarly;
 
-  if (!hydrated || ((dismissed || snoozed) && !forceVisible)) {
+  // forceVisible overrides only the PERMANENT dismissal; the session snooze
+  // always hides the guide until the next visit.
+  if (!hydrated || (dismissed && !forceVisible) || snoozed) {
     if (variant === "page" && hydrated && dismissed && !forceVisible) {
       return (
         <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6 text-center">
