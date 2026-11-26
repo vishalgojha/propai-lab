@@ -28,8 +28,8 @@ export default function SiteFooter() {
               <span>Prop<span>AI</span></span>
             </Link>
             <p>
-              PropAI reads WhatsApp broker groups so you get real, fresh
-              live listings — and a direct line to the broker.
+              PropAI reads WhatsApp broker groups and makes their listings
+              searchable through your assistant.
             </p>
           </div>
           <nav aria-label="Connect">
@@ -71,7 +71,7 @@ export default function SiteFooter() {
         </div>
         <div className="site-footer-bottom">
           <p>© {new Date().getFullYear()} PropAI. Listings sourced from active broker WhatsApp networks.</p>
-          <p>Ask in chat, get the listing and the broker's number.</p>
+          <p>Ask in chat, get the listing link, then message the broker directly from the listing page.</p>
         </div>
       </div>
     </footer>
