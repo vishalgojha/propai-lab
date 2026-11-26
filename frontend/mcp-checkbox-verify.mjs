@@ -63,10 +63,22 @@ await new Promise((r) => setTimeout(r, 2500));
 const afterUncheck = await readCheckbox();
 await page.evaluate(() => {
   const box = Array.from(document.querySelectorAll("input[type=checkbox]")).find((c) => c.closest("label")?.innerText.includes("Allow private CRM writes"));
+  box?.closest("label")?.scrollIntoView({ block: "center" });
+});
+await new Promise((r) => setTimeout(r, 400));
+await page.screenshot({ path: "/tmp/mcp-checkbox-unchecked.png", fullPage: false });
+await page.evaluate(() => {
+  const box = Array.from(document.querySelectorAll("input[type=checkbox]")).find((c) => c.closest("label")?.innerText.includes("Allow private CRM writes"));
   box?.click();
 });
 await new Promise((r) => setTimeout(r, 2500));
 const afterRecheck = await readCheckbox();
+await page.evaluate(() => {
+  const box = Array.from(document.querySelectorAll("input[type=checkbox]")).find((c) => c.closest("label")?.innerText.includes("Allow private CRM writes"));
+  box?.closest("label")?.scrollIntoView({ block: "center" });
+});
+await new Promise((r) => setTimeout(r, 400));
+await page.screenshot({ path: "/tmp/mcp-checkbox-checked.png", fullPage: false });
 
 const keyRows = await page.evaluate(() => {
   const text = document.body.innerText.replace(/\s+/g, " ");
@@ -78,5 +90,4 @@ const keyRows = await page.evaluate(() => {
   };
 });
 console.log("STATE:", JSON.stringify({ initial, afterUncheck, afterRecheck, ...keyRows }));
-await page.screenshot({ path: "/tmp/mcp-checkbox.png", fullPage: false });
 await browser.close();
