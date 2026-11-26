@@ -265,7 +265,7 @@ export default function DashboardPage() {
         <div className="dashboard-action-grid">
           {[
             { label: "Connect your assistant", count: "→", icon: Search, href: "/workspace/instinct", detail: "Use Instinct, Claude, or Gemini with your PropAI data" },
-            { label: "Review Items", count: suggestionPending || "→", icon: ListChecks, href: "/chat?tab=review", detail: "Records needing confirmation" },
+            { label: "Review Items", count: suggestionPending || "→", icon: ListChecks, href: "/inbox", detail: "Records needing confirmation" },
             { label: "Review market data", count: "→", icon: MessageCircle, href: "/inbox", detail: "Triage and correct captured market posts" },
             { label: "Connect groups", count: "→", icon: Radio, href: "/whatsapp?tab=groups", detail: "Choose groups to connect for parsing" },
           ].map(card => (
