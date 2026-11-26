@@ -2043,7 +2043,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       </div>
 
       {stopConfirmationOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:px-4" role="dialog" aria-modal="true" aria-labelledby="stop-sync-title">
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:px-4" role="dialog" aria-modal="true" aria-labelledby="stop-sync-title">
           <div className="w-full overflow-hidden rounded-t-2xl border border-white/10 bg-zinc-950 shadow-2xl shadow-black/50 sm:max-w-md sm:rounded-xl">
             <div className="flex items-start gap-3 border-b border-white/10 px-5 py-4">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-400/25 bg-red-500/10">
@@ -2066,7 +2066,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       )}
 
       {selectionConfirmationOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:px-4" role="dialog" aria-modal="true" aria-labelledby="confirm-selection-title">
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:px-4" role="dialog" aria-modal="true" aria-labelledby="confirm-selection-title">
           <div className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-white/10 bg-zinc-950 shadow-2xl shadow-black/50 sm:max-h-[85vh] sm:max-w-md sm:rounded-xl">
             <div className="flex shrink-0 items-start gap-3 border-b border-white/10 px-5 py-4">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-400/25 bg-emerald-500/10">
