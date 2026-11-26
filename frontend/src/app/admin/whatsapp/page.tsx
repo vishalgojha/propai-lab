@@ -11,13 +11,6 @@ import {
   type AdminWhatsAppIdentityMetrics,
 } from "@/lib/api";
 
-function Toggle({ checked, disabled, label, onChange }: { checked: boolean; disabled: boolean; label: string; onChange: () => void }) {
-  return (
-    <button type="button" role="switch" aria-checked={checked} aria-label={label} disabled={disabled} onClick={onChange} className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-50 ${checked ? "bg-emerald-500" : "bg-zinc-700"}`}>
-      <span className={`absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition-transform ${checked ? "translate-x-5" : "translate-x-0"}`} />
-    </button>
-  );
-}
 
 export default function AdminWhatsAppPage() {
   const [sessions, setSessions] = useState<AdminWhatsAppSession[]>([]);
@@ -57,7 +50,7 @@ export default function AdminWhatsAppPage() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  async function updateSession(session: AdminWhatsAppSession, field: "self_chat_enabled" | "is_active") {
+  async function updateSession(session: AdminWhatsAppSession, field: "is_active") {
     const key = `${session.id}:${field}`;
     setActionKey(key);
     try {
@@ -106,7 +99,7 @@ export default function AdminWhatsAppPage() {
           <Link href="/admin" className="mt-1 text-zinc-400 hover:text-white"><ArrowLeft className="h-5 w-5" /></Link>
           <div>
             <h1 className="text-2xl font-bold text-white">WhatsApp Sessions</h1>
-            <p className="mt-1 text-sm text-zinc-500">Super-admin control for every workspace phone and self-chat assistant.</p>
+            <p className="mt-1 text-sm text-zinc-500">Super-admin control for every workspace phone.</p>
           </div>
         </div>
         <button onClick={() => void load()} disabled={loading} className="flex min-h-10 items-center gap-2 rounded-lg border border-white/10 bg-zinc-900 px-3 text-xs font-semibold text-zinc-300 disabled:opacity-50">
@@ -154,8 +147,8 @@ export default function AdminWhatsAppPage() {
         <div className="rounded-xl border border-white/10 p-12 text-center text-zinc-500">No sessions match this search.</div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-white/10 bg-zinc-950">
-          <div className="hidden grid-cols-[minmax(11rem,1.25fr)_minmax(8rem,1fr)_5.5rem_6.5rem_6.5rem_6.5rem_minmax(16rem,1.5fr)] items-center gap-4 border-b border-white/10 bg-white/[0.025] px-5 py-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 lg:grid">
-            <div>Phone / workspace</div><div>Status</div><div>Messages</div><div>Self-chat</div><div>Extraction</div><div>Access</div><div className="text-right">Actions</div>
+          <div className="hidden grid-cols-[minmax(11rem,1.25fr)_minmax(8rem,1fr)_5.5rem_6.5rem_6.5rem_minmax(16rem,1.5fr)] items-center gap-4 border-b border-white/10 bg-white/[0.025] px-5 py-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 lg:grid">
+            <div>Phone / workspace</div><div>Status</div><div>Messages</div><div>Extraction</div><div>Access</div><div className="text-right">Actions</div>
           </div>
           <div className="divide-y divide-white/10">
           {filteredSessions.map((session) => {
@@ -174,14 +167,13 @@ export default function AdminWhatsAppPage() {
               ? "bg-emerald-100 text-emerald-950"
               : "bg-red-100 text-red-950";
             return (
-              <section key={session.id} className="grid gap-4 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(11rem,1.25fr)_minmax(8rem,1fr)_5.5rem_6.5rem_6.5rem_6.5rem_minmax(16rem,1.5fr)] lg:items-center">
+              <section key={session.id} className="grid gap-4 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(11rem,1.25fr)_minmax(8rem,1fr)_5.5rem_6.5rem_6.5rem_minmax(16rem,1.5fr)] lg:items-center">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.04]"><Smartphone className="h-4 w-4 text-zinc-300" /></div>
                   <div className="min-w-0"><div className="truncate text-sm font-semibold text-white">{session.instance_name || session.display_name || "WhatsApp phone"}</div><div className="truncate font-mono text-xs text-zinc-500">{session.phone_number_live || session.phone_number}</div><div className="truncate text-xs text-zinc-400">{organization?.name || "Unknown workspace"}</div></div>
                 </div>
                 <div><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase ${connectionTone}`}>{connected ? "Connected" : session.connection_state === "unknown" ? "Status unavailable" : session.connection_state || "Offline"}</span></div>
                 <div className="text-sm font-medium text-white">{session.total_messages_received?.toLocaleString() || "0"}</div>
-                <div className="flex items-center gap-2"><Toggle checked={session.self_chat_enabled !== false} disabled={busy} label="Toggle self-chat assistant" onChange={() => void updateSession(session, "self_chat_enabled")} /><span className="text-xs text-zinc-400">{session.self_chat_enabled !== false ? "On" : "Off"}</span></div>
                 <div><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase ${extractionTone}`}>{session.extraction_status || "stopped"}</span></div>
                 <div><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase ${accessTone}`}>{session.is_active !== false ? "Allowed" : "Inactive"}</span></div>
                 <div className="flex flex-wrap justify-end gap-2">

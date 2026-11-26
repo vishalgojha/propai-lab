@@ -15,7 +15,7 @@ export default function SocietyProfilePage() {
       title={title}
       query={title}
       subtitle="Society profile created on demand from captured WhatsApp conversations."
-      backHref="/chat"
+      backHref="/dashboard"
       emptyHint="No canonical society profile exists yet. This route still gives the entity a stable home."
     />
   );

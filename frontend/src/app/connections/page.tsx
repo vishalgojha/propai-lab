@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square, Search, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, getGroupSelectionConfirmation, checkOnboardingGroup, optOutOnboardingGroup, deselectOnboardingGroup, selectOnboardingGroups, getMarketRawSources, confirmMarketRawSources, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry, type MarketShareClass } from "@/lib/api";
+import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, getGroupSelectionConfirmation, checkOnboardingGroup, optOutOnboardingGroup, deselectOnboardingGroup, selectOnboardingGroups, getMarketRawSources, confirmMarketRawSources, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry, type MarketShareClass } from "@/lib/api";
 import QRCode from "qrcode";
 import { connectionHealth, connectionMetric } from "@/lib/connectionHealth";
 
@@ -362,9 +362,6 @@ function PhoneCard({
         const result = await deletePhone(phone.id);
         if (!result.ok) throw new Error("Phone could not be removed");
         onDeleted(phone.id);
-      } else if (action === "self-chat") {
-        await updatePhone(phone.id, { self_chat_enabled: !phone.self_chat_enabled });
-        setActionMessage(phone.self_chat_enabled ? "Self-chat assistant disabled" : "Self-chat assistant enabled");
       }
       else if (action === "pair-code") {
         // A connection has one canonical WhatsApp number. Keeping this value
@@ -387,7 +384,7 @@ function PhoneCard({
         return;
       }
       else await onRefresh();
-      if (!["self-chat", "pair-code"].includes(action)) {
+      if (action !== "pair-code") {
         setActionMessage(
           action === "delete"
             ? "Phone removed"
@@ -786,21 +783,6 @@ function PhoneCard({
               <div className="px-3 py-2 border-b border-white/10">
                 <div className="text-xs text-zinc-500">Connected Since</div>
                 <div className="text-xs text-white font-medium">{phone.connected_since ? formatTime(phone.connected_since) : "—"}</div>
-              </div>
-              <div className="px-3 py-2 border-b border-white/10">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-zinc-500">Self-chat</span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={phone.self_chat_enabled !== false}
-                    onClick={() => handleAction("self-chat")}
-                    disabled={actionLoading !== null}
-                    className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${phone.self_chat_enabled !== false ? "bg-emerald-500" : "bg-zinc-700"}`}
-                  >
-                    <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${phone.self_chat_enabled !== false ? "translate-x-4" : "translate-x-0"}`} />
-                  </button>
-                </div>
               </div>
               <div className="px-3 py-2 border-b border-white/10">
                 <div className="flex items-center justify-between">

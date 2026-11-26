@@ -54,7 +54,7 @@ export default function GenericEntityProfile({
     <EntityProfileShell
       title={title}
       subtitle={subtitle || `${entityType} details collected from broker messages.`}
-      backHref={backHref || "/chat"}
+      backHref={backHref || "/dashboard"}
       backLabel="Back"
       metrics={[
         { label: "Mentions", value: count.toLocaleString(), tone: "accent" },
@@ -70,7 +70,7 @@ export default function GenericEntityProfile({
             <div className="text-xs text-zinc-500">Messages that reference this entity.</div>
           </div>
           <Link
-            href="/chat"
+            href="/listings"
             className="text-xs font-semibold text-[var(--accent-text-on-light)] hover:underline"
           >
             Open search

@@ -26,6 +26,15 @@ from routers.common import (
 
 _logger = logging.getLogger(__name__)
 
+# The built-in PropAI assistant was retired on 26 November 2026 (owner
+# decision: paid provider cost; use Instinct or MCP instead). The gated
+# endpoints below keep their authentication and return immediately, so no
+# ElevenLabs transcription or Sarvam model call can run.
+_ASSISTANT_RETIRED_MESSAGE = (
+    "PropAI\u2019s built-in assistant has been retired. "
+    "Use Instinct or MCP instead."
+)
+
 router = APIRouter(tags=["self_chat"])
 
 # Dashboard telemetry can occupy asyncio's default worker pool while a
@@ -1424,6 +1433,12 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
     if not hmac.compare_digest(supplied_token, expected_token):
         raise HTTPException(401, "Invalid internal service token")
 
+    # Assistant retired: silent acknowledgement. The ingestor treats a blank
+    # reply as "nothing to send", so no automated message enters the owner's
+    # self-chat and no paid processing (Scribe transcription, Sarvam agent)
+    # or database work runs. Authentication above is preserved.
+    return {"reply": ""}
+
     connection = await _self_chat_storage_call(
         storage.get_org_whatsapp_connection_by_broker_id,
         req.broker_id.strip(),
@@ -1549,6 +1564,10 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
 
 @router.post("/api/self-chat")
 async def self_chat(req: SelfChatRequest, user: dict = Depends(require_user)):
+    # Assistant retired: authenticated callers get a clear notice, never the
+    # paid agent path.
+    return {"reply": _ASSISTANT_RETIRED_MESSAGE}
+
     text = req.text.strip()
     if not text:
         return {"reply": ""}

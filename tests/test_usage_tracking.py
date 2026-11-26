@@ -690,7 +690,9 @@ def _chat_fixture(monkeypatch):
     monkeypatch.setattr(agent_tools, "execute_tool", lambda *a, **kw: {"status":"ok", "results":[]})
 
 
-def test_grouped_chat_http_counts_source_plus_listing_once(monkeypatch):
+def test_retired_chat_http_never_calls_tools_or_records_usage(monkeypatch):
+    """Assistant retired 26 Nov 2026: /api/ai/chat returns 410 before any tool
+    or provider work and never records a completed app-chat usage event."""
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     import agent_tools
@@ -703,11 +705,10 @@ def test_grouped_chat_http_counts_source_plus_listing_once(monkeypatch):
     app.dependency_overrides[ai_chat.require_user] = lambda: {"id":"u1"}
     app.dependency_overrides[ai_chat.get_tenant_context] = lambda: "org1"
     with TestClient(app) as client:
-        response = client.post("/api/ai/chat", json={"messages":[{"role":"user", "content":"Find 3 bhk rent in Bandra West from my groups"}]})
-    assert response.status_code == 200, response.text
-    assert "source" in searches and "search_listings" in searches
-    assert calls == [{"tenant_id":"org1","surface":"app","origin":"app"}]
-
+        response = client.post("/api/ai/chat", json={"messages":[{"role": "user", "content":"Find 3 bhk rent in Bandra West from my groups"}]})
+    assert response.status_code == 410, response.text
+    assert searches == []
+    assert calls == []
 
 def test_actual_self_chat_helper_reuse_never_counts_as_app(monkeypatch):
     from routers import self_chat
@@ -719,27 +720,9 @@ def test_actual_self_chat_helper_reuse_never_counts_as_app(monkeypatch):
     assert calls == []
 
 
-def test_model_selected_graph_search_counts_once_through_actual_executor(monkeypatch):
-    import services.propai_workspace_graph as graph
-    _chat_fixture(monkeypatch)
-    calls = _capture(monkeypatch)
-    monkeypatch.setattr(ai_chat.chat_engine, "parse_market_search_request", lambda *a, **kw: None)
-    monkeypatch.setattr(ai_chat, "_has_query_signals", lambda text: True)
-    monkeypatch.setattr(ai_chat.chat_engine, "load_data", lambda: {})
-    monkeypatch.setattr(ai_chat.chat_engine, "build_system_prompt", lambda *a, **kw: "Fixture")
-    worker_threads = []
-    async def graph_reply(**kw):
-        worker_threads.append(threading.get_ident())
-        kw["activity_sink"].extend([{"tool":"search_listings","status":"ok"}, {"tool":"search_requirements","status":"ok"}])
-        return {"content":"Fixture search completed", "trace":{}}
-    monkeypatch.setattr(graph, "run_workspace_graph", graph_reply)
-    response = asyncio.run(ai_chat.ai_chat(ai_chat.ChatRequest(messages=[{"role":"user","content":"Compare these options"}]), user={"id":"u1"}, tenant_id="org1"))
-    assert worker_threads and worker_threads[0] != threading.get_ident()
-    async def body():
-        return "".join([chunk if isinstance(chunk,str) else chunk.decode() async for chunk in response.body_iterator])
-    assert "_usage_search_succeeded" not in asyncio.run(body())
-    assert calls == [{"tenant_id":"org1","surface":"app","origin":"app"}]
-
+# test_model_selected_graph_search_counts_once_through_actual_executor removed:
+# /api/ai/chat retired 26 Nov 2026 (assistant shutdown); paid-path usage counting
+# through this endpoint is unreachable by design. See tests/test_assistant_retirement.py.
 
 def test_chat_request_context_resets_after_failure_and_isolates_concurrent_users(monkeypatch):
     calls = _capture(monkeypatch)

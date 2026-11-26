@@ -41,7 +41,7 @@ export default function BrokerUsagePage() {
     </header>
     <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm text-[var(--text-secondary)]">
       <p>Counts are per workspace, without user or API-key identity. Counts begin when tracking is enabled. No recorded usage does not mean a broker never used PropAI before that.</p>
-      <p className="mt-2">One app event means a completed signed-in search request or search chat turn, not each nested tool call. WhatsApp self-chat is not included in app usage. Assistant/API initiators are unknown, so those searches are never treated as confirmed human activity. WhatsApp linked is a saved setup milestone, not live connection status. Days use India time. Returned means searches on at least two distinct days in the last 30 days.</p>
+      <p className="mt-2">One app event means a completed signed-in search request or search chat turn, not each nested tool call. Assistant/API initiators are unknown, so those searches are never treated as confirmed human activity. WhatsApp linked is a saved setup milestone, not live connection status. Days use India time. Returned means searches on at least two distinct days in the last 30 days.</p>
     </section>
     {loading && <p role="status" className="py-8 text-[var(--text-secondary)]">Loading broker usage...</p>}
     {error && <div role="alert" className="rounded-xl border border-red-400/40 p-4 text-sm">{error}<button className="ml-3 underline" onClick={() => void load()}>Retry</button></div>}

@@ -2248,6 +2248,15 @@ async def resolve_broker_contact(
 @router.post("/api/ai/chat")
 @tracked_chat_turn
 async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    # The built-in PropAI assistant was retired on 26 November 2026 (owner
+    # decision: paid provider cost; use Instinct or MCP instead). Reject
+    # before any provider, transcription, or storage work so the paid path
+    # cannot run. Authentication (require_user) is preserved above.
+    raise HTTPException(
+        status_code=410,
+        detail="PropAI's built-in assistant has been retired. Use Instinct or MCP instead.",
+    )
+
     from ai_chat_engine import get_memory
 
     # The profile.tenant_id column is legacy data and can point at the default

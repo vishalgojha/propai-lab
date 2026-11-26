@@ -189,7 +189,7 @@ export default function AdminPage() {
               <Smartphone className="w-5 h-5 text-emerald-400" />
               <span className="font-medium text-white">WhatsApp Sessions</span>
             </div>
-            <p className="text-xs text-zinc-500">Control every workspace phone, connection state, and self-chat assistant</p>
+            <p className="text-xs text-zinc-500">Control every workspace phone and connection state</p>
           </Link>
           <Link
             href="/admin/pipeline-health?tab=providers"
