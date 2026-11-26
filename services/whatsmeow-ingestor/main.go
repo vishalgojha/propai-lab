@@ -1456,11 +1456,27 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	if info.ID == "" {
 		return
 	}
+	// Capture the protocol's broadcast evidence before any rekeying: an
+	// incoming broadcast-list message carries the list JID as Chat, which the
+	// remap below replaces with the sender's direct chat.
+	multicast := info.Multicast
+	incomingBroadcast := info.IsIncomingBroadcast()
 	// WhatsApp status updates are not group conversations and are not part of
 	// PropAI's market mirror. Drop them before logging, counters, media work,
 	// persistence, extraction, or webhook delivery.
-	if info.Chat.String() == "status@broadcast" || strings.HasSuffix(info.Chat.String(), "@broadcast") {
+	if info.Chat.String() == "status@broadcast" {
 		return
+	}
+	// Incoming broadcast-list messages are the approved broker-broadcast
+	// traffic: the protocol delivers them with the list JID as Chat and the
+	// list owner as Sender. Rekey them onto the owner's direct chat so the
+	// opt-in DM gates below treat the message exactly like an ordinary DM
+	// from that sender. Statuses and the owner's own outgoing list copies
+	// stay dropped.
+	if strings.HasSuffix(info.Chat.String(), "@broadcast") {
+		if !remapBroadcastList(&info) {
+			return
+		}
 	}
 	// Some connected WhatsApp accounts are private control planes rather than
 	// market-ingestion sources. For those brokers, only the owner's self-chat
@@ -1471,10 +1487,14 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	}
 	// Ordinary one-to-one chats are not PropAI ingestion sources. Brokers use
 	// the owner self-chat command path and the authenticated Instinct/MCP write
-	// APIs for private requirements and inventory; personal/broker DMs must not
-	// reach media capture, counters, webhooks, or raw_messages.
-	if !info.IsGroup && !isOwnWhatsAppJID(s, info.Chat) {
-		log.Printf("[broker %s] direct message ignored by no-DM ingestion policy chat=%s id=%s", s.brokerID, info.Chat.String(), info.ID)
+	// APIs for private requirements and inventory; the owner's own outgoing
+	// DMs are never captured. Incoming DMs fall through to insertRawMessage,
+	// whose fail-closed opt-in gate (owner-designated sender carrying the
+	// current consent wording, then a property-listing content check) decides
+	// capture; anything failing a gate is discarded before persistence,
+	// webhooks, or extraction.
+	if !info.IsGroup && !isOwnWhatsAppJID(s, info.Chat) && info.IsFromMe {
+		log.Printf("[broker %s] outgoing direct message ignored by no-DM ingestion policy chat=%s id=%s", s.brokerID, info.Chat.String(), info.ID)
 		return
 	}
 	if info.IsGroup {
@@ -1571,10 +1591,10 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	// broadcast-list message shows up in the direct chat with its sender, and
 	// these flags are the only marker it carries. Recorded as evidence for the
 	// opt-in DM capture path; the sender+content gates decide capture.
-	if info.Multicast {
+	if multicast {
 		payloadData["multicast"] = true
 	}
-	if info.IsIncomingBroadcast() {
+	if incomingBroadcast {
 		payloadData["incoming_broadcast"] = true
 	}
 	if msgType, ok := payloadData["message_type"].(string); ok && msgType != "" && msgType != "unknown" {

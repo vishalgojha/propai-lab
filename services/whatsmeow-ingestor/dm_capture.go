@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.mau.fi/whatsmeow/types"
 )
 
 // Opt-in capture of property-listing direct messages.
@@ -160,4 +162,28 @@ func looksLikePropertyListing(text string) bool {
 		signals++
 	}
 	return signals >= 2
+}
+
+// remapBroadcastList rekeys an incoming broadcast-list message onto the list
+// owner's direct chat. The protocol delivers list broadcasts with the list
+// JID as Chat and the list owner as Sender; rekeying lets the opt-in DM gates
+// in insertRawMessage treat the message exactly like an ordinary DM from that
+// sender. Returns false when the message is not an incoming list broadcast:
+// statuses, the owner's own outgoing list copies, and broadcasts with no
+// sender identity all stay dropped.
+func remapBroadcastList(info *types.MessageInfo) bool {
+	if info.Chat.Server != types.BroadcastServer {
+		return false
+	}
+	if info.Chat.User == "status" {
+		return false
+	}
+	if info.IsFromMe {
+		return false
+	}
+	if info.Sender.IsEmpty() {
+		return false
+	}
+	info.Chat = info.Sender
+	return true
 }
