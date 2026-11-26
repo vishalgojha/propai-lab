@@ -254,14 +254,22 @@ function whatsappGroupDisplayName(group: Pick<OnboardingGroup, "group_name">): s
   return name;
 }
 
-const REAL_ESTATE_GROUP_NAME_PATTERN = /\b(real\s*estate|realty|properties|property|builders?|broker(?:s|age)?|flats?|apartments?|housing|rera|rent|sale|commercial|residential|industrial|shops?|offices?|warehouses?|land|plots?|inventory|construction|development)\b/i;
+const REAL_ESTATE_GROUP_NAME_PATTERN = /\b(real\s*estate|realty|realtors?|estates?|acres?|properties|property|builders?|broker(?:s|age)?|flats?|apartments?|housing|rera|rentals?|lease|sale|commercial|residential|industrial|shops?|offices?|warehouses?|land|plots?|inventory|construction|development|bhk|homes?|proptech)\b/i;
+
+// PropAI/Propi product groups (the workspace's own product groups) are never
+// pre-checked in a sharing restore; the broker ticks them explicitly if wanted.
+const PROPAI_INTERNAL_GROUP_PATTERN = /^prop\s?(ai|i)\b/i;
 
 const NON_PROPERTY_GROUP_NAME_HINTS: Array<{ pattern: RegExp; topic: string }> = [
-  { pattern: /\b(family|families|relatives|cousins?|friends?)\b/i, topic: "personal or family" },
-  { pattern: /\b(hare\s*krishna|bhajan|bhakti|kirtan|satsang|temple|mandir|church|mosque|prayer)\b/i, topic: "religious or devotional" },
+  { pattern: /\b(family|families|relatives|cousins?|friends?|personal)\b/i, topic: "personal or family" },
+  { pattern: /\b(hare\s*krishna|bhajan|bhakti|kirtan|satsang|temple|mandir|church|mosque|prayer|katha)\b/i, topic: "religious or devotional" },
   { pattern: /\b(school|college|classmates?|students?|tuition|alumni|batchmates?)\b/i, topic: "school or college" },
   { pattern: /\b(cricket|football|badminton|sports?|gaming|gamers?)\b/i, topic: "sports or gaming" },
   { pattern: /\b(good\s*morning|gm\s*(?:wishes|messages)|daily\s*wishes|festival\s*wishes)\b/i, topic: "greetings or wishes" },
+  { pattern: /\b(singles|socialise|socialising|socialize|socializing)\b/i, topic: "social or dating" },
+  { pattern: /\b(jamming|music)\b/i, topic: "music" },
+  { pattern: /\b(catering|tiffin)\b/i, topic: "food or catering" },
+  { pattern: /\b(healing|yoga|meditation)\b/i, topic: "health or wellness" },
 ];
 
 function whatsappGroupTopicHint(group: Pick<OnboardingGroup, "group_name">): string | null {
@@ -1255,6 +1263,8 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
   const [marketSharing, setMarketSharing] = useState<MarketSharingState>(EMPTY_MARKET_SHARING);
   const [sharingError, setSharingError] = useState<string | null>(null);
   const [pendingSharing, setPendingSharing] = useState<{ jids: string[]; allowUnclear: string[] } | null>(null);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [restoreChecked, setRestoreChecked] = useState<Set<string>>(new Set());
   const [includedUnclear, setIncludedUnclear] = useState<Set<string>>(new Set());
   const [savingSharing, setSavingSharing] = useState(false);
 
@@ -1339,6 +1349,30 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     }
     setMessage(`${baseMessage} ${buildSharingOutcomeMessage({ confirmedJids, attemptedShared: result.attempted, beforeActive: result.beforeActive, afterActive: result.state.activeJids, afterRevoked: result.state.revokedJids, afterShareClassByJid: result.state.shareClassByJid })}`);
   }, [computeSharingSet, confirmSharing, marketSharing.available]);
+
+  // Restore flow for paused (previously consented) groups: the broker reviews
+  // the paused list, unticks any group, and confirms once. Property-named
+  // groups restore directly; unclear names go with allow_unclear because the
+  // broker just explicitly confirmed them again here. Non-property groups are
+  // never listed, and groups never consented before have no paused state, so
+  // they only ever enter through the per-group include in the selection dialog.
+  const openRestore = useCallback(() => {
+    const nameByJid = new Map((data?.groups ?? []).map((group) => [group.group_jid, whatsappGroupDisplayName(group)]));
+    const restorable = Array.from(selectedGroups).filter((jid) => marketSharing.revokedJids.has(jid) && marketSharing.shareClassByJid[jid] !== "non_property");
+    setRestoreChecked(new Set(restorable.filter((jid) => !PROPAI_INTERNAL_GROUP_PATTERN.test(nameByJid.get(jid) ?? ""))));
+    setRestoreOpen(true);
+  }, [data, marketSharing, selectedGroups]);
+
+  const confirmRestore = useCallback(async () => {
+    const jids = Array.from(restoreChecked);
+    setRestoreOpen(false);
+    if (jids.length === 0) return;
+    const allowUnclear = jids.filter((jid) => marketSharing.shareClassByJid[jid] !== "property");
+    const result = await confirmSharing(jids, allowUnclear);
+    if (result.ok && result.state.available) {
+      setMessage(buildSharingOutcomeMessage({ confirmedJids: Array.from(selectedGroups), attemptedShared: result.attempted, beforeActive: result.beforeActive, afterActive: result.state.activeJids, afterRevoked: result.state.revokedJids, afterShareClassByJid: result.state.shareClassByJid }));
+    }
+  }, [confirmSharing, marketSharing.shareClassByJid, restoreChecked, selectedGroups]);
 
   const applyDirectorySelection = useCallback((next: OnboardingGroupState) => {
     const selectable = (next.groups || []).filter((group) => group.selectable !== false && !group.opted_out);
@@ -1781,18 +1815,16 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         if (pausedJids.length === 0) return null;
         const pausedProperty = pausedJids.filter((jid) => marketSharing.shareClassByJid[jid] === "property").length;
         const pausedNever = pausedJids.filter((jid) => marketSharing.shareClassByJid[jid] === "non_property").length;
-        const pausedReview = pausedJids.length - pausedProperty - pausedNever;
         const activeSelected = Array.from(selectedGroups).filter((jid) => marketSharing.activeJids.has(jid)).length;
         return (
           <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/[0.08] px-3 py-2 text-xs text-amber-200">
-            <p>Sharing is paused for {pausedJids.length} selected group{pausedJids.length === 1 ? "" : "s"} (a WhatsApp reconnect or deselect pauses sharing). Their messages stay in your account but other brokers cannot search them until you confirm again. Currently shared: {activeSelected} of your {selectedGroups.size} selected group{selectedGroups.size === 1 ? "" : "s"}.</p>
+            <p>Sharing paused for {pausedJids.length} of your {selectedGroups.size} selected group{selectedGroups.size === 1 ? "" : "s"} ({activeSelected} shared). Paused groups stay in your account; other brokers cannot search them until you confirm again.</p>
             <p className="mt-1">
               {pausedProperty > 0 && <>Re-confirming restores the {pausedProperty} property-named group{pausedProperty === 1 ? "" : "s"}. </>}
-              {pausedReview > 0 && <>To share any of the other {pausedReview} paused group{pausedReview === 1 ? "" : "s"}, tick {pausedReview === 1 ? "it" : "them"} individually in the confirmation dialog. </>}
               {pausedNever > 0 && <>{pausedNever} {pausedNever === 1 ? "is" : "are"} not a property group and can never be shared.</>}
             </p>
-            <button type="button" onClick={requestSelectionConfirmation} disabled={savingSelection || savingSharing} className="mt-1.5 rounded-md border border-amber-400/40 px-2 py-0.5 font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-40">
-              {pausedProperty > 0 ? `Re-confirm ${pausedProperty} property group${pausedProperty === 1 ? "" : "s"}; review the rest` : "Review sharing groups"}
+            <button type="button" onClick={openRestore} disabled={savingSelection || savingSharing} className="mt-1.5 rounded-md border border-amber-400/40 px-2 py-0.5 font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-40">
+              {savingSharing ? "Confirming..." : "Review and restore sharing"}
             </button>
           </div>
         );
@@ -2223,6 +2255,59 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
             <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-white/10 bg-zinc-950 px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-row sm:justify-end">
               <button type="button" onClick={() => setSelectionConfirmationOpen(false)} className="w-full rounded-lg border border-white/10 px-3 py-2.5 text-xs font-semibold text-zinc-300 hover:bg-white/5 sm:w-auto sm:py-2">Cancel</button>
               <button type="button" onClick={() => { setSelectionConfirmationOpen(false); void handleConfirmSelection(); }} className="w-full rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-2.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20 sm:w-auto sm:py-2">Allow saving for {selectedGroups.size} group{selectedGroups.size === 1 ? "" : "s"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {restoreOpen && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:px-4" role="dialog" aria-modal="true" aria-labelledby="restore-sharing-title">
+          <div className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-white/10 bg-zinc-950 shadow-2xl shadow-black/50 sm:max-h-[85vh] sm:max-w-md sm:rounded-xl">
+            <div className="flex shrink-0 items-start gap-3 border-b border-white/10 px-5 py-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-amber-400/25 bg-amber-500/10">
+                <Check className="h-4 w-4 text-amber-300" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 id="restore-sharing-title" className="text-sm font-semibold text-white">Restore paused sharing</h2>
+              </div>
+              <button type="button" onClick={() => setRestoreOpen(false)} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close restore sharing">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              {(() => {
+                const nameByJid = new Map((data?.groups ?? []).map((group) => [group.group_jid, whatsappGroupDisplayName(group)]));
+                const restorable = Array.from(selectedGroups).filter((jid) => marketSharing.revokedJids.has(jid) && marketSharing.shareClassByJid[jid] !== "non_property");
+                const neverJids = Array.from(selectedGroups).filter((jid) => marketSharing.revokedJids.has(jid) && marketSharing.shareClassByJid[jid] === "non_property");
+                const internalCount = restorable.filter((jid) => PROPAI_INTERNAL_GROUP_PATTERN.test(nameByJid.get(jid) ?? "")).length;
+                return (
+                  <>
+                    <p className="text-xs leading-5 text-zinc-400">These {restorable.length} group{restorable.length === 1 ? "" : "s"} were shared before and are paused now. Ticked groups are shared again when you confirm: other authenticated PropAI brokers' assistants can search their new messages for property requests. Nothing is posted anywhere, and your saved group selection is unchanged.</p>
+                    <div className="mt-3 max-h-60 space-y-0.5 overflow-y-auto rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-200">
+                      {restorable.map((jid) => (
+                        <label key={jid} className="flex items-center gap-2 py-0.5">
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5 accent-amber-400"
+                            checked={restoreChecked.has(jid)}
+                            onChange={() => setRestoreChecked((current) => { const next = new Set(current); if (next.has(jid)) { next.delete(jid); } else { next.add(jid); } return next; })}
+                          />
+                          <span className="min-w-0 truncate">{nameByJid.get(jid) ?? jid}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {internalCount > 0 && (
+                      <p className="mt-2 text-[11px] leading-4 text-zinc-500">PropAI/Propi product groups are left unticked. Tick one only if you want it shared.</p>
+                    )}
+                    {neverJids.length > 0 && (
+                      <p className="mt-2 text-[11px] leading-4 text-amber-200/80">Not property groups, stay unshared: {neverJids.map((jid) => nameByJid.get(jid) ?? jid).join(", ")}.</p>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+            <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-white/10 bg-zinc-950 px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setRestoreOpen(false)} className="w-full rounded-lg border border-white/10 px-3 py-2.5 text-xs font-semibold text-zinc-300 hover:bg-white/5 sm:w-auto sm:py-2">Cancel</button>
+              <button type="button" disabled={restoreChecked.size === 0 || savingSharing} onClick={() => void confirmRestore()} className="w-full rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:py-2">{savingSharing ? "Restoring..." : `Restore sharing for ${restoreChecked.size} group${restoreChecked.size === 1 ? "" : "s"}`}</button>
             </div>
           </div>
         </div>

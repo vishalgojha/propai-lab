@@ -140,17 +140,21 @@ def search_bounds(body: PropertySearch, cursor: dict | None) -> tuple[str, str, 
 # includes that exact group. Patterns must stay in sync with
 # frontend/src/app/connections/page.tsx.
 REAL_ESTATE_GROUP_NAME_PATTERN = re.compile(
-    r"\b(real\s*estate|realty|properties|property|builders?|broker(?:s|age)?|flats?|"
-    r"apartments?|housing|rera|rent|sale|commercial|residential|industrial|shops?|"
-    r"offices?|warehouses?|land|plots?|inventory|construction|development)\b",
+    r"\b(real\s*estate|realty|realtors?|estates?|acres?|properties|property|builders?|broker(?:s|age)?|flats?|"
+    r"apartments?|housing|rera|rentals?|lease|sale|commercial|residential|industrial|shops?|"
+    r"offices?|warehouses?|land|plots?|inventory|construction|development|bhk|homes?|proptech)\b",
     re.IGNORECASE,
 )
 NON_PROPERTY_GROUP_NAME_HINTS = (
-    (re.compile(r"\b(family|families|relatives|cousins?|friends?)\b", re.IGNORECASE), "personal or family"),
-    (re.compile(r"\b(hare\s*krishna|bhajan|bhakti|kirtan|satsang|temple|mandir|church|mosque|prayer)\b", re.IGNORECASE), "religious or devotional"),
+    (re.compile(r"\b(family|families|relatives|cousins?|friends?|personal)\b", re.IGNORECASE), "personal or family"),
+    (re.compile(r"\b(hare\s*krishna|bhajan|bhakti|kirtan|satsang|temple|mandir|church|mosque|prayer|katha)\b", re.IGNORECASE), "religious or devotional"),
     (re.compile(r"\b(school|college|classmates?|students?|tuition|alumni|batchmates?)\b", re.IGNORECASE), "school or college"),
     (re.compile(r"\b(cricket|football|badminton|sports?|gaming|gamers?)\b", re.IGNORECASE), "sports or gaming"),
     (re.compile(r"\b(good\s*morning|gm\s*(?:wishes|messages)|daily\s*wishes|festival\s*wishes)\b", re.IGNORECASE), "greetings or wishes"),
+    (re.compile(r"\b(singles|socialise|socialising|socialize|socializing)\b", re.IGNORECASE), "social or dating"),
+    (re.compile(r"\b(jamming|music)\b", re.IGNORECASE), "music"),
+    (re.compile(r"\b(catering|tiffin)\b", re.IGNORECASE), "food or catering"),
+    (re.compile(r"\b(healing|yoga|meditation)\b", re.IGNORECASE), "health or wellness"),
 )
 
 

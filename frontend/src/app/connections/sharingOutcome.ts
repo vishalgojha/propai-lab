@@ -32,7 +32,7 @@ export function buildSharingOutcomeMessage(input: SharingOutcomeInput): string {
       `${newlyShared} group${newlyShared === 1 ? "" : "s"} newly shared with other authenticated PropAI brokers' assistants.`
     );
   } else {
-    parts.push("Sharing unchanged: the groups this confirmation covers were already shared.");
+    parts.push("Sharing unchanged: the groups covered were already shared.");
   }
   parts.push(
     `Shared: ${activeSelected} of your ${confirmedJids.length} selected group${confirmedJids.length === 1 ? "" : "s"}.`
@@ -42,21 +42,13 @@ export function buildSharingOutcomeMessage(input: SharingOutcomeInput): string {
     const paused = unshared.filter((jid) => afterRevoked.has(jid)).length;
     const neverShared = unshared.length - paused;
     const notProperty = unshared.filter((jid) => afterShareClassByJid[jid] === "non_property").length;
-    const reviewable = unshared.length - notProperty;
     const split: string[] = [];
     if (paused > 0) split.push(`${paused} paused`);
     if (neverShared > 0) split.push(`${neverShared} never shared`);
-    parts.push(`${unshared.length} stay${unshared.length === 1 ? "s" : ""} unshared (${split.join(", ")}).`);
-    if (reviewable > 0) {
-      parts.push(
-        reviewable === 1
-          ? "To share it, tick it individually in the confirmation dialog."
-          : "To share one, tick it individually in the confirmation dialog."
-      );
-    }
+    parts.push(`${unshared.length} not shared: ${split.join(", ")}.`);
     if (notProperty > 0) {
       parts.push(
-        `${notProperty} ${notProperty === 1 ? "is" : "are"} not a property group and can never be shared.`
+        `${notProperty} ${notProperty === 1 ? "is" : "are"} not a property group${notProperty === 1 ? "" : "s"} and can never be shared.`
       );
     }
   } else if (confirmedJids.length > 0) {
