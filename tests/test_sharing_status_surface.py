@@ -80,6 +80,7 @@ class _FakeQuery:
     def select(self, *args, **kwargs): return self
     def eq(self, *args, **kwargs): return self
     def in_(self, *args, **kwargs): return self
+    def neq(self, *args, **kwargs): return self
     def order(self, *args, **kwargs): return self
     def limit(self, *args, **kwargs): return self
     def execute(self): return SimpleNamespace(data=self._rows)
@@ -103,16 +104,53 @@ def test_connection_health_distinguishes_paused_from_never_shared(monkeypatch):
             {'group_jid': 'C@g.us', 'revoked_at': '2026-11-24T09:00:00Z'},
         ],
         'broker_whatsapp_devices': [{'created_at': '2026-11-25T13:18:08Z', 'updated_at': '2026-11-25T13:18:08Z'}],
+        'whatsapp_group_selection_receipts': [{'capture_consent_version': 'broker-group-capture-v1'}],
     }
     monkeypatch.setattr(external_agent, 'storage', _health_storage(tables))
     health = external_agent._connection_health('tenant')
     assert len(health) == 1
+    assert health[0]['capture_consent_active'] is True
+    assert health[0]['saving_state'] == 'on'
     row = health[0]
     assert row['selected_groups'] == 2
     assert row['shared_groups'] == 1  # only A has an unrevoked consent
     assert row['paused_groups'] == 1  # B revoked but still selected: paused, not "not shared"
     assert row['last_device_change_at'] == '2026-11-25T13:18:08Z'
     assert row['is_active'] is True
+
+
+def _health_row(selected, receipts):
+    tables = {
+        'org_whatsapp_connections': [{'id': 186, 'broker_id': 'phone-x', 'phone_number': '9100',
+                                      'instance_name': 'X', 'is_active': True, 'extraction_status': 'stopped'}],
+        'organization_group_connections': [{'group_jid': j} for j in selected],
+        'broker_market_raw_source_consents': [],
+        'broker_whatsapp_devices': [],
+        'whatsapp_group_selection_receipts': receipts,
+    }
+    return tables
+
+
+def test_connection_health_capture_off_when_selected_but_no_receipt(monkeypatch):
+    monkeypatch.setattr(external_agent, 'storage', _health_storage(_health_row(['A@g.us', 'B@g.us'], [])))
+    row = external_agent._connection_health('tenant')[0]
+    assert row['capture_consent_active'] is False
+    assert row['saving_state'] == 'off_until_owner_confirms_groups'
+    assert row['selected_groups'] == 2
+
+
+def test_connection_health_zero_selection_is_not_called_off(monkeypatch):
+    monkeypatch.setattr(external_agent, 'storage', _health_storage(_health_row([], [])))
+    row = external_agent._connection_health('tenant')[0]
+    assert row['saving_state'] == 'no_groups_selected'
+    assert row['capture_consent_active'] is False
+
+
+def test_connection_health_current_receipt_means_saving_on(monkeypatch):
+    receipts = [{'capture_consent_version': 'broker-group-capture-v1'}]
+    monkeypatch.setattr(external_agent, 'storage', _health_storage(_health_row(['A@g.us'], receipts)))
+    row = external_agent._connection_health('tenant')[0]
+    assert row['saving_state'] == 'on' and row['capture_consent_active'] is True
 
 
 def test_attention_response_carries_connection_health_and_no_restore_note(monkeypatch):

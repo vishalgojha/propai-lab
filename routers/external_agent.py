@@ -1320,6 +1320,22 @@ def _connection_health(tenant_id: str) -> list[dict]:
             "whatsapp_connection_key", conn.get("broker_id") or "").limit(50).execute().data or []
         last_device_change = max(
             (d.get("updated_at") or d.get("created_at") or "" for d in devices), default=None) or None
+        # Read-only mirror of the ingestor's capture gate: group messages are
+        # saved only when this connection has a completed selection receipt
+        # carrying the current capture-consent version. Session health alone
+        # cannot show that saving is paused.
+        from routers.whatsapp_group_controls import CAPTURE_CONSENT_VERSION
+        receipts = storage.client.table("whatsapp_group_selection_receipts").select(
+            "capture_consent_version").eq("organization_id", tenant_id).eq(
+            "whatsapp_connection_id", conn["id"]).neq("state_fingerprint", "").eq(
+            "capture_consent_version", CAPTURE_CONSENT_VERSION).limit(1).execute().data or []
+        capture_consent_active = bool(receipts)
+        if not selected_jids:
+            saving_state = "no_groups_selected"
+        elif capture_consent_active:
+            saving_state = "on"
+        else:
+            saving_state = "off_until_owner_confirms_groups"
         health.append({
             "connection_id": conn["id"],
             "phone_number": conn.get("phone_number"),
@@ -1329,6 +1345,8 @@ def _connection_health(tenant_id: str) -> list[dict]:
             "selected_groups": len(selected_jids),
             "shared_groups": shared,
             "paused_groups": paused,
+            "capture_consent_active": capture_consent_active,
+            "saving_state": saving_state,
             "last_device_change_at": last_device_change,
         })
     return health

@@ -280,7 +280,13 @@ search endpoint matches.
 of the key's workspace. It is not a top-level field. Fields per entry:
 `connection_id`, `phone_number`, `instance_name`, `is_active`,
 `extraction_status`, `selected_groups`, `shared_groups`, `paused_groups`,
-`last_device_change_at`. An empty array means the workspace has no connection
+`capture_consent_active`, `saving_state`, `last_device_change_at`.
+`saving_state` is `on`, `off_until_owner_confirms_groups` (groups are selected
+but the owner has not confirmed them with the current capture consent, so new
+group messages are NOT being saved even though the phone shows connected) or
+`no_groups_selected`. Only the owner can confirm, in PropAI WhatsApp > Groups;
+an assistant must tell the owner and never confirm for them. A connected
+session alone does not mean messages are being saved. An empty array means the workspace has no connection
 rows, so confirm the key's workspace before treating it as a health result.
 
 ## Evidence and privacy rules
