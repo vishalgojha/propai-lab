@@ -231,6 +231,58 @@ X-API-Key: <value retrieved from PROPAI_API_KEY>
 Search returns at most 100 rows per page. Use `next_offset` to fetch the next
 page. The response's `scope` identifies which chat category was searched.
 
+## Answering a broker requirement from group messages
+
+`GET /messages/search` is literal substring matching, not semantic search. The
+whole `q` string is matched as ONE case-insensitive substring against the
+message text, sender, sender phone and group name. A long natural-language
+query such as `2 BHK Andheri West rent` therefore usually returns zero rows even
+when many relevant posts exist. A zero from a long query is NOT evidence that
+there is no inventory. Never report "no matches" from it.
+
+To answer a requirement (for example "3 BHK rent, Bandra West to Santacruz
+West, up to Rs 3 lakh"):
+
+1. Break the requirement into short, broad keywords and run several searches
+   with `scope=groups`: the BHK in each common spelling (`3 BHK`, `3BHK`,
+   `3 bhk`) and each locality or nearby pocket the brief covers (`Bandra`,
+   `Santacruz`, `Khar`, `Pali Hill`). Keep `limit` at 100 and set `since` to
+   the window you actually want. If `since` is omitted the API uses the last
+   30 days; an explicit window may not exceed 90 days.
+2. Filter and rank the returned rows yourself against the full requirement:
+   configuration, rent versus sale, locality, budget, furnishing and any
+   community or tenant restriction. The API does none of this for you. Posts
+   often list many flats; read the line for the flat that matches, not the
+   whole post. Different posters repeat the same listing often, so collapse
+   repeats and say when two posts may be the same flat but that is not proven.
+3. Follow `next_offset` until it is null before calling the pool covered. Each
+   page holds at most 100 rows. If you stop earlier, say that the result is a
+   sample of the retrieved window, not the complete pool.
+4. Report each match with the building or locality, size, quoted rent, last
+   posted date, poster name, and the source message `id`. Label every figure as
+   what the post said, not confirmed availability. Show flats slightly over
+   budget separately and say so. Say what is missing: "call for name", no
+   floor, no furnishing, community restrictions.
+5. Contact numbers follow the contact rules in this guide. Do not invent a
+   number, a building name or an exact match. If nothing matches after the
+   broad searches and full paging, say that no matching posts were found in the
+   captured group messages for that window and range, not that none exist.
+
+This describes how to use the API contract above. It does not change what the
+search endpoint matches.
+
+## Workspace attention and connection health
+
+`GET /workspace/attention` (scope `workspace:attention`) returns
+`{"attention": {...}, "tenant_scoped": true, "outbound_actions": "not performed",
+"sharing_note": "..."}`. The connection status is nested at
+`attention.connection_health`, an array with one entry per WhatsApp connection
+of the key's workspace. It is not a top-level field. Fields per entry:
+`connection_id`, `phone_number`, `instance_name`, `is_active`,
+`extraction_status`, `selected_groups`, `shared_groups`, `paused_groups`,
+`last_device_change_at`. An empty array means the workspace has no connection
+rows, so confirm the key's workspace before treating it as a health result.
+
 ## Evidence and privacy rules
 
 - Every response belongs to the workspace associated with the API key. Never
