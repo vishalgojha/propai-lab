@@ -60,7 +60,7 @@ export type OutreachStore = {
   statuses: Record<string, { status: OutreachStatus; at: string }>; // legacy local field, unused
 };
 
-export function parseStore(json: string | null, fallbackTemplate: string): OutreachStore {
+export function parseStore(json: string | null, fallbackTemplate: string, previousDefaults: string[] = []): OutreachStore {
   const empty: OutreachStore = { template: fallbackTemplate, assumeIndia: true, statuses: {} };
   if (!json) return empty;
   try {
@@ -73,7 +73,10 @@ export function parseStore(json: string | null, fallbackTemplate: string): Outre
       }
     }
     return {
-      template: typeof v.template === "string" && v.template.trim() ? v.template : fallbackTemplate,
+      template:
+        typeof v.template === "string" && v.template.trim() && !previousDefaults.includes(v.template)
+          ? v.template
+          : fallbackTemplate,
       // The owner confirmed "India only": +91 is the default for valid national numbers.
       assumeIndia: v.assumeIndia !== false,
       statuses,

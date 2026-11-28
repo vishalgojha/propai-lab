@@ -10,10 +10,16 @@ import {
   OUTREACH_STORE_KEY, brokerStatusKey, buildWaLink, parseStore, resolveBrokerPhone,
   type OutreachStatus, type OutreachStore,
 } from "@/lib/brokerOutreach";
+import { brokerGroupInviteUrl } from "@/lib/brokerGroupInvite";
 
 // Draft only. The owner edits and approves the wording on this page before use.
-const DRAFT_TEMPLATE =
+const BASE_DRAFT =
   "Hi, this is Vishal. I built PropAI so brokers don't have to scroll through WhatsApp groups: you search captured group messages by locality, BHK, budget and furnishing, and see the original posts. It works best with an assistant like Instinct. If you want to try it, reply here and I'll send the setup steps. If something doesn't work, just send me a screenshot.";
+const GROUP_INVITE = brokerGroupInviteUrl();
+// Owner asked for the brokers group link in the prefilled message (Nov 28). Optional line, link only.
+const DRAFT_TEMPLATE = GROUP_INVITE ? `${BASE_DRAFT}\n\nPropAI brokers WhatsApp group (optional): ${GROUP_INVITE}` : BASE_DRAFT;
+// A saved template that is still the previous unedited default moves to the new default; edited templates are kept.
+const PREVIOUS_DEFAULT_TEMPLATES = [BASE_DRAFT];
 
 type Row = {
   id: number | string;
@@ -54,7 +60,7 @@ export default function BrokerOutreachPage() {
   const [onlySendable, setOnlySendable] = useState(true);
 
   useEffect(() => {
-    setStore(parseStore(window.localStorage.getItem(OUTREACH_STORE_KEY), DRAFT_TEMPLATE));
+    setStore(parseStore(window.localStorage.getItem(OUTREACH_STORE_KEY), DRAFT_TEMPLATE, PREVIOUS_DEFAULT_TEMPLATES));
     setReady(true);
   }, []);
   useEffect(() => {

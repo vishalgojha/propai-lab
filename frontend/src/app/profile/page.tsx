@@ -8,6 +8,7 @@ import { ChevronDown, Smartphone, Save, Users, CreditCard, Key, Settings, Mail, 
 import { getProfile, saveProfile, getCurrentOrg, getPhones, getStats, isLiveWhatsAppConnection, updateOrganization, type Phone, getPhoneDirectory, addPhoneDirectory, patchPhoneDirectory, removePhoneDirectory, type PhoneDirectoryEntry } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 import { getSupabase } from "@/lib/auth";
+import BrokerGroupInviteCard from "@/components/BrokerGroupInviteCard";
 
 const CITIES = [
   "Mumbai", "Delhi / NCR", "Bangalore", "Pune", "Hyderabad",
@@ -608,6 +609,8 @@ export function ProfilePage() {
                 </div>
               )}
             </section></>}
+
+            <BrokerGroupInviteCard />
 
             {/* Workspace Info (read-only) */}
             <section className="rounded-2xl border border-white/10 p-6">

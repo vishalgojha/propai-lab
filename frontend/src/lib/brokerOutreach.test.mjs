@@ -24,3 +24,12 @@ assert.equal(parseStore(null, "T").assumeIndia, true);
 assert.equal(parseStore(JSON.stringify({assumeIndia:false}), "T").assumeIndia, false);
 assert.equal(parseStore("{}", "T").assumeIndia, true);
 console.log("ok");
+
+// Previous unedited default moves to the new default; an edited template is kept.
+{
+  const prev = ["old default"];
+  assert.equal(parseStore(JSON.stringify({ template: "old default" }), "new default", prev).template, "new default");
+  assert.equal(parseStore(JSON.stringify({ template: "my edit" }), "new default", prev).template, "my edit");
+  assert.equal(parseStore(null, "new default", prev).template, "new default");
+}
+console.log("brokerOutreach template migration tests passed");
