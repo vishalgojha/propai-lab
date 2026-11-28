@@ -1499,7 +1499,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       setSelectedGroups(confirmed);
       const baseMessage = !refreshed
         ? "Selection saved and confirmed. Group refresh is temporarily unavailable; the saved selection remains active."
-        : "Selection saved and confirmed. New messages from these groups will be saved for you and your assistant to search. Extraction stays under your separate Start control.";
+        : "Capture is on. New messages from these groups will be saved for you and your assistant to search. Optional extraction is separate.";
       if (!refreshed) {
         setError(null);
       }
@@ -1516,7 +1516,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         if (receipt?.complete && receipt.request_id === requestId && exact) {
           setSelectedGroups(new Set(receipt.selected_group_jids));
           setData((current) => current ? {...current, selected_count: receipt.selected_group_jids.length, selection_confirmation: receipt, capture_consent_active: true, groups: current.groups.map((group) => ({...group, connected: receipt.selected_group_jids.includes(group.group_jid), opted_out: receipt.selected_group_jids.includes(group.group_jid) ? false : group.opted_out}))} : current);
-          const receiptBaseMessage = "Selection saved and confirmed. Extraction remains under your separate Start control.";
+          const receiptBaseMessage = "Capture is on. New messages from these groups will be saved for you and your assistant to search. Optional extraction is separate.";
           setMessage(receiptBaseMessage);
           setError(null);
           await runSharingOutcome(receipt.selected_group_jids, receiptBaseMessage);
@@ -1808,7 +1808,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       )}
       {data && persistedSelectedCount > 0 && !receiptMatches && (
         <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-amber-200">
-          <span>{savingPaused ? "New group messages are not being saved right now. Your group choices are kept, but saving stays off until you confirm them." : "Your group choices are saved, but the save is not verified yet, so Start is unavailable. Confirm the selection to finish."} Saved groups that are no longer in your WhatsApp directory are removed and marked opted out. Listings stay private to your workspace unless shared-market publication is separately enabled for your workspace.</span>
+          <span>{savingPaused ? "New group messages are not being saved right now. Your group choices are kept, but saving stays off until you confirm them." : "Your group choices are saved, but capture is waiting for your confirmation."} Saved groups that are no longer in your WhatsApp directory are removed and marked opted out. Listings stay private to your workspace unless shared-market publication is separately enabled for your workspace.</span>
           <button type="button" onClick={requestSelectionConfirmation} disabled={activeControl !== null || savingSelection || hasUnpersistedSelection || (data.cap != null && selectedGroups.size > data.cap)} className="inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40">
             <Check className="h-3 w-3" /> {savingSelection ? "Saving selection..." : "Confirm saved selection"}
           </button>
@@ -1860,21 +1860,21 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         </div>
         <p className="mt-1 leading-5">
           {savingPaused
-            ? "This phone is connected, but PropAI is not saving new group messages until you confirm your groups and choose Allow. Nothing is saved from unconfirmed groups, and messages that arrive while saving is off are not stored."
+            ? "This phone is connected, but PropAI is not saving new group messages until you confirm your groups. Nothing is saved from unconfirmed groups, and messages that arrive while saving is off are not stored."
             : captureConnected
             ? "New messages from this phone’s confirmed groups are saved for chat search. Messages from other groups and private chats are never saved, except property-looking messages from broker senders you select below."
             : "Reconnect this phone to resume saving new group messages for chat search. Private messages are not captured, except property-looking messages from broker senders you select."}
-          {" "}Confirm your group choices below to allow saving; you can change them or turn saving off at any time. Starting extraction does not import chat history.
+          {" "}Confirm your group choices below to start saving; you can change them or turn saving off at any time. Optional extraction is separate and does not import chat history.
         </p>
       </div>
 
       <DMCaptureSection phoneId={phone.id} />
 
       {data && (
-        <div className="mt-4 border-y border-white/10 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <details className="mt-4 border-y border-white/10 py-4">
+          <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-wider text-zinc-300">Optional extraction</div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-zinc-300">Optional extraction <span className="font-normal normal-case tracking-normal text-zinc-500">· not required for capture or search</span></div>
               <div className="mt-1 text-[11px] text-zinc-500">
                 {data.extraction_status === "running"
                   ? "Extraction is set to running. While the extraction processor is active, queued messages are processed into listings and requirements."
@@ -1894,21 +1894,21 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
             }`}>
               {data.extraction_status === "running" ? "Running" : data.extraction_status === "paused" ? "Paused" : "Stopped"}
             </span>
-          </div>
+          </summary>
           {persistedSelectedCount === 0 && !hasUnpersistedSelection && (
             <div className="mt-3 border-l-2 border-amber-400/50 bg-amber-400/[0.04] px-3 py-2 text-[11px] text-amber-200">
-              Select and confirm at least one group to allow saving and before starting optional extraction. No group messages are saved until you allow saving here.
+              Select and confirm at least one group to start saving. Optional extraction is separate. No group messages are saved until you confirm here.
             </div>
           )}
           {hasUnpersistedSelection && (
             <div className="mt-3 border-l-2 border-cyan-400/50 bg-cyan-400/[0.04] px-3 py-2 text-[11px] text-cyan-200">
-              {selectedGroups.size} group{selectedGroups.size === 1 ? " is" : "s are"} checked locally. Confirm the selection above before starting.
+              {selectedGroups.size} group{selectedGroups.size === 1 ? " is" : "s are"} checked locally. Confirm the selection above to start saving.
             </div>
           )}
           {selectionConfirmed && (
             <div className="mt-3 flex items-center gap-2 border-l-2 border-emerald-400/50 bg-emerald-400/[0.04] px-3 py-2 text-[11px] text-emerald-200">
               <Check className="h-3.5 w-3.5 shrink-0" />
-              <span className="min-w-0 flex-1">{persistedSelectedCount} group{persistedSelectedCount === 1 ? " is" : "s are"} confirmed for saving and optional extraction.</span>
+              <span className="min-w-0 flex-1">{persistedSelectedCount} group{persistedSelectedCount === 1 ? " is" : "s are"} confirmed for saving. Optional extraction is separate.</span>
               {data?.capture_consent_active && (
                 <button type="button" onClick={() => void handleRevokeCaptureConsent()} disabled={revokingConsent} className="shrink-0 rounded border border-white/15 px-2 py-1 text-[10px] font-semibold text-zinc-300 hover:bg-white/5 disabled:opacity-40">
                   {revokingConsent ? "Turning off..." : "Turn saving off"}
@@ -1924,7 +1924,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
           {persistedSelectedCount > 0 && !hasUnpersistedSelection && !receiptMatches && (
             <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-amber-400/40 bg-amber-500/[0.08] px-3 py-2.5">
               <div className="min-w-0 flex-1 text-[11px] leading-5 text-amber-100">
-                {savingPaused ? "New group messages are not being saved right now. Confirm your groups to resume saving; extraction is separate." : "One confirmation is required before extraction can start."} Saved groups that are no longer in your WhatsApp directory are removed and marked opted out.
+                {savingPaused ? "New group messages are not being saved right now. Confirm your groups to resume saving; extraction is separate." : "Confirm your groups above to start saving. You do not need to start extraction for capture or search."} Saved groups that are no longer in your WhatsApp directory are removed and marked opted out.
               </div>
               <button type="button" onClick={requestSelectionConfirmation} disabled={activeControl !== null || savingSelection || (data.cap != null && selectedGroups.size > data.cap)} className="inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40">
                 <Check className="h-3 w-3" /> {savingSelection ? "Saving selection..." : `Confirm ${persistedSelectedCount} saved group${persistedSelectedCount === 1 ? "" : "s"}`}
@@ -1956,7 +1956,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
               </button>
             )}
           </div>
-        </div>
+        </details>
       )}
 
       {data && (

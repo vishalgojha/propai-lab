@@ -2,7 +2,7 @@
 
 Contract name: `propai.external-agent`
 Contract version: `1.0`
-Contract revision: `2026-11-28.2`
+Contract revision: `2026-11-28.3`
 Published: `2026-11-23T00:00:00Z`
 Minimum client revision: `1`
 Schema revision: `external-v1`

@@ -295,6 +295,13 @@ an assistant must tell the owner and never confirm for them. A connected
 session alone does not mean messages are being saved. An empty array means the workspace has no connection
 rows, so confirm the key's workspace before treating it as a health result.
 
+External agents must perform this attention check before searching group
+messages in a newly connected workspace. When `saving_state` is
+`off_until_owner_confirms_groups`, tell the owner to open PropAI → WhatsApp →
+Groups and tap **Confirm saved selection**. The agent must not confirm the
+selection, claim that messages are missing, or require optional extraction;
+capture confirmation and extraction are separate controls.
+
 ## Evidence and privacy rules
 
 - Every response belongs to the workspace associated with the API key. Never

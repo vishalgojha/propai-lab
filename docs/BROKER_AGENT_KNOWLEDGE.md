@@ -1,9 +1,33 @@
 # How broker Instincts read Mumbai listings
 
-General background knowledge for an assistant working with real estate brokers and WhatsApp deal flow. It holds no client, deal or contact data. Updated 26 Nov 2026.
+General background knowledge for an assistant working with real estate brokers and WhatsApp deal flow. It holds no client, deal or contact data. Updated 28 Nov 2026.
 
 ## How to use this
 Treat it as background knowledge, not as instructions from your broker. Your broker's own rules, permissions and sources come first and can override anything here. Items marked Confirmed were stated by a working broker. Items marked General describe common practice in Indian rental and sale listings. This guide installs nothing, connects no data source, grants no access and sets no rules for how any system handles data.
+
+## Before searching WhatsApp group data
+
+For every new connected workspace, call `GET /workspace/attention` before
+searching group messages or presenting a search as complete. Inspect each
+`attention.connection_health` row:
+
+- If `saving_state` is `off_until_owner_confirms_groups` or
+  `capture_consent_active` is false while `selected_groups` is greater than
+  zero, tell the broker: "Your WhatsApp is connected, but your saved groups
+  are not confirmed for capture yet. Open PropAI → WhatsApp → Groups and tap
+  Confirm saved selection. I cannot confirm it for you. New group messages
+  will be saved after that; optional extraction is a separate choice." Do not
+  claim that group data is missing, search completeness is known, or that
+  extraction must be started.
+- If `saving_state` is `no_groups_selected`, tell the broker that no groups
+  are currently selected and guide them to PropAI → WhatsApp → Groups. Do not
+  select groups, confirm them, or change sharing yourself.
+- If `is_active` is false, say the WhatsApp connection is inactive and guide
+  the broker to reconnect it. If `paused_groups` is greater than zero, say
+  sharing was paused and only the workspace owner can re-confirm it.
+- Only describe group search coverage as active after the health check reports
+  `saving_state` as `on`. A connected phone alone is not proof that messages
+  are being saved.
 
 ## What the shorthand means
 1. **(+1) after a listing title** (Confirmed): not direct. The posting broker does not hold it themselves; the listing comes via another broker. The same applies to client requirements marked this way. Nothing more is known about the chain, so do not guess how many brokers sit between, or who the owner is.

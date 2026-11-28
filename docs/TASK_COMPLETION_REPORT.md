@@ -1558,3 +1558,13 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Independent completion verification: PASS. Acceptance conditions checked: (1) normal Instinct handoff no longer mentions REST/API/MCP — PASS; (2) copy tells Instinct to save the connection automatically — PASS; (3) technical contract still identifies the internal REST transport and existing approval endpoints — PASS; (4) contract revision is bumped — PASS; (5) no schema or tenant-boundary behavior changed — PASS.
 - Next action: Ask Instinct to start a new PropAI connection session and verify that it stores the returned connection automatically after approval.
 
+### Make WhatsApp group setup a single required broker action (2026-11-28)
+
+- Requested outcome: Stop presenting group capture as a two-step setup. Brokers should review their checked WhatsApp groups and confirm once; optional extraction must not appear to be required for capture or search.
+- Files/services changed: `frontend/src/app/connections/page.tsx`; the pending Instinct knowledge/API guidance remains aligned in `docs/BROKER_AGENT_KNOWLEDGE.md`, `docs/EXTERNAL_AGENT_API.md`, `docs/EXTERNAL_AGENT_CONTRACT.md`, and `routers/external_agent.py`.
+- Behavior: The primary page action is now one explicit group confirmation. Optional extraction is collapsed under “Optional extraction · not required for capture or search”; capture copy no longer says “choose Allow” or implies that extraction must be started. No group selection or consent is auto-approved.
+- Verification performed: Changed-file ESLint completed with 0 errors and existing warnings only; `git diff --check` passed; the Impeccable detector returned only two pre-existing gray-on-color warnings. Independent task-verifier second pass: **PASS** for the single-action UI/copy behavior and preservation of explicit consent; authenticated browser click-through remains pending.
+- Deployment/push status: Pending commit, push, and Coolify dashboard deployment.
+- Known limitations or failures: The server still requires the broker’s explicit confirmation receipt, as intended. Optional extraction remains a separate choice and is not started by this change.
+- Next action: Deploy `propai-lab:main-app`, refresh WhatsApp → Groups, and verify that confirming the checked groups turns capture on without requiring Start optional extraction.
+
