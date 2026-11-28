@@ -115,7 +115,7 @@ export default function McpAuthorizePage() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold">Authorize MCP Access</h1>
           <p className="mt-2 text-sm text-zinc-400">
-            Connect Claude, ChatGPT, or another MCP client to your PropAI workspace.
+            Connect Claude, ChatGPT, or another MCP client to your PropAI account.
           </p>
         </div>
 
@@ -128,7 +128,7 @@ export default function McpAuthorizePage() {
             {cleanCode ? (
               <span className="break-all font-mono text-2xl font-black tracking-[0.14em] text-white">{cleanCode}</span>
             ) : (
-              "This MCP client will get access to your PropAI broker workspace tools."
+              "This MCP client will get only the tools your own PropAI account allows: broker accounts get their workspace tools, client accounts get public market search and contact saving only."
             )}
           </div>
         </div>

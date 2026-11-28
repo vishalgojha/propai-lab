@@ -341,11 +341,11 @@ function renderOAuthContinuePage(opts: {
         </div>
       </div>
       <h1>Connect PropAI MCP</h1>
-      <p class="sub">Authorize Claude, ChatGPT, or another MCP client to use your PropAI broker workspace.</p>
+      <p class="sub">Authorize Claude, ChatGPT, or another MCP client to use your PropAI account.</p>
 
       <div class="code-box">
         <div class="label">What gets access</div>
-        <div style="font-size:14px;color:#d4d4d8">Broker workspace tools, market search, listings, requirements, and saved PropAI context.</div>
+        <div style="font-size:14px;color:#d4d4d8">Only what your own account allows: brokers get their workspace tools; client accounts get public market search and contact saving only.</div>
         <div class="hint">Approval expires in ${Math.floor(opts.expiresIn / 60)} minutes</div>
       </div>
 
