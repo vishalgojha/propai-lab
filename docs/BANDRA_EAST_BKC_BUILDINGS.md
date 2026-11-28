@@ -6,6 +6,8 @@ The counts below are a floor from observed coverage, not a census of every build
 
 Access per-building documents at /api/external/v1/knowledge/buildings/{slug} where the slug is the link target below (for example /api/external/v1/knowledge/buildings/agami-eternity).
 
+Amenity sections (added 28 Nov 2026) cover Rustomjee Seasons, Rustomjee Cleon, Ten BKC, Kalpataru Magnus, Kanakia Paris, Sunteck Signia Isles and Sunteck Signia Pearl, and quote only what the developer's own page states. Buildings without an amenity section have none recorded yet; that does not mean they have none.
+
 Facts were audited against the opened public source pages listed in each building document; unsupported sentences were removed.
 
 ## in-boundary: identity from an opened non-broker page (26)
