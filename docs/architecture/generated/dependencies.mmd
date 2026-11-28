@@ -17,6 +17,7 @@ flowchart LR
         routers_audit["routers.audit"]
         routers_auth_org["routers.auth_org"]
         routers_auto_matched["routers.auto_matched"]
+        routers_billing["routers.billing"]
         routers_broker_market["routers.broker_market"]
         routers_brokers["routers.brokers"]
         routers_buildings["routers.buildings"]
@@ -167,6 +168,7 @@ flowchart LR
     routers_auth_org --> routers
     routers_auto_matched --> matching
     routers_auto_matched --> routers
+    routers_billing --> routers
     routers_broker_market --> routers
     routers_brokers --> routers
     routers_brokers --> storage
