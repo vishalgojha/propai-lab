@@ -316,11 +316,18 @@ rows, so confirm the key's workspace before treating it as a health result.
 ## Errors
 
 - `401`: the key is missing, invalid, revoked, or expired. Ask the owner to
-  create or replace it in PropAI Account → MCP; never ask them to send it in
+  create or replace it in PropAI Modules → Mcp; never ask them to send it in
   WhatsApp.
 - `403`: the key lacks the requested permission, or the operation is outside
   the contract. Do not retry with a broader scope or attempt to use a private
   message route.
+- `403` with an HTML body or Cloudflare error code `1010` (not a JSON error):
+  the request was blocked before it reached PropAI. Observed on 2026-11-28:
+  Python `urllib` with its default User-Agent was blocked, while `curl` with
+  its default User-Agent succeeded on the same endpoints. This is an empirical
+  observation, not a guarantee for any client. Send an ordinary descriptive
+  `User-Agent` header from your HTTP client and report the status if it still
+  fails.
 - `422`: a query parameter is invalid. Check the documented path and parameter
   values, then retry once with a corrected request.
 
