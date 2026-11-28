@@ -13,6 +13,12 @@ export type ToolContext = {
    * tenant-scoped data or broker tooling.
    */
   publicOnly?: boolean;
+  /**
+   * Signed-in account without a brokerage workspace: a client. The server
+   * exposes the public market tools plus client contact saving
+   * (clientTools.ts), never broker or tenant tooling.
+   */
+  clientOnly?: boolean;
 };
 
 export type PublicListing = {

@@ -13,6 +13,7 @@ import {
   oauthTokenHandler,
   setMcpUnauthorizedHeaders,
 } from "./oauth.js";
+import { isClientAccount, signupClient } from "./clientAccess.js";
 import { closeSessionRecord, createSessionRecord, touchSessionRecord } from "./sessionStore.js";
 import { resolveBrokerIdForUser, resolveTenantIdForUser, verifyPropAIToken } from "./supabase.js";
 import type { AuthenticatedUser } from "./types.js";
@@ -22,6 +23,7 @@ declare global {
     interface Request {
       user?: AuthenticatedUser;
       publicOnly?: boolean;
+      clientOnly?: boolean;
     }
   }
 }
@@ -36,6 +38,7 @@ type McpSession = {
   // Identity the session was created for; later requests must match it.
   ownerId?: string | null;
   publicOnly?: boolean;
+  clientOnly?: boolean;
 };
 
 const sessions = new Map<string, McpSession>();
@@ -45,6 +48,7 @@ const sessions = new Map<string, McpSession>();
 // same identity (or same public-only status) the session was created for.
 function sessionMatchesRequest(session: McpSession, req: Request): boolean {
   if ((session.publicOnly === true) !== (req.publicOnly === true)) return false;
+  if ((session.clientOnly === true) !== (req.clientOnly === true)) return false;
   return (session.ownerId ?? null) === (req.user?.id ?? null);
 }
 
@@ -162,8 +166,22 @@ async function authMiddleware(req: Request, res: Response, next: NextFunction) {
     const brokerId = await resolveBrokerIdForUser(user);
     const tenantId = await resolveTenantIdForUser(user);
     if (!tenantId) {
-      setMcpUnauthorizedHeaders(req, res);
-      return res.status(403).json({ error: "Tenant membership is required" });
+      // No organization: only an explicit client account (service-written
+      // client_accounts row) is let in, and only as a client. Anything else,
+      // including a failed lookup, stays refused.
+      let isClient = false;
+      try {
+        isClient = await isClientAccount(user.id);
+      } catch {
+        isClient = false;
+      }
+      if (!isClient) {
+        setMcpUnauthorizedHeaders(req, res);
+        return res.status(403).json({ error: "Tenant membership is required" });
+      }
+      req.user = { ...user, broker_id: undefined, tenant_id: undefined } as AuthenticatedUser;
+      req.clientOnly = true;
+      return next();
     }
     // The 15-day trial starts on the first successful assistant search
     // (recorded inside the search tool handlers), never on authentication
@@ -180,6 +198,30 @@ async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+// Client signup: creates a client-only account. Rate limited per IP.
+const signupHits = new Map<string, number[]>();
+app.post("/client/signup", async (req: Request, res: Response) => {
+  const ip = String(req.ip || "unknown");
+  const now = Date.now();
+  const recent = (signupHits.get(ip) || []).filter((t) => now - t < 3_600_000);
+  if (recent.length >= 10) return res.status(429).json({ error: "Too many attempts. Try again later." });
+  recent.push(now);
+  signupHits.set(ip, recent);
+  try {
+    const b = req.body ?? {};
+    const result = await signupClient({
+      email: String(b.email ?? ""),
+      password: String(b.password ?? ""),
+      fullName: String(b.full_name ?? ""),
+      phone: String(b.phone ?? ""),
+    });
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    return res.json({ ok: true, message: "Check your email to confirm your account, then connect your assistant." });
+  } catch {
+    return res.status(500).json({ error: "Could not create the account. Try again later." });
+  }
+});
+
 app.all("/mcp", authMiddleware, async (req: Request, res: Response) => {
   if (!["GET", "POST", "DELETE"].includes(req.method)) {
     return res.status(405).json({ error: "Method not allowed" });
@@ -195,11 +237,11 @@ app.all("/mcp", authMiddleware, async (req: Request, res: Response) => {
   }
 
   if (!session) {
-    const server = createMcpServer({ user: req.user, publicOnly: req.publicOnly === true });
+    const server = createMcpServer({ user: req.user, publicOnly: req.publicOnly === true, clientOnly: req.clientOnly === true });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => crypto.randomUUID(),
       onsessioninitialized: async (newSessionId) => {
-        sessions.set(newSessionId, { server, transport, ownerId: req.user?.id ?? null, publicOnly: req.publicOnly === true });
+        sessions.set(newSessionId, { server, transport, ownerId: req.user?.id ?? null, publicOnly: req.publicOnly === true, clientOnly: req.clientOnly === true });
         await createSessionRecord({
           sessionId: newSessionId,
           userId: req.user?.id,
@@ -245,7 +287,7 @@ app.all("/mcp", authMiddleware, async (req: Request, res: Response) => {
 const rawSessions = new Map<string, McpSession>();
 async function rawAuthMiddleware(req: Request, res: Response, next: NextFunction) {
   return authMiddleware(req, res, () => {
-    if (!req.user || req.publicOnly) {
+    if (!req.user || req.publicOnly || req.clientOnly) {
       setMcpUnauthorizedHeaders(req, res);
       return res.status(401).json({ error: "Sign in to PropAI to use broker raw-message search" });
     }

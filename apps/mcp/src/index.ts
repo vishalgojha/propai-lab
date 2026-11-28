@@ -34,6 +34,7 @@ import { registerMcpPrompts } from "./prompts.ts";
 import { registerMcpResources } from "./resources.ts";
 import { executeMarketSearch } from "./marketSearch.ts";
 import { recordAssistantSearchSuccess } from "./supabase.ts";
+import { createClientMcpServer } from "./clientTools.ts";
 import { createPublicMcpServer } from "./publicTools.ts";
 import { registerMarketTools } from "./tools/market.ts";
 import { registerListingTools } from "./tools/listing.ts";
@@ -153,6 +154,11 @@ export function createMcpServer(context: ToolContext = {}) {
   // public shared-market search/fetch - never broker or tenant tooling.
   if (context.publicOnly) {
     return createPublicMcpServer();
+  }
+  // Signed-in clients (explicit client account, no organization) get public
+  // tools plus contact saving only.
+  if (context.clientOnly) {
+    return createClientMcpServer(context.user);
   }
   const server = new McpServer(
     {

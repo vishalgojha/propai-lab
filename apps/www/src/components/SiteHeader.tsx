@@ -7,6 +7,7 @@ const NAV_LINKS = [
   { href: "/map", label: "Map" },
   { href: "/localities", label: "Localities" },
   { href: "/blog", label: "Blog" },
+  { href: "/client", label: "Client login" },
   { href: "/about", label: "About" },
   { href: "/contact", label: "Contact" },
 ];
