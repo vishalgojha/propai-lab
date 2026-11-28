@@ -19,4 +19,5 @@ assert(!c.includes('Account → MCP'),'stale MCP destination removed');
 assert(layout.includes('{!hasConfiguredWhatsApp || awaitingPairing ? ('),'status icon amber while awaiting pairing');
 assert(c.includes('Next: pair WhatsApp and choose groups')&&c.includes('Next: choose your groups'),'connect next-step: pair vs paired skip');
 assert(/waLive/.test(c)&&/whatsapp-status/.test(c),'paired skip is driven by live status check');
+assert(layout.includes('${!hasConfiguredWhatsApp || awaitingPairing ? "bg-amber-300"'),'sidebar status dot amber, not red, while awaiting pairing');
 console.log('PASS pairing state');

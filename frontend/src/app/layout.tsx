@@ -943,7 +943,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
               )}
             </div>
-            <div className={`h-1.5 w-1.5 shrink-0 rounded-full ${!hasConfiguredWhatsApp ? "bg-amber-300" : waConnected === null ? (liveStatusFailed ? "bg-amber-300" : "bg-zinc-500") : waConnected ? (waStale ? "bg-zinc-500" : "bg-[#6B8E63]") : "bg-red-400"}`} />
+            <div className={`h-1.5 w-1.5 shrink-0 rounded-full ${!hasConfiguredWhatsApp || awaitingPairing ? "bg-amber-300" : waConnected === null ? (liveStatusFailed ? "bg-amber-300" : "bg-zinc-500") : waConnected ? (waStale ? "bg-zinc-500" : "bg-[#6B8E63]") : "bg-red-400"}`} />
           </a>
         </div>
       </aside>
