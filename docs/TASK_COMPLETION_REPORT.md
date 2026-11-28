@@ -1630,3 +1630,13 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Known limitations or failures: PropAI has no separate Instinct web URL configured in the repository; the supported Instinct destination is the WhatsApp handoff. The button cannot be verified against a live Instinct session in this environment.
 - Next action: Commit and push this CTA change, redeploy `propai-lab:main`, then open `/client` and click the button once to verify the handoff.
 
+### Improve the public www first viewport (2026-11-28)
+
+- Requested outcome: Improve the design of `www.propai.live` for buyers and tenants.
+- Files/services changed: `apps/www/src/app/page.tsx`, `apps/www/src/app/public-theme.css`, and this report. No listing data, counters, privacy boundary, or backend behavior changed.
+- Behavior: The homepage now presents a clearer buyer/tenant-first first viewport with a compact public-market signal panel, stronger hierarchy, and a direct `Open Instinct in WhatsApp` action in the Instinct connection path. Existing browse, MCP, broker-login, and public-data flows remain intact.
+- Verification performed: `apps/www` TypeScript check exited 0; `git diff --check` passed. Impeccable detector ran once; it reported only pre-existing broad utility-selector gray-on-color warnings in `public-theme.css`, outside the new selectors. Independent task-verifier second pass: **PARTIAL** — source, type, and accessibility structure pass; live visual screenshot review and production rendering remain unverified.
+- Deployment/push status: Pending commit, push, and redeploy for the homepage design pass. The preceding CTA deployment completed successfully on `propai-lab:main` commit `0e5092c5` (deployment `a1rd1i05irxgy94wa3beihkq`).
+- Known limitations or failures: This is a focused first-viewport improvement, not a full redesign of every public route. No new imagery or fabricated market claims were introduced.
+- Next action: Commit and push the homepage pass, redeploy `propai-lab:main`, then review the public homepage at desktop and mobile widths.
+

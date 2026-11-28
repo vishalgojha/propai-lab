@@ -4,6 +4,9 @@ import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import { NoPhotosFaqJsonLd } from "@/components/NoPhotosFaq";
 
+const CLIENT_INSTINCT_MESSAGE =
+  "I am a PropAI buyer or tenant, not a broker. Use PropAI's public REST API. First read https://api.propai.live/api/public/v1/docs, then search only the public shared-market listings. Never ask me for broker credentials, private WhatsApp data, source phone numbers, or workspace access. Open the public listing URL when I want to contact a broker.";
+
 export const metadata = {
   title: "PropAI — Live Mumbai broker inventory in your AI assistant",
   description:
@@ -42,23 +45,33 @@ export default function WWWPage() {
       <SiteHeader />
       <NoPhotosFaqJsonLd />
       <main id="main-content">
-        <section className="mp-container px-4 lg:px-6 pt-14 lg:pt-24 pb-10 max-w-5xl mx-auto">
-          <p className="mp-eyebrow"><span /> Live listings from Mumbai&apos;s broker networks</p>
-          <h1 className="text-[34px] lg:text-[54px] leading-[1.05] font-bold max-w-3xl">
-            Search Mumbai&apos;s live broker inventory through your own <em className="text-green-400 not-italic">AI assistant</em>.
-          </h1>
-          <p className="mt-5 max-w-2xl text-[15px] lg:text-[17px] text-zinc-400 leading-relaxed">
-            PropAI keeps a live inventory of the listings Mumbai brokers publish to their shared
-            market. Connect your assistant once and ask it for places the way you&apos;d ask a
-            broker friend - no account, no signup, no portal maze.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <a href="#connect" className="site-primary-cta">
-              Connect your assistant <ArrowRight className="inline h-4 w-4" aria-hidden="true" />
-            </a>
-            <Link href="/search" className="site-login-link">
-              Browse listings on the site instead
-            </Link>
+        <section className="home-hero mp-container px-4 lg:px-6 pt-12 lg:pt-20 pb-10 max-w-5xl mx-auto">
+          <div className="home-hero-grid">
+            <div>
+              <p className="mp-eyebrow"><span /> Live listings from Mumbai&apos;s broker networks</p>
+              <h1 className="text-[34px] lg:text-[54px] leading-[1.05] font-bold max-w-3xl">
+                Search Mumbai&apos;s live broker inventory through your own <em className="text-green-400 not-italic">AI assistant</em>.
+              </h1>
+              <p className="mt-5 max-w-2xl text-[15px] lg:text-[17px] text-zinc-400 leading-relaxed">
+                PropAI keeps a live inventory of the listings Mumbai brokers publish to their shared
+                market. Ask for a place naturally, see how fresh it is, then continue with the broker.
+              </p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <a href="#connect" className="site-primary-cta">
+                  Connect your assistant <ArrowRight className="inline h-4 w-4" aria-hidden="true" />
+                </a>
+                <Link href="/search" className="site-login-link">
+                  Browse listings on the site instead
+                </Link>
+              </div>
+            </div>
+            <div className="home-signal-panel" aria-label="How PropAI works">
+              <div className="home-signal-topline"><span /> PUBLIC MARKET / READ-ONLY</div>
+              <div className="home-signal-line"><Search aria-hidden="true" /><span>Ask for a 2 BHK in Bandra</span></div>
+              <div className="home-signal-line"><ShieldCheck aria-hidden="true" /><span>See source-backed freshness</span></div>
+              <div className="home-signal-line"><MessageSquare aria-hidden="true" /><span>Message the broker on WhatsApp</span></div>
+              <div className="home-signal-footer">No broker workspace access. No credentials to copy.</div>
+            </div>
           </div>
         </section>
 
@@ -81,6 +94,14 @@ export default function WWWPage() {
               <p className="mt-1.5 rounded-lg border border-white/10 bg-black/40 px-3 py-2">
                 <code className="block font-mono text-xs sm:text-sm text-green-300 break-all select-all">https://api.propai.live/api/public/v1/docs</code>
               </p>
+              <a
+                href={`https://wa.me/16508702892?text=${encodeURIComponent(CLIENT_INSTINCT_MESSAGE)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-5 inline-flex items-center rounded-lg bg-green-400 px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-green-300"
+              >
+                Open Instinct in WhatsApp <ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" />
+              </a>
             </div>
             <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-6">
               <div className="flex items-center gap-3">
