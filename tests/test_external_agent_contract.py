@@ -38,10 +38,12 @@ def test_capabilities_are_contract_bound_and_scope_filtered():
     }))
 
     assert result["contract"] == "propai.external-agent"
-    assert result["revision"] == "2026-11-28.1"
+    assert result["revision"] == external_agent.EXTERNAL_AGENT_CONTRACT_REVISION
     assert {operation["name"] for operation in result["operations"]["read"]} >= {
         "health", "search_group_messages", "get_group_message",
     }
     assert {operation["name"] for operation in result["operations"]["write"]} == {"create_inventory"}
     assert result["boundaries"]["direct_messages"] is False
     assert result["boundaries"]["media_ingestion"] is False
+    assert result["knowledge"]["buildings_index_url"].endswith("/api/external/v1/knowledge/buildings")
+    assert "{slug}" in result["knowledge"]["building_url_template"]

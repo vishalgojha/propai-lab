@@ -424,6 +424,13 @@ async def external_agent_capabilities(key: dict = Depends(external_auth)):
         "contract_url": "https://api.propai.live/api/external/v1/contract",
         "manifest_url": "https://api.propai.live/api/external/v1/contract/manifest",
         "mcp_endpoint": "https://mcp.propai.live/mcp",
+        "knowledge": {
+            "access": "public, no authentication, text/plain",
+            "guide_url": "https://api.propai.live/api/external/v1/knowledge",
+            "buildings_index_url": "https://api.propai.live/api/external/v1/knowledge/buildings",
+            "building_url_template": "https://api.propai.live/api/external/v1/knowledge/buildings/{slug}",
+            "note": "Public background facts with source labels. Fetch the index, then a building by slug. A missing amenity section means nothing is recorded, not that none exist.",
+        },
         "workspace_scoped": True,
         "scopes": scopes,
         "operations": {
