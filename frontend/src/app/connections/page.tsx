@@ -2793,9 +2793,14 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
                   detail={statsLoading ? "Loading aggregate counts…" : statsAvailable ? `${totalParsed.toLocaleString()} market opportunities` : "Aggregate counts unavailable"}
                 />
                 <HealthRow
-                  label="Messages read"
-                  status={statsLoading ? "checking" : !progressAvailable || eligiblePending > 0 ? "warning" : "healthy"}
-                  detail={statsLoading ? "Loading progress…" : !progressAvailable ? "Progress temporarily unavailable" : eligiblePending > 0 ? `${eligiblePending.toLocaleString()} pending · ${recentlyProcessed1h} in last hour` : `${recentlyProcessed1h} in last hour`}
+                  label="Messages saved"
+                  status={statsLoading ? "checking" : !progressAvailable ? "warning" : "healthy"}
+                  detail={statsLoading ? "Loading progress…" : !progressAvailable ? "Progress temporarily unavailable" : `${rawTotal.toLocaleString()} saved and searchable in chat`}
+                />
+                <HealthRow
+                  label="Optional extraction"
+                  status={statsLoading ? "checking" : !progressAvailable ? "warning" : "healthy"}
+                  detail={statsLoading ? "Loading progress…" : !progressAvailable ? "Progress temporarily unavailable" : eligiblePending > 0 ? `${eligiblePending.toLocaleString()} awaiting extraction · pending messages stay searchable` : `Queue clear · ${recentlyProcessed1h} in last hour`}
                 />
               </div>
             </Section>
@@ -2805,14 +2810,14 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
           {view === "groups" && <div className="order-2"><Section title="Message syncing">
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-0 min-[380px]:grid-cols-3 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10">
-                <StatBox icon={<Database className="w-4 h-4 text-zinc-400" />} label="Total Raw" value={displayMetric(rawTotal, progressAvailable)} />
-                <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="Processed" value={progressAvailable ? rawProcessed.toLocaleString() : "—"} />
-                <StatBox icon={<Clock className="w-4 h-4 text-zinc-400" />} label="Pending" value={progressAvailable ? eligiblePending.toLocaleString() : "—"} />
+                <StatBox icon={<Database className="w-4 h-4 text-zinc-400" />} label="Saved & searchable" value={displayMetric(rawTotal, progressAvailable)} />
+                <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="Extracted (optional)" value={progressAvailable ? rawProcessed.toLocaleString() : "—"} />
+                <StatBox icon={<Clock className="w-4 h-4 text-zinc-400" />} label="Awaiting extraction" value={progressAvailable ? eligiblePending.toLocaleString() : "—"} />
               </div>
               {progressAvailable && rawTotal > 0 && (
                 <div className="px-4 pb-2">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Progress</span>
+                    <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Extraction progress</span>
                     <span className="text-xs font-bold text-white">{extractionPct}%</span>
                   </div>
                   <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
@@ -2824,7 +2829,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
                 </div>
               )}
               <div className="px-4 pb-2 text-[11px] text-zinc-500">
-                Cache: {extractionCacheRows.toLocaleString()} unique message extractions
+                Saved messages are searchable in chat right away; extraction into structured listings is optional and awaiting extraction is not a fault. Cache: {extractionCacheRows.toLocaleString()} unique message extractions
               </div>
             </div>
           </Section></div>}
