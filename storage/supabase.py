@@ -3627,6 +3627,30 @@ class SupabaseStorage(Storage):
                     owner_phone = str(owner_row.get("owner_phone") or "").strip()
                     if owner_id and owner_phone and owner_id not in owner_phone_by_user_id:
                         owner_phone_by_user_id[owner_id] = owner_phone
+                # Legacy organizations may have no owner_user_id column value;
+                # resolve the active owner role through the membership ledger.
+                if len(owner_phone_by_user_id) < len(user_ids_missing_phone):
+                    owner_roles = self.client.table("roles").select("id").eq("slug", "owner").is_("organization_id", "null").execute().data or []
+                    owner_role_ids = [row["id"] for row in owner_roles if row.get("id") is not None]
+                    if owner_role_ids:
+                        memberships = self.client.table("organization_members").select(
+                            "user_id,organization_id"
+                        ).in_("user_id", user_ids_missing_phone).in_("role_id", owner_role_ids).eq("is_active", True).execute().data or []
+                        org_ids = list({str(row.get("organization_id")) for row in memberships if row.get("organization_id")})
+                        if org_ids:
+                            org_rows = self.client.table("organizations").select(
+                                "id,owner_phone"
+                            ).in_("id", org_ids).execute().data or []
+                            phone_by_org = {
+                                str(row.get("id")): str(row.get("owner_phone") or "").strip()
+                                for row in org_rows
+                                if row.get("id") and str(row.get("owner_phone") or "").strip()
+                            }
+                            for membership in memberships:
+                                user_id = str(membership.get("user_id") or "").strip()
+                                phone = phone_by_org.get(str(membership.get("organization_id") or ""), "")
+                                if user_id and phone and user_id not in owner_phone_by_user_id:
+                                    owner_phone_by_user_id[user_id] = phone
             rows = []
             for account in users:
                 metadata = account.get("user_metadata") or {}

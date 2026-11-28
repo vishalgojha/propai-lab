@@ -134,8 +134,6 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <SetupGuide variant="card" />
-
       {dataError && (
         <div role="alert" className="flex items-center justify-between gap-4 rounded-xl border border-orange-300/30 bg-orange-50/70 px-4 py-3 text-sm text-orange-950">
           <span>{dataError}</span>
@@ -173,6 +171,8 @@ export default function DashboardPage() {
         </div>
       </section>
       }
+
+      <SetupGuide variant="card" />
 
       {!dataError && !loadingData && attentionItems.length > 0 && (
         <section className="dashboard-attention" aria-labelledby="attention-heading">

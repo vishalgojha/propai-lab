@@ -316,12 +316,7 @@ function formatDate(value?: string | null) {
 }
 
 function confidence(row: ExtractionRow) {
-  const raw = row.extraction_confidence_score ?? row.confidence;
-  if (raw !== null && raw !== undefined && raw !== "") {
-    const numeric = Number(raw);
-    if (Number.isFinite(numeric)) return `${Math.round(numeric * 100)}% confidence`;
-  }
-  return row.extraction_confidence ? `${row.extraction_confidence} confidence` : "Not scored";
+  return row.raw_message_id ? "Original WhatsApp message linked" : "Raw message not linked";
 }
 
 function sourceContext(value: string | number | null | undefined, message?: string | null) {
@@ -356,11 +351,10 @@ function EvidenceTrace({ label, value, message }: { label: string; value?: strin
 }
 
 function status(row: ExtractionRow) {
-  // Quality metadata remains attached to the row and is shown as evidence,
-  // but the UI must distinguish persistence from extraction quality.
-  const score = Number(row.extraction_confidence_score ?? row.confidence);
-  if (row.needs_review || (Number.isFinite(score) && score < 0.7)) {
-    return { label: "Quality flag", tone: "amber", icon: AlertTriangle };
+  // Raw WhatsApp evidence is the authority. Do not turn a heuristic score into
+  // a gate or a user-facing quality verdict.
+  if (row.needs_review || extractionNotes(row).length > 0) {
+    return { label: "Needs source review", tone: "amber", icon: AlertTriangle };
   }
   return { label: "Saved", tone: "green", icon: CheckCircle2 };
 }
@@ -579,7 +573,7 @@ export default function ExtractionsPage() {
   }
 
   const filteredRows = useMemo(() => rows.filter((row) => {
-  const needsAttention = status(row).label === "Quality flag" || extractionNotes(row).length > 0;
+  const needsAttention = status(row).label === "Needs source review";
     return qualityFilter === "all" || (qualityFilter === "review" ? needsAttention : !needsAttention);
   }), [qualityFilter, rows]);
 
@@ -633,7 +627,7 @@ export default function ExtractionsPage() {
           <div className="flex w-full flex-wrap items-center justify-end gap-2">
             <select value={kindFilter} onChange={(event) => { setKindFilter(event.target.value as typeof kindFilter); setPage(0); }} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">Listings + requirements</option><option value="listing">Listings only</option><option value="requirement">Requirements only</option></select>
             <select value={assetFilter} onChange={(event) => { setAssetFilter(event.target.value as typeof assetFilter); setPage(0); }} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All property types</option><option value="residential">Residential</option><option value="commercial">Commercial</option></select>
-            <select value={qualityFilter} onChange={(event) => setQualityFilter(event.target.value as typeof qualityFilter)} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All quality states</option><option value="review">Quality flags</option><option value="clean">Auto-passed</option></select>
+            <select value={qualityFilter} onChange={(event) => setQualityFilter(event.target.value as typeof qualityFilter)} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All source states</option><option value="review">Needs source review</option><option value="clean">Source-complete</option></select>
             <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" /><input aria-label="Search extraction results" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search building, group, broker…" className="w-full rounded-lg border border-white/10 bg-zinc-800 py-2 pl-9 pr-8 text-xs text-white outline-none placeholder:text-zinc-500 focus:border-emerald-400/50" />{searchInput && <button type="button" aria-label="Clear extraction search" onClick={() => { setSearchInput(""); setSearch(""); setPage(0); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>}</div>
           </div>
         </div>
@@ -646,7 +640,7 @@ export default function ExtractionsPage() {
                   <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="font-semibold text-white">{extractionTitle(row)}</span><StatusBadge row={row} /></div><div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-500"><span>{formatDate(row.raw_timestamp || row.created_at)}</span><span>{row.raw_group || "WhatsApp group"}</span><span>{row.raw_message_id ? `Message #${row.raw_message_id}` : "No source message"}</span></div></div>
                   <div className="min-w-[145px] text-xs text-zinc-400"><div className="font-medium text-zinc-300">{extractionKind(row)} · {row.intent || row.transaction_type || "Unclassified"}</div><div className="mt-1">{row.asset_type || "property"} · {row.price_model === "budget" ? "budget" : formatPrice(row)}</div><div className="mt-1 text-emerald-300">{parserLabel(row)}</div>{extractionProvenance(row) && <div className="mt-1 max-w-[220px] truncate text-zinc-500" title={extractionProvenance(row) || undefined}>{extractionProvenance(row)}</div>}</div>
                   <div className="min-w-[175px] text-xs text-zinc-400"><div>{row.building_name || "Building not identified"}</div><div className="mt-1">{row.micro_market || row.location_raw || "Location not identified"}</div><div className="mt-1 text-zinc-500">{row.broker_name || row.broker_phone || "Broker not identified"}</div></div>
-                  <div className="hidden min-w-[110px] text-right text-xs text-zinc-500 md:block"><div className="text-zinc-300">{confidence(row)}</div><div className="mt-1">{row.source_schema?.replace(/_/g, " ") || "typed source"}</div></div>
+                  <div className="hidden min-w-[110px] text-right text-xs text-zinc-500 md:block"><div className="text-zinc-300">{row.raw_message_id ? "Raw source linked" : "No raw source"}</div><div className="mt-1">{row.source_schema?.replace(/_/g, " ") || "typed source"}</div></div>
                   <ExternalLink className="h-4 w-4 text-zinc-600" />
                 </div>
               </button>
