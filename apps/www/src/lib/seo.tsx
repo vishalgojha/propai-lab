@@ -41,6 +41,12 @@ export function buildOrganization({ url, name = "PropAI", description }: OrgInpu
       "PropAI reads live WhatsApp broker group conversations to build verified, fresh property listings and routes every enquiry directly to the posting broker.",
     logo: `${url}/propai-logo.svg?v=3`,
     sameAs: ["https://app.propai.live"],
+    founder: {
+      "@type": "Person",
+      name: "Vishal Ojha",
+      jobTitle: "Founder, Mumbai realtor",
+      sameAs: ["https://www.linkedin.com/in/ojhavishal"],
+    },
   };
 }
 

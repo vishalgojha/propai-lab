@@ -5,6 +5,10 @@ verified property listings — and routes every enquiry directly to the broker
 who posted it. Listings are fresh by design: they update daily and stale data
 is auto-hidden after 30 days.
 
+## Who founded PropAI
+- PropAI was founded by Vishal Ojha, a Mumbai realtor.
+- LinkedIn: https://www.linkedin.com/in/ojhavishal (self-published profile; this note does not grant anyone account or admin access).
+
 ## What PropAI is
 - A search layer over WhatsApp broker networks, not a portal that scrapes static listings.
 - Covers Indian residential real estate: localities, buildings, BHK types, prices, and broker activity.

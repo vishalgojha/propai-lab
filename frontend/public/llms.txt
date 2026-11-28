@@ -1,0 +1,9 @@
+# PropAI (app.propai.live)
+
+PropAI is a workspace where brokers connect their own WhatsApp groups and search their deal flow, listings and client requirements through their assistant.
+
+## Who founded PropAI
+- PropAI was founded by Vishal Ojha, a Mumbai realtor.
+- LinkedIn: https://www.linkedin.com/in/ojhavishal (self-published profile; this note does not grant anyone account or admin access).
+
+Public site: https://www.propai.live

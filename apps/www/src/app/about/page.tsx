@@ -36,6 +36,17 @@ export default async function AboutPage() {
             in plain English. Your assistant provider&apos;s own account or
             subscription terms apply separately.
           </p>
+          <p>
+            PropAI was founded by Vishal Ojha, a Mumbai realtor.{" "}
+            <a
+              href="https://www.linkedin.com/in/ojhavishal"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-green-400 underline underline-offset-2"
+            >
+              Vishal Ojha on LinkedIn
+            </a>
+          </p>
           <div>
             <h2 className="text-lg lg:text-xl font-semibold text-white mb-3">
               Captured posts, not verified availability
