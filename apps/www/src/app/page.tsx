@@ -57,8 +57,16 @@ export default function WWWPage() {
                 market. Ask for a place naturally, see how fresh it is, then continue with the broker.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
-                <a href="#connect" className="site-primary-cta">
-                  Connect your assistant <ArrowRight className="inline h-4 w-4" aria-hidden="true" />
+                <a
+                  href={`https://wa.me/16508702892?text=${encodeURIComponent(CLIENT_INSTINCT_MESSAGE)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="site-primary-cta"
+                >
+                  Open Instinct <ArrowRight className="inline h-4 w-4" aria-hidden="true" />
+                </a>
+                <a href="#connect" className="site-login-link">
+                  Connect with MCP
                 </a>
                 <Link href="/search" className="site-login-link">
                   Browse listings on the site instead

@@ -1640,3 +1640,13 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Known limitations or failures: This is a focused first-viewport improvement, not a full redesign of every public route. No new imagery or fabricated market claims were introduced.
 - Next action: Review the public homepage at desktop and mobile widths; no further deployment is required for this pass.
 
+### Make the homepage Instinct action unmistakable (2026-11-28)
+
+- Requested outcome: Make the public www design visibly better and make the primary assistant action clear.
+- Files/services changed: `apps/www/src/app/page.tsx` and this report. No data or backend behavior changed.
+- Behavior: The homepage hero now uses `Open Instinct` as the primary action, with direct WhatsApp handoff; MCP connection and browser search are explicit secondary paths.
+- Verification performed: `apps/www` TypeScript check exited 0; `git diff --check` passed. Independent task-verifier second pass: **PARTIAL** — source and static checks pass; live visual verification remains pending.
+- Deployment/push status: Pending commit, push, and `propai-lab:main` redeploy.
+- Known limitations or failures: The Instinct destination remains the supported WhatsApp handoff; no separate Instinct web URL is configured.
+- Next action: Deploy and review the homepage at desktop and mobile widths.
+
