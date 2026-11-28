@@ -30,6 +30,7 @@ mock.module("./supabase.js", {
     resolveTenantIdForUser: async (user: { id: string }) => (user.id === "user-a" ? "tenant-a" : "tenant-b"),
   },
 });
+mock.module("./clientAccess.js", { namedExports: { isClientAccount: async () => false, signupClient: async () => ({ ok: true }) } });
 mock.module("./oauth.js", {
   namedExports: {
     deviceAuthorizeHandler: (_q: unknown, r: any) => r.end(),

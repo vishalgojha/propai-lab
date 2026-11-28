@@ -100,10 +100,11 @@ test("/mcp: broker with organization stays broker", async () => {
   assert.match(r.text, /broker/);
 });
 
-test("/mcp: account with both an organization and a client row is broker, never client", async () => {
+test("/mcp: account with a client row is client-only even if a workspace was auto-created", async () => {
   const init = await rpc("/mcp", INIT, { token: "both" });
   const r = await rpc("/mcp", WHOAMI, { token: "both", sid: init.sid! });
-  assert.match(r.text, /broker/);
+  assert.match(r.text, /client/);
+  assert.doesNotMatch(r.text, /broker/);
 });
 
 test("/mcp: no organization and no client row is refused; metadata client flags are ignored", async () => {
@@ -113,7 +114,7 @@ test("/mcp: no organization and no client row is refused; metadata client flags 
 
 test("/mcp: client lookup failure fails closed", async () => {
   const r = await rpc("/mcp", INIT, { token: "broken" });
-  assert.equal(r.status, 403);
+  assert.equal(r.status, 503);
 });
 
 test("/raw-mcp: client accounts are refused", async () => {

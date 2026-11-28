@@ -163,25 +163,25 @@ async function authMiddleware(req: Request, res: Response, next: NextFunction) {
 
   try {
     const user = await verifyPropAIToken(token);
-    const brokerId = await resolveBrokerIdForUser(user);
-    const tenantId = await resolveTenantIdForUser(user);
-    if (!tenantId) {
-      // No organization: only an explicit client account (service-written
-      // client_accounts row) is let in, and only as a client. Anything else,
-      // including a failed lookup, stays refused.
-      let isClient = false;
-      try {
-        isClient = await isClientAccount(user.id);
-      } catch {
-        isClient = false;
-      }
-      if (!isClient) {
-        setMcpUnauthorizedHeaders(req, res);
-        return res.status(403).json({ error: "Tenant membership is required" });
-      }
+    // A client account (service-written client_accounts row) is always
+    // client-only, even if a workspace was auto-created for it at signup.
+    // A failed lookup is refused rather than falling through to broker access.
+    let isClient: boolean;
+    try {
+      isClient = await isClientAccount(user.id);
+    } catch {
+      return res.status(503).json({ error: "Account check unavailable. Try again." });
+    }
+    if (isClient) {
       req.user = { ...user, broker_id: undefined, tenant_id: undefined } as AuthenticatedUser;
       req.clientOnly = true;
       return next();
+    }
+    const brokerId = await resolveBrokerIdForUser(user);
+    const tenantId = await resolveTenantIdForUser(user);
+    if (!tenantId) {
+      setMcpUnauthorizedHeaders(req, res);
+      return res.status(403).json({ error: "Tenant membership is required" });
     }
     // The 15-day trial starts on the first successful assistant search
     // (recorded inside the search tool handlers), never on authentication

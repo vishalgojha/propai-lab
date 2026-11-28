@@ -44,7 +44,7 @@ export async function signupClient(input: ClientSignupInput): Promise<{ ok: true
   if (!phone) return { ok: false, error: "Enter a valid WhatsApp/mobile number with country code." };
   if (password.length < 8 || password.length > 200) return { ok: false, error: "Password must be at least 8 characters." };
 
-  const { data, error } = await sb.newSignupAuthClient().auth.signUp({ email, password });
+  const { data, error } = await sb.newSignupAuthClient().auth.signUp({ email, password, options: { data: { propai_account_type: "client" } } });
   if (error) {
     console.error("[client-signup] auth signUp failed:", error.status, error.code || "", error.message);
   }
