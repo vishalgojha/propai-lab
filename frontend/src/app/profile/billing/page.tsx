@@ -30,11 +30,38 @@ export function BillingPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    void Promise.all([getBillingPlans(), getBillingStatus(), getMarketAccessStatus()]).then(([planData, statusData, accessData]) => {
-      setPlans(planData.plans);
-      setSubscription(statusData.subscription);
-      setTrial(accessData);
-    }).catch(() => setMessage("Billing is temporarily unavailable. Please try again."));
+    let cancelled = false;
+
+    void Promise.allSettled([getBillingPlans(), getBillingStatus(), getMarketAccessStatus()]).then((results) => {
+      if (cancelled) return;
+
+      const [plansResult, statusResult, accessResult] = results;
+      const failures: string[] = [];
+
+      if (plansResult.status === "fulfilled") {
+        setPlans(plansResult.value.plans);
+      } else {
+        failures.push("plan options");
+      }
+
+      if (statusResult.status === "fulfilled") {
+        setSubscription(statusResult.value.subscription);
+      } else {
+        failures.push("subscription status");
+      }
+
+      // Trial/market access is advisory on this screen. A failure here must
+      // not hide the billing plan or subscription controls.
+      if (accessResult.status === "fulfilled") {
+        setTrial(accessResult.value);
+      }
+
+      if (failures.length) {
+        setMessage(`Unable to load ${failures.join(" and ")}. Please try again.`);
+      }
+    });
+
+    return () => { cancelled = true; };
   }, []);
 
   async function startCheckout(plan: BillingPlan) {

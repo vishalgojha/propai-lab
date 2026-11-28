@@ -1600,3 +1600,13 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Independent completion verification: **PARTIAL**. Acceptance checks: tenant-scoped read-only trial endpoint and response metadata — PASS by source inspection and existing endpoint regression coverage; updated handoff/API/dashboard copy — PASS by source inspection and lint; live Instinct reminder scheduling and completed focused pytest — FAIL/unverified.
 - Next action: Redeploy API and dashboard, then ask Instinct to connect, call trial status, and confirm the two reminders only after the broker explicitly requests them.
 
+### Prevent billing page failure from optional status probes (2026-11-28)
+
+- Requested outcome: Fix the Billing tab showing “Billing is temporarily unavailable” when one of its supporting status requests fails.
+- Files/services changed: `frontend/src/app/profile/billing/page.tsx` and this report. No database, API, or production service was changed.
+- Behavior: Billing now loads plan options, subscription status, and market/trial access independently with `Promise.allSettled`. A market-access failure no longer hides billing controls; plan and subscription failures produce capability-specific feedback. The effect also ignores late responses after unmount.
+- Verification performed: Local ESLint on `src/app/profile/billing/page.tsx` passed with exit code 0; `git diff --check` passed. Independent task-verifier second pass: **PARTIAL** — source-level error isolation and cancellation behavior pass, but an authenticated production browser click-through was not available in this session.
+- Deployment/push status: Pending commit and push. The dashboard service `propai-lab:main-app` needs redeployment; do not redeploy unless authorized.
+- Known limitations or failures: This prevents the UI-wide failure state, but it does not repair a separately failing `/api/billing/status` or `/api/market/access` endpoint. The UI now identifies which capability failed so that endpoint can be diagnosed independently.
+- Next action: Redeploy `propai-lab:main-app`, reload `/account?tab=billing`, and verify that plans remain usable when `/market/access` is unavailable.
+
