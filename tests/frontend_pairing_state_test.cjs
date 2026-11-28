@@ -16,4 +16,7 @@ assert(layout.includes('awaitingPairing')&&layout.includes('Ready to pair WhatsA
 assert(/awaitingPairing\) return;/.test(layout),'no disconnect banner while awaiting pairing');
 const c=fs.readFileSync(path.join(__dirname,'../frontend/src/app/connect/page.tsx'),'utf8');
 assert(!c.includes('Account → MCP'),'stale MCP destination removed');
+assert(layout.includes('{!hasConfiguredWhatsApp || awaitingPairing ? ('),'status icon amber while awaiting pairing');
+assert(c.includes('Next: pair WhatsApp and choose groups')&&c.includes('Next: choose your groups'),'connect next-step: pair vs paired skip');
+assert(/waLive/.test(c)&&/whatsapp-status/.test(c),'paired skip is driven by live status check');
 console.log('PASS pairing state');

@@ -906,7 +906,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             href="/whatsapp?tab=numbers"
             className="legacy-sidebar-connection flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg hover:bg-white/5 transition-colors group"
           >
-            {!hasConfiguredWhatsApp ? (
+            {!hasConfiguredWhatsApp || awaitingPairing ? (
               <Wifi className="w-3.5 h-3.5 text-amber-300 shrink-0" strokeWidth={1.5} />
             ) : waConnected === null ? (
               <div className="relative shrink-0">
