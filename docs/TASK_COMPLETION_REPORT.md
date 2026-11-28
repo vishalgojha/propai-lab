@@ -1568,3 +1568,13 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Known limitations or failures: The server still requires the broker’s explicit confirmation receipt, as intended. Optional extraction remains a separate choice and is not started by this change.
 - Next action: Refresh WhatsApp → Groups, and verify that confirming the checked groups turns capture on without requiring Start optional extraction.
 
+### Reject malformed WhatsApp numbers at signup (2026-11-28)
+
+- Requested outcome: Stop signup from accepting odd-length or non-Indian mobile entries that later cannot be used as WhatsApp pairing numbers.
+- Files/services changed: `frontend/src/components/BrokerAccessPanel.tsx`.
+- Behavior: Signup now normalizes local `0` and `+91` formats and requires exactly 10 Indian mobile digits beginning with 6–9. The form explains the accepted format; existing malformed historical accounts are not silently rewritten.
+- Verification performed: Changed-file ESLint completed with 0 errors; `git diff --check` passed. Independent task-verifier second pass: **PARTIAL** — validation and formatting paths pass source review, but an authenticated signup rejection click-through and cleanup review of existing malformed records remain pending.
+- Deployment/push status: Pending commit, push, and `propai-lab:main-app` deployment.
+- Known limitations or failures: Supabase Auth signup is initiated directly from the browser, so this client-side guard does not retroactively repair old metadata or protect an alternate non-browser signup client.
+- Next action: Deploy the dashboard and test one invalid 11-digit signup plus one valid `+91`-formatted signup.
+

@@ -7,6 +7,13 @@ import { sendPasswordReset, signInWithEmail, signInWithMagicLink, signUp } from 
 
 type AccessMode = "signin" | "signup";
 
+function normalizeIndianMobile(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(-10);
+  if (digits.length === 11 && digits.startsWith("0")) return digits.slice(-10);
+  return digits;
+}
+
 // The short assistant-connection code (not a secret). Carried in the account's
 // signup metadata so confirming the email on another device still returns to it.
 function connectCodeFromNext(nextPath?: string): string | undefined {
@@ -46,9 +53,9 @@ export default function BrokerAccessPanel({ onClose, nextPath = "/inbox", initia
         return;
       }
 
-      const phoneDigits = phone.replace(/\D/g, "");
+      const phoneDigits = normalizeIndianMobile(phone);
       if (password.length < 8) throw new Error("Use at least 8 characters for your password.");
-      if (phoneDigits.length < 10 || phoneDigits.length > 15) throw new Error("Enter a valid WhatsApp/mobile number.");
+      if (!/^[6-9]\d{9}$/.test(phoneDigits)) throw new Error("Enter a valid 10-digit Indian WhatsApp/mobile number.");
 
       // New workspaces land on the guided setup after email confirmation,
       // unless they came from an assistant connection link: then return to it.
@@ -134,7 +141,7 @@ export default function BrokerAccessPanel({ onClose, nextPath = "/inbox", initia
           {mode === "signup" && <>
             <label><span><User className="h-3.5 w-3.5" /> Your name</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} required autoComplete="name" placeholder="Vishal Ojha" /></label>
             <label><span>Brokerage or workspace <small>optional</small></span><input value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} autoComplete="organization" placeholder="Your brokerage" /></label>
-            <label><span>WhatsApp number</span><input value={phone} onChange={(event) => setPhone(event.target.value)} required inputMode="tel" autoComplete="tel" placeholder="98765 43210" /></label>
+            <label><span>WhatsApp number</span><input value={phone} onChange={(event) => setPhone(event.target.value)} required inputMode="tel" autoComplete="tel" placeholder="98765 43210" aria-describedby="signup-phone-help" /><small id="signup-phone-help">Use a 10-digit Indian mobile number, or include +91.</small></label>
           </>}
           <label><span><Mail className="h-3.5 w-3.5" /> Email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" placeholder="you@brokerage.com" /></label>
           <label><span><Lock className="h-3.5 w-3.5" /> Password</span><div className="broker-access-password"><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete={mode === "signin" ? "current-password" : "new-password"} placeholder="At least 8 characters" /><button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div></label>
