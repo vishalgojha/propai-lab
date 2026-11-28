@@ -1,0 +1,13 @@
+const fs=require('fs'),path=require('path'),assert=require('assert');
+const ts=require(path.join(__dirname,'../frontend/node_modules/typescript'));
+const src=fs.readFileSync(path.join(__dirname,'../frontend/src/lib/phoneDisplay.ts'),'utf8');
+const js=ts.transpileModule(src,{compilerOptions:{module:'commonjs',target:'es2019'}}).outputText;
+const m={exports:{}};new Function('module','exports',js)(m,m.exports);
+const {describeSignupPhone:d,formatSuggestedSender:f,formatPhoneWithCountry:c,sameSenderIdentity:s}=m.exports;
+assert.strictEqual(f('9892000928'),'+91 98920 00928');
+assert.strictEqual(c('919833111668'),'+91 98331 11668');
+assert.strictEqual(d('919819066339'),'+91 98190 66339');
+assert.strictEqual(d('9022290365'),'9022290365 (10 digits, no country code entered)');
+assert.strictEqual(d('97172829553'),'97172829553 (11 digits, format not recognised)');
+assert(s('9892000928','919892000928')&&!s('9892000928','919892000929'));
+console.log('PASS phone display');

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Check, MessageSquare } from "lucide-react";
+import { formatPhoneWithCountry, formatSuggestedSender, sameSenderIdentity } from "@/lib/phoneDisplay";
 import { getDMCaptureSenders, setDMCaptureSenders } from "@/lib/api";
 import {
   addTypedSender,
@@ -128,7 +129,7 @@ export function DMCaptureSection({ phoneId }: { phoneId: number }) {
           <ul className="mt-1 space-y-1">
             {state.active.map((row) => (
               <li key={row.sender_phone} className="flex items-center justify-between gap-2 rounded-md border border-white/10 px-2 py-1">
-                <span className="truncate">{row.display_name && row.display_name !== row.sender_phone ? `${row.display_name} · ` : ""}+{row.sender_phone}</span>
+                <span className="truncate">{row.display_name && row.display_name !== row.sender_phone ? `${row.display_name} · ` : ""}{formatPhoneWithCountry(row.sender_phone).startsWith("+") ? formatPhoneWithCountry(row.sender_phone) : `+${row.sender_phone}`}</span>
                 <button type="button" disabled={saving} onClick={() => void removeSender(row.sender_phone)} className="shrink-0 rounded-md border border-red-400/30 px-2 py-0.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:opacity-40">
                   Remove
                 </button>
@@ -143,7 +144,7 @@ export function DMCaptureSection({ phoneId }: { phoneId: number }) {
           <p className="text-[11px] font-semibold text-sky-200">Brokers seen in your groups</p>
           <div className="mt-1 max-h-32 space-y-1 overflow-y-auto pr-1">
             {state.suggested.map((phone) => {
-              const isActive = activePhones.has(phone);
+              const isActive = activePhones.has(phone) || state.active.some((row) => sameSenderIdentity(row.sender_phone, phone));
               return (
                 <label key={phone} className={`flex items-center gap-1.5 ${isActive ? "opacity-50" : ""}`}>
                   <input
@@ -153,7 +154,7 @@ export function DMCaptureSection({ phoneId }: { phoneId: number }) {
                     checked={isActive || checked.has(phone)}
                     onChange={() => setChecked((current) => { const next = new Set(current); if (next.has(phone)) { next.delete(phone); } else { next.add(phone); } return next; })}
                   />
-                  <span>+{phone}{isActive ? " (already selected)" : ""}</span>
+                  <span title="Stored as the 10-digit number; +91 added for display only">{formatSuggestedSender(phone)}{isActive ? " (already selected)" : ""}</span>
                 </label>
               );
             })}
