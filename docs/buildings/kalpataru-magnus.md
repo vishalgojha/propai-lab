@@ -15,10 +15,11 @@ last_refreshed: 2026-11-28
 - Kalpataru Properties, MahaRERA P51800004029. Conceptualised by architect Sanjay Puri, landscape by Burega Farnell (project site, opened).
 - Towers A, B and C; 2, 3, 4 and 4.5 bedroom homes.
 
-## Amenities as stated by the developer
+## Amenities as stated on an unconfirmed project site
+- The detailed list below comes from kalpatarumagnus.in. I could not confirm that this domain belongs to Kalpataru (registrant is hidden; the official kalpataru.com does not link to it that I found), so treat it as an unconfirmed project site. The developer's own page https://www.kalpataru.com/mumbai/kalpataru-magnus (opened 28 Nov 2026) confirms MahaRERA P51800004029, OC received, and mentions a clubhouse and landscaped retreats without a full list.
 - Clubhouse with gymnasium, swimming pool with kids' pool, spa, landscaped garden, children's play area, outdoor seating area.
 - Grand air-conditioned entrance lobby, separate drop-off for each tower, multi-tier safety and security system. Landscape design by Burega Farnell.
-- These are the developer's marketing claims from the page below, not checked on site. Do not assume an amenity exists unless listed.
+- These are marketing claims from the pages below, not checked on site. Do not assume an amenity exists unless listed.
 
 ## Caveats and look-alikes
 - Status lines are as of the source and date named; check current MahaRERA or the developer before relying on them.
@@ -28,3 +29,4 @@ last_refreshed: 2026-11-28
 - https://kalpatarumagnus.in/ (page opened)
 - https://homespro.in/property/kalpataru-magnus-bandra-east-mumbai (search excerpt only)
 - https://kalpatarumagnus.in/category/amenities/ (page opened 28 Nov 2026; undated project-site list)
+- https://www.kalpataru.com/mumbai/kalpataru-magnus (developer's official page opened 28 Nov 2026; RERA number, OC status, clubhouse mentioned)

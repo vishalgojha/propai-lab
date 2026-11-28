@@ -15,10 +15,11 @@ last_refreshed: 2026-11-28
 - Rustomjee project, G+21 single tower on about 0.2 acre, 95 units, 4 apartments per floor, 1 and 1.5 BHK from 439 sq ft, views of MIG Club (developer page, opened).
 - Developer page status: under construction, 2027 possession.
 
-## Amenities as stated by the developer
+## Amenities as stated on an unconfirmed project site
+- The detailed list below comes from rustomjeegroup.com. That domain was registered in Feb 2025 and I could not confirm it belongs to Rustomjee (the official site is rustomjee.com, registered 1998, which I did not find a Cleon amenity list on). Treat the list as an unconfirmed project site.
 - Gymnasium, swimming pool, mini theatre, forest walk, rooftop leisure amenities including outdoor screening and a yoga deck, rock-climbing wall, game zone, senior citizens' zone with outdoor cabana seating.
 - Covered or underground car parking per apartment, EV-charging facility.
-- These are the developer's marketing claims from the page below, not checked on site. Do not assume an amenity exists unless listed.
+- These are marketing claims from the pages below, not checked on site. Do not assume an amenity exists unless listed.
 
 ## Caveats and look-alikes
 - Status is as of the sources named; check current MahaRERA progress before treating a unit as handover-ready.

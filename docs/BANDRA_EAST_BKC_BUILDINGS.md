@@ -8,7 +8,7 @@ Access per-building documents at /api/external/v1/knowledge/buildings/{slug} whe
 
 Buildings outside Bandra East/BKC are listed in the last section below, chosen by how often they recur in PropAI's own data.
 
-Amenity sections (added 28 Nov 2026) cover Rustomjee Seasons, Rustomjee Cleon, Ten BKC, Kalpataru Magnus, Kanakia Paris, Sunteck Signia Isles and Sunteck Signia Pearl, and quote only what the developer's own page states. Buildings without an amenity section have none recorded yet; that does not mean they have none.
+Amenity sections (added 28 Nov 2026) cover Rustomjee Seasons, Rustomjee Cleon, Ten BKC, Kalpataru Magnus, Kanakia Paris, Sunteck Signia Isles and Sunteck Signia Pearl, and quote only what a page I opened states. Kalpataru Magnus and Rustomjee Cleon use project sites whose ownership I could not confirm, and are labelled that way. Buildings without an amenity section have none recorded yet; that does not mean they have none.
 
 Facts were audited against the opened public source pages listed in each building document; unsupported sentences were removed.
 
