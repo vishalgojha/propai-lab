@@ -1,0 +1,15 @@
+import assert from "node:assert/strict";
+import { resolveBrokerPhone, buildWaLink, brokerStatusKey, parseStore } from "./brokerOutreach.ts";
+assert.equal(resolveBrokerPhone("+919876543210", false).kind, "international");
+assert.equal(resolveBrokerPhone("919876543210", false).kind, "international");
+assert.equal(resolveBrokerPhone("9876543210", false).kind, "ambiguous");
+assert.deepEqual(resolveBrokerPhone("9876543210", true), { kind: "assumed_india", e164digits: "919876543210" });
+assert.equal(resolveBrokerPhone("1234567890", true).kind, "ambiguous");
+assert.equal(resolveBrokerPhone("", true).kind, "none");
+assert.equal(resolveBrokerPhone("98765", true).kind, "ambiguous");
+assert.equal(resolveBrokerPhone("+44 7700 900123", false).kind, "international");
+assert.equal(buildWaLink("919876543210", "Hi & bye"), "https://wa.me/919876543210?text=Hi%20%26%20bye");
+assert.equal(brokerStatusKey("+91 98765 43210"), brokerStatusKey("9876543210"));
+assert.equal(parseStore("garbage", "T").template, "T");
+assert.equal(parseStore(JSON.stringify({statuses:{a:{status:"bad",at:"x"},b:{status:"sent",at:"2026-11-28"}}}), "T").statuses.a, undefined);
+console.log("ok");
