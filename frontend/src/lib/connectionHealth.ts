@@ -119,7 +119,8 @@ export function connectionMetric(value: number, live: boolean, loading: boolean)
 
 // A number typed at signup is registered as a pairing card before anything is
 // linked. connected_at/is_active are database defaults, so they prove nothing.
-// Never paired = no instance, no live number, no session time, no messages.
+// Never paired = no instance, no session time, no messages, not connected.
+// (phone_number_live echoes the registered number, so it proves nothing.)
 export function isNeverPairedPhone(phone: {
   instance_name?: string | null;
   phone_number_live?: string | null;
@@ -129,7 +130,6 @@ export function isNeverPairedPhone(phone: {
   connected?: boolean | null;
 }): boolean {
   return !String(phone.instance_name || "").trim()
-    && !String(phone.phone_number_live || "").trim()
     && !String(phone.connected_since || "").trim()
     && !String(phone.last_message_at || "").trim()
     && !Number(phone.total_messages_received || 0)
