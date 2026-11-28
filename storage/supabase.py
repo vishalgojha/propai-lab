@@ -3629,10 +3629,56 @@ class SupabaseStorage(Storage):
             "id,name,owner_user_id,owner_phone,created_at,is_active", count="exact"
         ).order("created_at.desc,id", desc=True).limit(page_size).offset((page - 1) * page_size).execute()
         rows = result.data or []
+        self._attach_admin_owner_details(rows)
         total = result.count
         return {"kind": kind, "rows": rows, "page": page, "page_size": page_size,
                 "has_more": (page * page_size < total) if total is not None else len(rows) == page_size,
                 "total": total}
+
+    def _attach_admin_owner_details(self, rows: list[dict]) -> None:
+        """Read-only: fill owner id/phone for the admin directory from real records.
+
+        The legacy organizations.owner_* columns are mostly empty. The owner link
+        is the active owner-role row in organization_members. The phone comes from
+        the owner's auth phone (verified only when confirmed), else the number typed
+        at signup (provided, not verified). Nothing is written or inferred.
+        """
+        org_ids = [str(r["id"]) for r in rows if r.get("id")]
+        for r in rows:
+            r["owner_user_source"] = "workspace_record" if r.get("owner_user_id") else None
+            r["owner_phone_source"] = "workspace_record" if r.get("owner_phone") else None
+        if not org_ids:
+            return
+        role_rows = self.client.table("roles").select("id").eq("slug", "owner").is_("organization_id", "null").execute().data or []
+        role_ids = [x["id"] for x in role_rows if x.get("id") is not None]
+        owner_by_org: dict[str, str] = {}
+        if role_ids:
+            members = self.client.table("organization_members").select("organization_id,user_id,created_at") \
+                .in_("organization_id", org_ids).in_("role_id", role_ids).eq("is_active", True) \
+                .order("created_at").execute().data or []
+            for m in members:
+                owner_by_org.setdefault(str(m["organization_id"]), str(m["user_id"]))
+        auth_cache: dict[str, dict] = {}
+        for r in rows:
+            uid = r.get("owner_user_id") or owner_by_org.get(str(r.get("id")))
+            if not uid:
+                continue
+            if not r.get("owner_user_id"):
+                r["owner_user_id"] = uid
+                r["owner_user_source"] = "owner_membership"
+            if r.get("owner_phone"):
+                continue
+            if uid not in auth_cache:
+                resp = self._client._http.get(f"{self._client._base_url}/auth/v1/admin/users/{uid}", timeout=20)
+                auth_cache[uid] = resp.json() if resp.status_code == 200 else {}
+            account = auth_cache[uid]
+            meta = account.get("user_metadata") if isinstance(account.get("user_metadata"), dict) else {}
+            if account.get("phone"):
+                r["owner_phone"] = account["phone"]
+                r["owner_phone_source"] = "verified_auth" if account.get("phone_confirmed_at") else "auth_unconfirmed"
+            elif meta.get("phone"):
+                r["owner_phone"] = str(meta["phone"])
+                r["owner_phone_source"] = "signup_entry"
 
     def list_organizations_after(self, after_ts: str | None = None, after_id: str | None = None, limit: int = 100) -> list[dict]:
         """Keyset-paginated organizations, ascending by (created_at, id).

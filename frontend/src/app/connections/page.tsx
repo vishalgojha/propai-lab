@@ -8,7 +8,7 @@ import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartp
 import { useAuth } from "@/lib/AuthProvider";
 import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, getGroupSelectionConfirmation, checkOnboardingGroup, optOutOnboardingGroup, deselectOnboardingGroup, selectOnboardingGroups, revokeCaptureConsent, CAPTURE_CONSENT_VERSION, getMarketRawSources, confirmMarketRawSources, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry, type MarketShareClass } from "@/lib/api";
 import QRCode from "qrcode";
-import { connectionHealth, connectionMetric, phoneConnectionView } from "@/lib/connectionHealth";
+import { connectionHealth, connectionMetric, isNeverPairedPhone, phoneConnectionView } from "@/lib/connectionHealth";
 import { buildRestorePayload, buildRestorePlan, buildSharingOutcomeMessage, PROPAI_INTERNAL_GROUP_PATTERN } from "./sharingOutcome";
 import { DMCaptureSection } from "./dmCaptureSection";
 
@@ -678,7 +678,7 @@ function PhoneCard({
   // show "Last known connected".
   const view = phoneConnectionView({
     storedConnected: isConnectedPhone(phone),
-    placeholder: isPlaceholderPhone(phone.phone_number),
+    placeholder: isPlaceholderPhone(phone.phone_number) || isNeverPairedPhone(phone),
     matchesProbe: matchesLiveStatus(phone, liveStatus),
     status: liveStatus,
     checked: liveStatusChecked,
@@ -771,8 +771,8 @@ function PhoneCard({
           )}
           {isUnpaired && (
             <div className="text-xs text-zinc-500">
-              {phone.registered_phone_number
-                ? `Ready to pair ${formatPhone(phone.registered_phone_number)}`
+              {(phone.registered_phone_number || (!isPlaceholderPhone(phone.phone_number) ? phone.phone_number : ""))
+                ? `Ready to pair ${formatPhone(phone.registered_phone_number || phone.phone_number)}`
                 : "Enter the WhatsApp number to pair"}
             </div>
           )}

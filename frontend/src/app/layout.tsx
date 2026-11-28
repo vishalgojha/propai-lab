@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import "./globals.css";
 import "./zone-contract.css";
+import { isNeverPairedPhone } from "@/lib/connectionHealth";
 import { getPhones, getAuthMe, getBusinessApiConfig, BusinessApiConfig, getProfile, getWhatsAppStatus, fetchJSON, isLiveWhatsAppConnection, getSoundPreferences as getSavedSoundPreferences, saveSoundPreferences, type Phone, type WhatsAppStatus } from "@/lib/api";
 import {
   MessageSquare,
@@ -243,6 +244,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const livePhone = phones.find((phone) => phone.live_status_available === true && isLiveWhatsAppConnection(phone)) || null;
   const displayPhone = livePhone || phones[0] || (liveStatus?.phone ? ({ phone_number_live: liveStatus.phone } as Phone) : null);
   const hasConfiguredWhatsApp = phones.length > 0;
+  // Signup registers a pairing card; until something is linked it is "ready to pair", not "disconnected".
+  const awaitingPairing = hasConfiguredWhatsApp && phones.every((phone) => isNeverPairedPhone(phone)) && !livePhone && !(liveStatus && isLiveWhatsAppConnection(liveStatus));
   const hasPerPhoneLiveStatus = phones.some((phone) => phone.live_status_available === true);
   // The workspace status probe is the freshest source for the active
   // connection. A per-phone response can briefly carry a stale disconnected
@@ -281,7 +284,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       ? liveStatusFailed
         ? "warning"
         : "checking"
-      : !hasConfiguredWhatsApp
+      : !hasConfiguredWhatsApp || awaitingPairing
         ? "warning"
         : !waConnected
           ? "error"
@@ -290,7 +293,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
             : "healthy";
   const captureLabel = !hasConfiguredWhatsApp
     ? "No WhatsApp number"
-    : captureHealth === "checking"
+    : awaitingPairing
+      ? "Starts after pairing"
+      : captureHealth === "checking"
       ? "Checking capture service"
       : captureHealth === "healthy"
         ? "Capture service online"
@@ -299,7 +304,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
           : "Capture service offline";
   const whatsappLabel = !hasConfiguredWhatsApp
     ? "Add WhatsApp number"
-    : waConnected === null
+    : awaitingPairing
+      ? "Ready to pair WhatsApp"
+      : waConnected === null
       ? liveStatusFailed
         ? "WhatsApp status unknown"
         : "Checking WhatsApp"
@@ -358,12 +365,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    if (waConnected === null || !hasConfiguredWhatsApp) return;
+    if (waConnected === null || !hasConfiguredWhatsApp || awaitingPairing) return;
     const previous = previousWhatsAppState.current;
     if (waConnected === false) setDisconnectNoticeOpen(true);
     if (previous === false && waConnected === true) setDisconnectNoticeOpen(false);
     previousWhatsAppState.current = waConnected;
-  }, [hasConfiguredWhatsApp, waConnected]);
+  }, [hasConfiguredWhatsApp, waConnected, awaitingPairing]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -728,7 +735,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <span className={`h-2 w-2 shrink-0 rounded-full ${whatsappHealth === "healthy" ? "bg-accent" : whatsappHealth === "error" ? "bg-red-400" : whatsappHealth === "checking" ? "bg-zinc-500 animate-pulse" : "bg-amber-300"}`} />
           {!sidebarCollapsed && <div className="min-w-0 flex-1">
             <div className="truncate text-[11px] font-semibold text-zinc-200">{whatsappLabel}</div>
-            <div className="truncate font-mono text-[10px] text-zinc-400">{waPhone || "No number connected"}</div>
+            <div className="truncate font-mono text-[10px] text-zinc-400">{awaitingPairing ? "Not linked yet" : (waPhone || "No number connected")}</div>
             <div className={`truncate text-[10px] ${captureHealth === "error" ? "text-red-300" : "text-zinc-500"}`}>{captureLabel}{wabaConfig?.outbound_allowed ? " · WABA Connected" : ""}</div>
           </div>}
           {!sidebarCollapsed && <RefreshCw className="h-3 w-3 shrink-0 text-zinc-500" aria-hidden="true" />}

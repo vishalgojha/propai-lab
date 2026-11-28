@@ -116,3 +116,22 @@ export function connectionMetric(value: number, live: boolean, loading: boolean)
   if (value > 0) return `${value.toLocaleString()} (last known)`;
   return loading ? "Loading…" : "—";
 }
+
+// A number typed at signup is registered as a pairing card before anything is
+// linked. connected_at/is_active are database defaults, so they prove nothing.
+// Never paired = no instance, no live number, no session time, no messages.
+export function isNeverPairedPhone(phone: {
+  instance_name?: string | null;
+  phone_number_live?: string | null;
+  connected_since?: string | null;
+  last_message_at?: string | null;
+  total_messages_received?: number | null;
+  connected?: boolean | null;
+}): boolean {
+  return !String(phone.instance_name || "").trim()
+    && !String(phone.phone_number_live || "").trim()
+    && !String(phone.connected_since || "").trim()
+    && !String(phone.last_message_at || "").trim()
+    && !Number(phone.total_messages_received || 0)
+    && phone.connected !== true;
+}

@@ -151,12 +151,12 @@ export default function ConnectAgentPage() {
                   <div className="mb-1 mt-3 font-semibold text-white">Private CRM writes</div>
                   This connection can also save inventory, requirements, standing searches, and
                   follow-ups into your private CRM. Anything with contact or budget details still
-                  needs your approval in Account → MCP before it is saved.
+                  needs your approval in Modules → Mcp before it is saved.
                 </>
               )}
               <div className="mt-3 text-xs text-zinc-500">
                 Approving creates a new access key for this assistant. You can revoke it any time
-                in Account → MCP.
+                in Modules → Mcp.
               </div>
             </div>
             <div className="flex gap-3">
@@ -192,7 +192,7 @@ export default function ConnectAgentPage() {
             </div>
             {status === "collected"
               ? "This connection was already approved and collected by your assistant."
-              : "Your assistant is collecting the connection and will confirm in your chat when it is active. If it does not confirm within a few minutes, revoke the new key in Account → MCP."}
+              : "Your assistant is collecting the connection and will confirm in your chat when it is active. If it does not confirm within a few minutes, revoke the new key in Modules → Mcp."}
             {returnUrl ? (
               <>
                 <a href={returnUrl} className="mt-4 flex min-h-12 items-center justify-center rounded-lg bg-emerald-400 px-4 py-3 font-bold text-black">
