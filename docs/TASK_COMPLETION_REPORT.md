@@ -1620,3 +1620,13 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Known limitations or failures: The Instinct button opens the existing assistant handoff and public REST guide; it does not create a private client API key. Requirement submission remains subject to the existing consent-gated public/MCP flows.
 - Next action: Redeploy `propai-lab:main`, open `/client`, verify both handoffs in a browser, and run one anonymous MCP search plus one Instinct public REST search.
 
+### Make the buyer Instinct CTA explicit (2026-11-28)
+
+- Requested outcome: Add an actual button that takes buyers and tenants to Instinct.
+- Files/services changed: `apps/www/src/app/client/page.tsx` and this report. No backend, database, or authorization behavior changed.
+- Behavior: The primary client CTA is now a prominent external button labeled `Open Instinct in WhatsApp`, opening PropAI's existing canonical Instinct handoff in a new tab with the buyer/tenant public-market instruction prefilled.
+- Verification performed: `apps/www` TypeScript check exited 0; `git diff --check` passed. Independent task-verifier second pass: **PARTIAL** — the CTA and canonical WhatsApp handoff pass source inspection, but live browser click-through and production rendering remain unverified.
+- Deployment/push status: The prior client-page commit is on `origin/main`; this CTA follow-up is pending commit and push. `propai-lab:main` requires redeployment to publish it; no deployment was performed.
+- Known limitations or failures: PropAI has no separate Instinct web URL configured in the repository; the supported Instinct destination is the WhatsApp handoff. The button cannot be verified against a live Instinct session in this environment.
+- Next action: Commit and push this CTA change, redeploy `propai-lab:main`, then open `/client` and click the button once to verify the handoff.
+

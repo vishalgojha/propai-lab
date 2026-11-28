@@ -33,10 +33,11 @@ export default function ClientPage() {
             <a
               href={`https://wa.me/16508702892?text=${encodeURIComponent(CLIENT_INSTINCT_MESSAGE)}`}
               target="_blank"
-              rel="noreferrer"
-              className="mt-4 inline-flex rounded-lg bg-green-400 px-4 py-2 text-sm font-semibold text-black"
+              rel="noopener noreferrer"
+              aria-label="Open Instinct in WhatsApp"
+              className="mt-4 inline-flex items-center justify-center rounded-lg bg-green-400 px-5 py-3 text-sm font-semibold text-black transition hover:bg-green-300 focus:outline-none focus:ring-2 focus:ring-green-300 focus:ring-offset-2 focus:ring-offset-zinc-900"
             >
-              Open Instinct
+              Open Instinct in WhatsApp <span aria-hidden="true" className="ml-2">↗</span>
             </a>
             <p className="mt-3 break-words text-xs leading-5 text-zinc-500">
               API guide: https://api.propai.live/api/public/v1/docs
