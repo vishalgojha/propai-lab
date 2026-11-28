@@ -1589,3 +1589,14 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Independent completion verification: **PARTIAL** — code-path, tenant-boundary, signature, static checks, live table creation, and live RLS/policy verification pass; configured Razorpay Test Mode checkout, webhook replay, and final Coolify deployment completion remain unverified.
 - Next action: Add the Razorpay Test Mode credentials, webhook secret, and three plan IDs to the API app, then complete one test checkout and webhook replay.
 
+### Expose free-period status and reminder guidance to Instinct (2026-11-28)
+
+- Requested outcome: Update the broker-facing copy, let Instinct read the workspace's remaining free-period days, and provide reminder guidance.
+- Files/services changed: `frontend/src/lib/instinctHandoff.ts`, `frontend/src/app/profile/billing/page.tsx`, `routers/external_agent.py`, `docs/EXTERNAL_AGENT_API.md`, and `tests/test_assistant_trial_start.py`. API and dashboard redeployment required.
+- Behavior: The existing tenant-scoped read-only `GET /api/external/v1/trial-status` now returns the exact recorded trial window plus `reminder_days_before_end: [3, 1]`. Instinct's handoff instructs it to read that endpoint and schedule reminders in its own system only when the broker asks; PropAI does not schedule or send reminders. Billing copy explains the first-successful-search start and the reminder behavior.
+- Verification performed: `python3 -m py_compile routers/external_agent.py` passed; changed-file ESLint passed with 0 errors; `git diff --check` passed. The focused pytest process hung during repository startup and was stopped; no completed pytest result is claimed.
+- Deployment/push status: Pending commit, push, and Coolify redeploys for `api` and `propai-lab:main-app`.
+- Known limitations or failures: Reminder scheduling is intentionally performed by Instinct, not PropAI, and was not exercised in a live Instinct session. The exact live remaining-days response was not queried with a broker key in this pass.
+- Independent completion verification: **PARTIAL**. Acceptance checks: tenant-scoped read-only trial endpoint and response metadata — PASS by source inspection and existing endpoint regression coverage; updated handoff/API/dashboard copy — PASS by source inspection and lint; live Instinct reminder scheduling and completed focused pytest — FAIL/unverified.
+- Next action: Redeploy API and dashboard, then ask Instinct to connect, call trial status, and confirm the two reminders only after the broker explicitly requests them.
+

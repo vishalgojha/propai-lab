@@ -186,6 +186,7 @@ def test_trial_status_endpoint_reads_without_writing():
     assert result["trial_state"] == "active"
     assert result["trial_days_total"] == 15
     assert 9 <= result["trial_days_left"] <= 10
+    assert result["reminder_days_before_end"] == [3, 1]
     assert "updates" not in db  # read-only
 
 

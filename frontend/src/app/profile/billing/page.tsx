@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Network } from "lucide-react";
-import { createBillingSubscription, getBillingPlans, getBillingStatus, type BillingPlan, verifyBillingSubscription } from "@/lib/api";
+import { createBillingSubscription, getBillingPlans, getBillingStatus, getMarketAccessStatus, type BillingPlan, type MarketAccessStatus, verifyBillingSubscription } from "@/lib/api";
 
 declare global {
   interface Window {
@@ -25,13 +25,15 @@ function loadRazorpayCheckout(): Promise<void> {
 export function BillingPage() {
   const [plans, setPlans] = useState<BillingPlan[]>([]);
   const [subscription, setSubscription] = useState<{ plan_key: string; status: string } | null>(null);
+  const [trial, setTrial] = useState<MarketAccessStatus | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    void Promise.all([getBillingPlans(), getBillingStatus()]).then(([planData, statusData]) => {
+    void Promise.all([getBillingPlans(), getBillingStatus(), getMarketAccessStatus()]).then(([planData, statusData, accessData]) => {
       setPlans(planData.plans);
       setSubscription(statusData.subscription);
+      setTrial(accessData);
     }).catch(() => setMessage("Billing is temporarily unavailable. Please try again."));
   }, []);
 
@@ -83,7 +85,7 @@ export function BillingPage() {
             </p>
           </div>
           <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-            15-day assistant access
+            {trial?.trial_state === "active" ? "Free trial active" : "15-day assistant access"}
           </span>
         </div>
 
@@ -103,7 +105,7 @@ export function BillingPage() {
         </div>
 
         <p className="text-sm leading-6 text-zinc-400">
-          <Check className="mr-2 inline h-4 w-4 text-emerald-300" /> New workspaces include a 15-day free trial that starts with the first assistant search.
+          <Check className="mr-2 inline h-4 w-4 text-emerald-300" /> Free assistant access starts with the first successful search. Instinct can read the exact days remaining from your workspace; if you ask for a reminder, it can schedule one 3 days and 1 day before the end date.
         </p>
       </div>
     </div>

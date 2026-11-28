@@ -641,7 +641,8 @@ async def external_trial_status(key: dict = Depends(external_auth)):
         # to be reminded before the trial ends, the assistant schedules that
         # reminder itself in its own chat with the user. PropAI runs no
         # scheduler and sends no reminders.
-        "reminder_hint": "If the user asks to be reminded before the trial ends, schedule that reminder yourself (for example a day or two before trial_ends_at); PropAI does not schedule or send reminders.",
+        "reminder_days_before_end": [3, 1],
+        "reminder_hint": "If the user asks for reminders, schedule them in your own reminder system for 3 days and 1 day before trial_ends_at. PropAI does not schedule or send reminders.",
     }
 
 

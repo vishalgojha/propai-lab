@@ -113,6 +113,7 @@ Read endpoints:
 | `GET /messages/search` | Search captured WhatsApp source messages | `q`, `scope`, `since`, `until`, `limit`, `offset` |
 | `GET /messages/{raw_message_id}` | Fetch one full source message | `raw_message_id` from search results |
 | `GET /connection-status` | Owner UI: bound assistant connection's effective capabilities | owner app session |
+| `GET /trial-status` | Read the workspace's exact free-period state and remaining days | None |
 
 `GET /connection-status` binds to the latest decided connect session's key,
 never an aggregate of every key on the workspace. `connection` is null when no
@@ -120,7 +121,14 @@ connect session has been decided; manually created keys are counted in
 `unbound_active_keys`, not claimed as the assistant connection. When the bound
 key is revoked, `key_revoked` is true and every `can_*` capability is false —
 stored scopes on a revoked key grant nothing.
+
 | `POST /messages/{raw_message_id}/extract` | Queue one selected WhatsApp group message for the existing extractor | `raw_messages:extract`; groups only |
+
+`GET /trial-status` is tenant-scoped and read-only. It returns the recorded
+`trial_state`, `trial_started_at`, `trial_ends_at`, `trial_days_left`, and
+`trial_days_total`. The assistant may schedule reminders in its own reminder
+system, only when the broker asks, for 3 days and 1 day before
+`trial_ends_at`; PropAI does not schedule or send those reminders.
 
 ## Shared realtor knowledge and search scope
 
