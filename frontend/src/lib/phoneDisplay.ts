@@ -27,19 +27,19 @@ export function describeSignupPhone(value: string | null | undefined): string {
 }
 
 /**
- * Suggested broker senders come from group-member numbers that PropAI stores
- * as the 10-digit national number (the 91 prefix is removed when sampled).
- * Show them in the same +91 form as the selected senders. Display only: the
- * stored value and the value sent when selecting are unchanged.
+ * Suggested broker senders are stored as the number WhatsApp group sampling
+ * kept: often a bare 10-digit national number whose country is not stored.
+ * A bare 10-digit value is shown as stored with the country marked
+ * unspecified. No country code is guessed. Display only.
  */
 export function formatSuggestedSender(stored: string): string {
   const digits = digitsOnly(stored);
-  if (digits.length === 10) return `+91 ${groupIndian(digits)}`;
+  if (digits.length === 10) return `${digits} (country not stored)`;
   return formatPhoneWithCountry(stored) || `+${digits}`;
 }
 
-/** Same sender regardless of a leading 91 (display matching only). */
+/** Exact same stored sender digits only. No cross-country or last-10 equivalence. */
 export function sameSenderIdentity(a: string, b: string): boolean {
   const x = digitsOnly(a), y = digitsOnly(b);
-  return x.length >= 10 && y.length >= 10 && x.slice(-10) === y.slice(-10);
+  return x.length >= 10 && x === y;
 }

@@ -154,7 +154,7 @@ export function DMCaptureSection({ phoneId }: { phoneId: number }) {
                     checked={isActive || checked.has(phone)}
                     onChange={() => setChecked((current) => { const next = new Set(current); if (next.has(phone)) { next.delete(phone); } else { next.add(phone); } return next; })}
                   />
-                  <span title="Stored as the 10-digit number; +91 added for display only">{formatSuggestedSender(phone)}{isActive ? " (already selected)" : ""}</span>
+                  <span title="Stored without a country code; not changed">{formatSuggestedSender(phone)}{isActive ? " (already selected)" : ""}</span>
                 </label>
               );
             })}
