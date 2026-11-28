@@ -267,7 +267,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       : hasPerPhoneLiveStatus
         ? false
         : null;
-  const captureHealth: "checking" | "healthy" | "error" | "warning" = captureConnected === null
+  const captureHealth: "checking" | "healthy" | "error" | "warning" = awaitingPairing ? "warning" : captureConnected === null
     ? liveStatusFailed
       ? "warning"
       : "checking"
@@ -925,6 +925,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
               <div className={`truncate text-[12px] font-semibold ${waConnected && !waStale ? "text-[#6B8E63]" : "text-zinc-300"}`}>
                   {!hasConfiguredWhatsApp
                   ? "Add WhatsApp number"
+                  : awaitingPairing
+                  ? "Ready to pair WhatsApp"
                   : waConnected === null
                   ? liveStatusFailed
                     ? "WhatsApp status unknown"
