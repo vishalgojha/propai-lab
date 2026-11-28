@@ -8,7 +8,7 @@ Access per-building documents at /api/external/v1/knowledge/buildings/{slug} whe
 
 Buildings outside Bandra East/BKC are listed in the last section below. They are a starter set from public developer pages, not a ranking.
 
-Amenity sections (added 28 Nov 2026) cover Rustomjee Erika, Rustomjee Seasons, Rustomjee Cleon, Ten BKC, Kalpataru Magnus, Kanakia Paris, Sunteck Signia Isles and Sunteck Signia Pearl, and quote only what a page I opened states. Kalpataru Magnus and Rustomjee Cleon use project sites whose ownership I could not confirm, and are labelled that way. Buildings without an amenity section have none recorded yet; that does not mean they have none.
+Amenity sections (added 28 Nov 2026) cover Rustomjee Paramount, Agami Eternity, Leo Eminence (unconfirmed project site), Rustomjee Erika, Rustomjee Seasons, Rustomjee Cleon, Ten BKC, Kalpataru Magnus, Kanakia Paris, Sunteck Signia Isles and Sunteck Signia Pearl, and quote only what a page I opened states. Kalpataru Magnus and Rustomjee Cleon use project sites whose ownership I could not confirm, and are labelled that way. Buildings without an amenity section have none recorded yet; that does not mean they have none.
 
 Facts were audited against the opened public source pages listed in each building document; unsupported sentences were removed.
 
@@ -65,10 +65,11 @@ Facts were audited against the opened public source pages listed in each buildin
 - Platina in East Avenue Road, Santacruz West: a different building from Platina in G Block BKC (see platina-bkc). Do not merge or exclude by name.
 - "Naman centre" at Prabhadevi: a different building from BKC Naman Centre (Plot C-31). Do not merge.
 
-## Other Mumbai buildings: identity and developer-stated amenities from opened developer pages (4)
+## Other Mumbai buildings: identity and developer-stated amenities from opened developer pages (5)
 - [Rustomjee Crown](buildings/rustomjee-crown), Prabhadevi, residential
 - [Adani Western Heights](buildings/adani-western-heights), Andheri West, residential and commercial
 - [Piramal Mahalaxmi](buildings/piramal-mahalaxmi), Mahalaxmi, residential
 - [Lokhandwala Minerva](buildings/lokhandwala-minerva), Mahalaxmi, residential
+- [Rustomjee Paramount](buildings/rustomjee-paramount), Khar West, residential
 
 Note: some names that recur in PropAI data are single generic words that can match many buildings. Do not treat a bare name as one building without confirming locality and developer.
