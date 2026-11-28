@@ -964,3 +964,68 @@ async def get_shared_broker_card(token: str):
     card = json.loads(row["card_data"])
     card["token"] = token
     return card
+
+
+# ── Manual broker outreach marks (super admin, per workspace) ────────────────
+# Records only that the owner marked a broker sent / replied / skipped. It never
+# sends anything and never touches broker, consent or capture records.
+_OUTREACH_KEY_RE = re.compile(r"^(bare:[0-9]{10}|intl:[0-9]{11,15})$")
+_OUTREACH_STATUSES = {"sent", "replied", "skipped"}
+
+
+async def _require_outreach_admin(user: dict) -> None:
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin access required")
+
+
+def _outreach_key(payload: dict) -> str:
+    key = str(payload.get("broker_key") or "").strip()
+    if not _OUTREACH_KEY_RE.match(key):
+        raise HTTPException(400, "Invalid broker key")
+    return key
+
+
+@router.get("/api/broker-outreach/marks")
+async def list_outreach_marks(user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    await _require_outreach_admin(user)
+
+    def read():
+        return storage.client.table("broker_outreach_marks").select(
+            "broker_key,status,marked_at"
+        ).eq("organization_id", tenant_id).limit(20000).execute().data or []
+
+    return {"marks": await asyncio.to_thread(read)}
+
+
+@router.put("/api/broker-outreach/marks")
+async def set_outreach_mark(payload: dict, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    await _require_outreach_admin(user)
+    key = _outreach_key(payload)
+    status = str(payload.get("status") or "").strip()
+    if status not in _OUTREACH_STATUSES:
+        raise HTTPException(400, "Invalid status")
+    row = {
+        "organization_id": tenant_id, "broker_key": key, "status": status,
+        "marked_by": str(user["id"]), "marked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    def write():
+        return storage.client.table("broker_outreach_marks").upsert(
+            row, on_conflict="organization_id,broker_key"
+        ).execute()
+
+    await asyncio.to_thread(write)
+    return {"broker_key": key, "status": status, "marked_at": row["marked_at"]}
+
+
+@router.delete("/api/broker-outreach/marks")
+async def clear_outreach_mark(payload: dict, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    await _require_outreach_admin(user)
+    key = _outreach_key(payload)
+
+    def delete():
+        return storage.client.table("broker_outreach_marks").delete().eq(
+            "organization_id", tenant_id).eq("broker_key", key).execute()
+
+    await asyncio.to_thread(delete)
+    return {"broker_key": key, "cleared": True}

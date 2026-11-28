@@ -41,6 +41,10 @@ export default function BrokerOutreachPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<"forbidden" | "unavailable" | null>(null);
   const [store, setStore] = useState<OutreachStore>({ template: DRAFT_TEMPLATE, assumeIndia: false, statuses: {} });
+  // Marks live in PropAI (per workspace) so they follow him across devices.
+  const [marks, setMarks] = useState<Record<string, { status: OutreachStatus; at: string }>>({});
+  const [marksState, setMarksState] = useState<"loading" | "synced" | "failed">("loading");
+  const [markError, setMarkError] = useState("");
   const [ready, setReady] = useState(false);
   const [query, setQuery] = useState("");
   const [mix, setMix] = useState<"all" | "supply" | "demand">("all");
@@ -56,6 +60,20 @@ export default function BrokerOutreachPage() {
   useEffect(() => {
     if (ready) window.localStorage.setItem(OUTREACH_STORE_KEY, JSON.stringify(store));
   }, [store, ready]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.fetchJSON<{ marks: { broker_key: string; status: OutreachStatus; marked_at: string }[] }>("/broker-outreach/marks")
+      .then((d) => {
+        if (cancelled) return;
+        const next: typeof marks = {};
+        for (const m of d.marks || []) next[m.broker_key] = { status: m.status, at: m.marked_at };
+        setMarks(next);
+        setMarksState("synced");
+      })
+      .catch(() => { if (!cancelled) setMarksState("failed"); });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,13 +115,26 @@ export default function BrokerOutreachPage() {
     setLoadingMore(false);
   };
 
-  const setStatus = (key: string, status: OutreachStatus | null) =>
-    setStore((s) => {
-      const statuses = { ...s.statuses };
-      if (status) statuses[key] = { status, at: new Date().toISOString() };
-      else delete statuses[key];
-      return { ...s, statuses };
+  const setStatus = async (key: string, status: OutreachStatus | null) => {
+    if (marksState !== "synced") { setMarkError("Marks could not be loaded from PropAI, so nothing was saved. Reload and try again."); return; }
+    const before = marks[key];
+    setMarkError("");
+    setMarks((m) => {
+      const n = { ...m };
+      if (status) n[key] = { status, at: new Date().toISOString() }; else delete n[key];
+      return n;
     });
+    try {
+      await api.fetchJSON("/broker-outreach/marks", {
+        method: status ? "PUT" : "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(status ? { broker_key: key, status } : { broker_key: key }),
+      });
+    } catch {
+      setMarks((m) => { const n = { ...m }; if (before) n[key] = before; else delete n[key]; return n; });
+      setMarkError("Could not save that mark. It was not recorded.");
+    }
+  };
 
   const view = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -111,7 +142,7 @@ export default function BrokerOutreachPage() {
       .map((r) => {
         const phone = resolveBrokerPhone(r.primary_phone, store.assumeIndia);
         const key = brokerStatusKey(r.primary_phone);
-        return { r, phone, key, st: key ? store.statuses[key] : undefined };
+        return { r, phone, key, st: key ? marks[key] : undefined };
       })
       .filter(({ r, phone, st }) => {
         const sup = r.listing_count || 0, dem = r.requirement_count || 0;
@@ -128,9 +159,9 @@ export default function BrokerOutreachPage() {
         }
         return true;
       });
-  }, [rows, store, query, mix, activeDays, minListings, statusFilter, onlySendable]);
+  }, [rows, store, marks, query, mix, activeDays, minListings, statusFilter, onlySendable]);
 
-  const sentToday = Object.values(store.statuses).filter((s) => s.status === "sent" && s.at.slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
+  const sentToday = Object.values(marks).filter((s) => s.status === "sent" && s.at.slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
   const ambiguousCount = rows.filter((r) => resolveBrokerPhone(r.primary_phone, false).kind === "ambiguous").length;
 
   if (error === "forbidden") {
@@ -159,10 +190,12 @@ export default function BrokerOutreachPage() {
         <h1 className="mt-1 text-xl font-semibold text-[var(--text-primary)]">Manual broker outreach</h1>
         <p className="mt-1 text-sm text-zinc-400">
           Opens a WhatsApp chat with your message filled in. Nothing is sent from here: you send it yourself, then mark it.
-          Opening a chat does not mark it sent. Marks are saved in this browser only.
+          Opening a chat does not mark it sent. Marks are saved in PropAI for this workspace.
         </p>
       </div>
 
+      {marksState === "failed" && <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">Saved marks could not be loaded, so marking is turned off until you reload. Existing marks are not shown.</p>}
+      {markError && <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">{markError}</p>}
       <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
         <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500" htmlFor="tpl">Message (draft, edit before use)</label>
         <textarea id="tpl" value={store.template} onChange={(e) => setStore((s) => ({ ...s, template: e.target.value }))}
@@ -195,8 +228,8 @@ export default function BrokerOutreachPage() {
         </div>
         <p className="text-xs text-zinc-500">
           {loading ? "Loading profiles…" : `${view.length} shown of ${rows.length} loaded${total !== null ? ` (${total} profiles in total)` : ""}. `}
-          {!loading && ambiguousCount > 0 && !store.assumeIndia ? `${ambiguousCount} loaded numbers have no stored country code, so they have no link until you turn on the India option. ` : ""}
-          Marked sent today in this browser: {sentToday}.
+          {!loading && ambiguousCount > 0 && !store.assumeIndia ? `${ambiguousCount} loaded numbers have no link: no stored country code or an unrecognised format. Turn on the India option to link bare 10-digit ones. ` : ""}
+          Marked sent today: {sentToday}.
         </p>
       </section>
 
@@ -224,10 +257,10 @@ export default function BrokerOutreachPage() {
               ) : null}
               {key && (
                 <div className="flex gap-1 text-xs">
-                  <button className="rounded border border-white/15 px-2 py-1 text-zinc-300 hover:bg-white/10" onClick={() => setStatus(key, "sent")}>Mark sent</button>
-                  <button className="rounded border border-white/15 px-2 py-1 text-zinc-300 hover:bg-white/10" onClick={() => setStatus(key, "replied")}>Replied</button>
-                  <button className="rounded border border-white/15 px-2 py-1 text-zinc-300 hover:bg-white/10" onClick={() => setStatus(key, "skipped")}>Skip</button>
-                  {st && <button className="rounded border border-white/15 px-2 py-1 text-zinc-500 hover:bg-white/10" onClick={() => setStatus(key, null)}>Undo</button>}
+                  <button className="rounded border border-white/15 px-2 py-1 text-zinc-300 hover:bg-white/10" onClick={() => void setStatus(key, "sent")}>Mark sent</button>
+                  <button className="rounded border border-white/15 px-2 py-1 text-zinc-300 hover:bg-white/10" onClick={() => void setStatus(key, "replied")}>Replied</button>
+                  <button className="rounded border border-white/15 px-2 py-1 text-zinc-300 hover:bg-white/10" onClick={() => void setStatus(key, "skipped")}>Skip</button>
+                  {st && <button className="rounded border border-white/15 px-2 py-1 text-zinc-500 hover:bg-white/10" onClick={() => void setStatus(key, null)}>Undo</button>}
                 </div>
               )}
             </article>

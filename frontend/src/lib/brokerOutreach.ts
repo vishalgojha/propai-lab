@@ -23,8 +23,13 @@ export function resolveBrokerPhone(raw: string | null | undefined, assumeIndiaFo
   const text = String(raw ?? "").trim();
   const d = digitsOnly(text);
   if (!d) return { kind: "none", reason: "No number stored" };
-  if (text.startsWith("+") && d.length >= 11 && d.length <= 15) return { kind: "international", e164digits: d };
-  if (d.length === 12 && d.startsWith("91")) return { kind: "international", e164digits: d };
+  // Indian numbers: exactly 91 + a 10-digit national number starting 6-9.
+  if (d.startsWith("91") && (text.startsWith("+") || d.length === 12)) {
+    if (d.length === 12 && /^[6-9]/.test(d.slice(2))) return { kind: "international", e164digits: d };
+    return { kind: "ambiguous", reason: "starts with 91 but is not a valid Indian mobile number" };
+  }
+  // Other countries only when the number states its own country with "+" and a plausible E.164 shape.
+  if (text.startsWith("+") && /^[1-9]\d{10,14}$/.test(d)) return { kind: "international", e164digits: d };
   if (d.length === 10) {
     if (assumeIndiaForBare10 && /^[6-9]/.test(d)) return { kind: "assumed_india", e164digits: `91${d}` };
     return { kind: "ambiguous", reason: "10 digits, country not stored" };
@@ -36,10 +41,15 @@ export function buildWaLink(e164digits: string, message: string): string {
   return `https://wa.me/${e164digits}?text=${encodeURIComponent(message)}`;
 }
 
-/** Stable key so the same person is one record whatever format the phone came in. */
+/**
+ * Status key from the stored shape only, so marks never change when the India
+ * option is toggled. A bare 10-digit number and the same digits written with
+ * 91 are different records: no country is assumed to merge them.
+ */
 export function brokerStatusKey(raw: string | null | undefined): string {
   const d = digitsOnly(raw);
-  return d.length === 12 && d.startsWith("91") ? d.slice(2) : d;
+  if (!d) return "";
+  return d.length === 10 ? `bare:${d}` : `intl:${d}`;
 }
 
 export const OUTREACH_STORE_KEY = "propai.brokerOutreach.v1";
@@ -47,7 +57,7 @@ export const OUTREACH_STORE_KEY = "propai.brokerOutreach.v1";
 export type OutreachStore = {
   template: string;
   assumeIndia: boolean;
-  statuses: Record<string, { status: OutreachStatus; at: string }>;
+  statuses: Record<string, { status: OutreachStatus; at: string }>; // legacy local field, unused
 };
 
 export function parseStore(json: string | null, fallbackTemplate: string): OutreachStore {
