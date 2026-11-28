@@ -229,7 +229,7 @@ export default function BrokerOutreachPage() {
         <p className="text-xs text-zinc-500">
           {loading ? "Loading profiles…" : `${view.length} shown of ${rows.length} loaded${total !== null ? ` (${total} profiles in total)` : ""}. `}
           {!loading && ambiguousCount > 0 && !store.assumeIndia ? `${ambiguousCount} loaded numbers have no link: no stored country code or an unrecognised format. Turn on the India option to link bare 10-digit ones. ` : ""}
-          Marked sent today: {sentToday}.
+          Marked sent today across all brokers (including ones not shown by these filters): {sentToday}.
         </p>
       </section>
 
@@ -239,7 +239,7 @@ export default function BrokerOutreachPage() {
           const shownPhone = phone.kind === "international" || phone.kind === "assumed_india" ? `+${phone.e164digits}` : "";
           return (
             <article key={String(r.id)} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-[var(--surface)] p-3">
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 basis-full sm:basis-0 sm:flex-1">
                 <div className="truncate font-medium text-[var(--text-primary)]">{r.canonical_name || shownPhone || "Unnamed broker"}</div>
                 <div className="mt-0.5 truncate text-xs text-zinc-500">
                   {(r.listing_count || 0)} listings · {(r.requirement_count || 0)} reqs · seen {r.last_seen_at ? new Date(r.last_seen_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "—"}

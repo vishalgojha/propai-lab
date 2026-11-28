@@ -322,6 +322,7 @@ export default function BrokersPage() {
             {totalBrokers ?? brokers.length} broker profiles · Filter by name, market, building, group, or alias
           </div>
         </div>
+        <Link href="/brokers/outreach" className="rounded-lg border border-[var(--monsoon-teal)]/50 px-3 py-1.5 text-sm font-medium text-[var(--mist)] hover:bg-[var(--monsoon-teal)]/10">Manual outreach</Link>
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
