@@ -1543,8 +1543,8 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Requested outcome: Show a signed-up user's WhatsApp number in Super Admin → User accounts when Supabase Auth's `phone` field is empty but the number is present in the workspace signup record.
 - Files/services changed: `storage/supabase.py` and `tests/test_admin_user_directory.py`. No production service was redeployed.
 - Verification performed: `python3 -m py_compile storage/supabase.py tests/test_admin_user_directory.py` passed; direct mocked behavioral checks for the existing allowlist, workspace-phone fallback, and pagination passed. The focused pytest command timed out after 35 seconds during test startup with no test output, including with plugin autoload disabled.
-- Deployment/push status: Commit and push pending at report creation; no deployment performed.
+- Deployment/push status: Commit `83f0203e` pushed to `origin/main`; no production deployment performed.
 - Known limitations or failures: Live production rendering was not exercised from this environment. The existing pytest startup timeout remains unresolved.
-- Independent completion verification: PASS. Acceptance conditions checked: (1) Auth phone remains preferred — PASS by code path; (2) signup metadata is used as a fallback — PASS by code path; (3) workspace `owner_phone` is used when Auth and metadata phone are empty — PASS by direct mocked test; (4) unrelated Auth fields remain excluded — PASS by existing allowlist test; (5) only task hunks are staged — pending final staging check.
-- Next action: Commit and push the task changes, then redeploy the API service in Coolify so `/api/admin/user-directory` serves the fallback.
+- Independent completion verification: PASS. Acceptance conditions checked: (1) Auth phone remains preferred — PASS by code path; (2) signup metadata is used as a fallback — PASS by code path; (3) workspace `owner_phone` is used when Auth and metadata phone are empty — PASS by direct mocked test; (4) unrelated Auth fields remain excluded — PASS by existing allowlist test; (5) only task hunks were committed — PASS, commit contains only the directory fix, tests, and this report entry.
+- Next action: Redeploy the API service in Coolify so `/api/admin/user-directory` serves the fallback. Do not redeploy unless authorized.
 
