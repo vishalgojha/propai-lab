@@ -1656,7 +1656,7 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Files/services changed: `frontend/src/app/dashboard/page.tsx` and this report. No data or API query changed.
 - Behavior: The dashboard now renders the live Pulse/Market activity metrics immediately after the heading, before the large setup guide. The existing `/api/dashboard/time-window` query remains the source of truth and was observed returning `200` in production logs.
 - Verification performed: Changed-file ESLint completed with 0 errors (6 pre-existing warnings); `git diff --check` passed. Independent task-verifier second pass: **PARTIAL** — source ordering and live API response evidence pass; authenticated browser verification after redeploy remains pending.
-- Deployment/push status: Pending commit, push, and `propai-lab:main-app` redeploy. Coolify became temporarily unreachable during the preceding www deployment attempt.
+- Deployment/push status: Committed and pushed in `65ef3541`; `propai-lab:main-app` redeploy remains pending because Coolify became unreachable during the deployment attempt.
 - Known limitations or failures: The setup guide still appears below the metrics and the extraction page remains available; this change does not retire extraction or alter public typed listings.
 - Next action: Commit and deploy the dashboard ordering fix, then decide whether extraction should remain as an optional public-market projection or be removed from the user-facing workflow.
 
@@ -1666,7 +1666,7 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Files/services changed: `frontend/src/app/extractions/page.tsx` and this report. Extraction storage and worker behavior were not deleted.
 - Behavior: Extraction rows are now flagged only by explicit review state or missing/mismatched source fields; the score no longer gates the row status or appears in the list. The row points reviewers to the linked raw WhatsApp source instead.
 - Verification performed: Changed-file ESLint completed with 0 errors; existing hook warnings remain only. `git diff --check` passed. Independent task-verifier second pass: **PARTIAL** — source-level score removal and raw-source linkage pass; production rendering and full raw-message-first workflow remain unverified.
-- Deployment/push status: Pending commit, push, and `propai-lab:main-app` redeploy.
+- Deployment/push status: Committed and pushed in `65ef3541`; `propai-lab:main-app` redeploy remains pending because Coolify became unreachable during the deployment attempt.
 - Known limitations or failures: The extraction worker and typed projections remain because the public marketplace currently consumes them. This change does not make raw messages public or remove extraction from the backend.
 - Next action: Deploy the dashboard/UI changes, then decide whether to hide or retire the extraction route from the workspace navigation while preserving the public projection path.
 
@@ -1676,7 +1676,7 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Files/services changed: `storage/supabase.py` and this report. The fallback is read-only and server-side.
 - Behavior: Account rows now resolve phones through active owner memberships when the auth account and direct organization owner columns are empty, while preserving the existing auth and signup-metadata precedence.
 - Verification performed: Python syntax check and targeted source review pending after staging; no phone values were added or fabricated. Independent task-verifier second pass: **PARTIAL** until the authenticated admin directory is refreshed against the deployed API.
-- Deployment/push status: Pending commit, push, and `api` plus `propai-lab:main-app` redeploys.
+- Deployment/push status: Committed and pushed in `65ef3541`. API deployment `rfjc24iltnlfsgm08txnjq0v` finished successfully; dashboard deployment remains pending because Coolify became unreachable afterward.
 - Known limitations or failures: Accounts without an auth phone, signup metadata phone, or active owner membership still correctly show “Not recorded.”
 - Next action: Deploy the API and dashboard, refresh `/admin/users`, and verify the affected accounts display their stored signup/workspace phone source.
 
