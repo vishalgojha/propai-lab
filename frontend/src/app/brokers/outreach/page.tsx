@@ -40,7 +40,7 @@ export default function BrokerOutreachPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<"forbidden" | "unavailable" | null>(null);
-  const [store, setStore] = useState<OutreachStore>({ template: DRAFT_TEMPLATE, assumeIndia: false, statuses: {} });
+  const [store, setStore] = useState<OutreachStore>({ template: DRAFT_TEMPLATE, assumeIndia: true, statuses: {} });
   // Marks live in PropAI (per workspace) so they follow him across devices.
   const [marks, setMarks] = useState<Record<string, { status: OutreachStatus; at: string }>>({});
   const [marksState, setMarksState] = useState<"loading" | "synced" | "failed">("loading");
@@ -224,11 +224,11 @@ export default function BrokerOutreachPage() {
         </div>
         <div className="flex flex-wrap items-center gap-4 text-xs text-zinc-400">
           <label className="flex items-center gap-2"><input type="checkbox" checked={onlySendable} onChange={(e) => setOnlySendable(e.target.checked)} /> Only numbers with a usable WhatsApp link</label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={store.assumeIndia} onChange={(e) => setStore((s) => ({ ...s, assumeIndia: e.target.checked }))} /> Treat bare 10-digit numbers as India (+91)</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={store.assumeIndia} onChange={(e) => setStore((s) => ({ ...s, assumeIndia: e.target.checked }))} /> Add +91 to 10-digit Indian numbers (6-9 start)</label>
         </div>
         <p className="text-xs text-zinc-500">
           {loading ? "Loading profiles…" : `${view.length} shown of ${rows.length} loaded${total !== null ? ` (${total} profiles in total)` : ""}. `}
-          {!loading && ambiguousCount > 0 && !store.assumeIndia ? `${ambiguousCount} loaded numbers have no link: no stored country code or an unrecognised format. Turn on the India option to link bare 10-digit ones. ` : ""}
+          {!loading && ambiguousCount > 0 && !store.assumeIndia ? `${ambiguousCount} loaded numbers have no link: no stored country code or an unrecognised format. Turn on the +91 option to link bare 10-digit ones. ` : ""}
           Marked sent today across all brokers (including ones not shown by these filters): {sentToday}.
         </p>
       </section>
@@ -246,7 +246,7 @@ export default function BrokerOutreachPage() {
                   {(r.markets || [])[0] ? ` · ${(r.markets || [])[0].micro_market}` : ""}
                 </div>
                 <div className="mt-0.5 text-xs text-zinc-500">
-                  {shownPhone ? `${shownPhone}${phone.kind === "assumed_india" ? " (India assumed)" : ""}` : <span className="text-amber-400/80">{phone.kind === "none" ? phone.reason : phone.kind === "ambiguous" ? `No link: ${phone.reason}` : ""}</span>}
+                  {shownPhone ? `${shownPhone}${phone.kind === "assumed_india" ? " (+91 added)" : ""}` : <span className="text-amber-400/80">{phone.kind === "none" ? phone.reason : phone.kind === "ambiguous" ? `No link: ${phone.reason}` : ""}</span>}
                 </div>
               </div>
               {st && <span className="rounded border border-white/10 px-2 py-0.5 text-xs text-zinc-300">{STATUS_LABEL[st.status]} {new Date(st.at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>}

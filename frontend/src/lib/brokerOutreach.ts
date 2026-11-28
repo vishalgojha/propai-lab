@@ -61,7 +61,7 @@ export type OutreachStore = {
 };
 
 export function parseStore(json: string | null, fallbackTemplate: string): OutreachStore {
-  const empty: OutreachStore = { template: fallbackTemplate, assumeIndia: false, statuses: {} };
+  const empty: OutreachStore = { template: fallbackTemplate, assumeIndia: true, statuses: {} };
   if (!json) return empty;
   try {
     const v = JSON.parse(json);
@@ -74,7 +74,8 @@ export function parseStore(json: string | null, fallbackTemplate: string): Outre
     }
     return {
       template: typeof v.template === "string" && v.template.trim() ? v.template : fallbackTemplate,
-      assumeIndia: v.assumeIndia === true,
+      // The owner confirmed "India only": +91 is the default for valid national numbers.
+      assumeIndia: v.assumeIndia !== false,
       statuses,
     };
   } catch {

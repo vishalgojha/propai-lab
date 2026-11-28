@@ -20,4 +20,7 @@ assert.equal(resolveBrokerPhone("+97150123456789", false).kind, "international")
 assert.equal(resolveBrokerPhone("447700900123", false).kind, "ambiguous");
 assert.equal(parseStore("garbage", "T").template, "T");
 assert.equal(parseStore(JSON.stringify({statuses:{a:{status:"bad",at:"x"},b:{status:"sent",at:"2026-11-28"}}}), "T").statuses.a, undefined);
+assert.equal(parseStore(null, "T").assumeIndia, true);
+assert.equal(parseStore(JSON.stringify({assumeIndia:false}), "T").assumeIndia, false);
+assert.equal(parseStore("{}", "T").assumeIndia, true);
 console.log("ok");
