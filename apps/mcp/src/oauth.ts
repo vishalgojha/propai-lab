@@ -8,7 +8,7 @@ import {
   pruneAuthorizationCodes,
   saveAuthorizationCode,
 } from "./oauthStore.js";
-import { supabaseAuth } from "./supabase.js";
+import { newSignupAuthClient } from "./supabase.js";
 
 // OAuth error helper
 function oauthError(
@@ -384,7 +384,7 @@ export async function oauthAuthorizePostHandler(req: Request, res: Response) {
       return res.status(400).type("html").send(renderErrorPage("Redirect URI is not allowed for this client"));
     }
 
-    const { data, error } = await supabaseAuth.auth.signInWithPassword({
+    const { data, error } = await newSignupAuthClient().auth.signInWithPassword({
       email: String(email).trim().toLowerCase(),
       password: String(password),
     });
@@ -500,7 +500,7 @@ export async function oauthTokenHandler(req: Request, res: Response) {
         });
       }
 
-      const { data, error } = await supabaseAuth.auth.signInWithPassword({
+      const { data, error } = await newSignupAuthClient().auth.signInWithPassword({
         email: String(email).trim().toLowerCase(),
         password: String(password),
       });
@@ -561,7 +561,7 @@ export async function oauthTokenHandler(req: Request, res: Response) {
         });
       }
 
-      const { data, error } = await supabaseAuth.auth.refreshSession({
+      const { data, error } = await newSignupAuthClient().auth.refreshSession({
         refresh_token: refreshToken,
       });
 
