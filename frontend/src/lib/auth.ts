@@ -91,6 +91,7 @@ export async function signUp(
   fullName?: string,
   workspaceName?: string,
   phone?: string,
+  connectCode?: string,
 ) {
   const { data, error } = await getSupabase().auth.signUp({
     email,
@@ -101,6 +102,7 @@ export async function signUp(
         ...(fullName ? { full_name: fullName } : {}),
         ...(workspaceName ? { workspace_name: workspaceName } : {}),
         ...(phone ? { phone } : {}),
+        ...(connectCode ? { propai_connect_code: connectCode } : {}),
       },
     },
   });

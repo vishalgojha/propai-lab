@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, KeyRound, Loader2, ShieldCheck, XCircle } from "lucide-react";
 import { getSession } from "@/lib/auth";
-import { fetchJSON } from "@/lib/api";
+import { fetchJSON, isLiveWhatsAppConnection } from "@/lib/api";
 
 type ConnectPreview = {
   label: string;
@@ -24,6 +24,7 @@ export default function ConnectAgentPage() {
   const [code, setCode] = useState("");
   const [preview, setPreview] = useState<ConnectPreview | null>(null);
   const [message, setMessage] = useState("");
+  const [waLive, setWaLive] = useState(false);
   const handoffAttempted = useRef(false);
   const returnUrl = preview?.return_url === "https://wa.me/16508702892" ? preview.return_url : null;
 
@@ -32,6 +33,14 @@ export default function ConnectAgentPage() {
     handoffAttempted.current = true;
     try { window.location.assign(url); } catch { /* Keep the visible return button if the browser blocks handoff. */ }
   }
+
+  // Existing users with WhatsApp already paired skip straight to group choice.
+  useEffect(() => {
+    if (status !== "approved" && status !== "collected") return;
+    fetchJSON<Record<string, unknown>>("/dashboard/whatsapp-status", undefined, 8000)
+      .then((s) => setWaLive(isLiveWhatsAppConnection(s as never)))
+      .catch(() => setWaLive(false));
+  }, [status]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -194,6 +203,10 @@ export default function ConnectAgentPage() {
             ) : (
               <p className="mt-3">Return to your assistant&apos;s chat. You can close this page.</p>
             )}
+            <a href={waLive ? "/whatsapp?tab=groups" : "/whatsapp?tab=numbers"} className="mt-4 flex min-h-12 items-center justify-center rounded-lg border border-emerald-400/40 px-4 py-3 font-bold text-emerald-200">
+              {waLive ? "Next: choose your groups" : "Next: pair WhatsApp and choose groups"}
+            </a>
+            <p className="mt-2 text-xs">Nothing is saved from your groups until you confirm them yourself.</p>
           </div>
         )}
 

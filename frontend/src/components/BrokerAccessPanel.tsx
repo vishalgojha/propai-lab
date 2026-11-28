@@ -7,6 +7,13 @@ import { sendPasswordReset, signInWithEmail, signInWithMagicLink, signUp } from 
 
 type AccessMode = "signin" | "signup";
 
+// The short assistant-connection code (not a secret). Carried in the account's
+// signup metadata so confirming the email on another device still returns to it.
+function connectCodeFromNext(nextPath?: string): string | undefined {
+  const m = /^\/connect\?code=([A-Za-z0-9-]{4,32})$/.exec(nextPath || "");
+  return m ? m[1].toUpperCase() : undefined;
+}
+
 export default function BrokerAccessPanel({ onClose, nextPath = "/inbox", initialMode = "signin" }: { onClose: () => void; nextPath?: string; initialMode?: AccessMode }) {
   const router = useRouter();
   const [mode, setMode] = useState<AccessMode>(initialMode);
@@ -43,8 +50,12 @@ export default function BrokerAccessPanel({ onClose, nextPath = "/inbox", initia
       if (password.length < 8) throw new Error("Use at least 8 characters for your password.");
       if (phoneDigits.length < 10 || phoneDigits.length > 15) throw new Error("Enter a valid WhatsApp/mobile number.");
 
-      // New workspaces land on the guided setup after email confirmation.
-      window.localStorage.setItem("propai_auth_next", "/setup");
+      // New workspaces land on the guided setup after email confirmation,
+      // unless they came from an assistant connection link: then return to it.
+      window.localStorage.setItem(
+        "propai_auth_next",
+        nextPath && nextPath.startsWith("/connect?code=") ? nextPath : "/setup",
+      );
       await signUp(
         email.trim(),
         password,
@@ -52,6 +63,7 @@ export default function BrokerAccessPanel({ onClose, nextPath = "/inbox", initia
         fullName.trim(),
         workspaceName.trim() || undefined,
         phoneDigits,
+        connectCodeFromNext(nextPath),
       );
       setAccountCreated(true);
       setMessage({ kind: "success", text: "Check your email to confirm your PropAI workspace." });

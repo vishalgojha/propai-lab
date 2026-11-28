@@ -24,7 +24,7 @@ export function CallbackClient() {
       const accessToken = hashParams.get("access_token");
       const refreshToken = hashParams.get("refresh_token");
       const storedNext = window.localStorage.getItem(AUTH_NEXT_KEY) || "";
-      const next = params.get("next") || storedNext || "/";
+      let next = params.get("next") || storedNext || "/";
       if (storedNext) {
         window.localStorage.removeItem(AUTH_NEXT_KEY);
       }
@@ -54,6 +54,21 @@ export function CallbackClient() {
           setStatus("error");
           setMessage(result.error.message);
           return;
+        }
+
+        // Email confirmed on a different device: the connection target travels
+        // with the account (signup metadata), not this browser.
+        if (!params.get("next") && !storedNext) {
+          const meta = (result.data?.user?.user_metadata || {}) as Record<string, unknown>;
+          const pending = typeof meta.propai_connect_code === "string" ? meta.propai_connect_code : "";
+          if (/^[A-Za-z0-9-]{4,32}$/.test(pending)) {
+            next = `/connect?code=${pending.toUpperCase()}`;
+            try {
+              await supabase.auth.updateUser({ data: { propai_connect_code: null } });
+            } catch {
+              // Hint only: failing to clear it never blocks the return.
+            }
+          }
         }
 
         // Do not leave access or refresh tokens in the address bar/history.
