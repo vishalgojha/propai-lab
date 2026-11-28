@@ -1578,3 +1578,13 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Known limitations or failures: Supabase Auth signup is initiated directly from the browser, so this client-side guard does not retroactively repair old metadata or protect an alternate non-browser signup client.
 - Next action: Deploy the dashboard and test one invalid 11-digit signup plus one valid `+91`-formatted signup.
 
+### Add Razorpay workspace subscriptions (2026-11-28)
+
+- Requested outcome: Add Razorpay checkout for the Solo, 2-number, and 3-number monthly workspace plans.
+- Files/services changed: `routers/billing.py`, `frontend/src/lib/api.ts`, `frontend/src/app/profile/billing/page.tsx`, `supabase/migrations/20261128170000_workspace_razorpay_billing.sql`, `deploy/coolify/README.md`, and the API router registration in `app.py`.
+- Behavior: The server chooses plan amounts and Razorpay plan IDs; the browser receives only the public key ID. Subscription verification uses the Razorpay HMAC signature, webhook requests use the raw-body HMAC and event-id deduplication, and billing state is tenant-scoped with RLS. Subscriptions default to a 15-day future start to preserve the existing trial copy (`RAZORPAY_TRIAL_DAYS` is configurable). No secrets are committed.
+- Verification performed: `python3 -m py_compile routers/billing.py` passed; changed billing files passed ESLint with 0 errors; `git diff --check` passed. Full frontend TypeScript still reports unrelated pre-existing repository errors, with no errors reported from the changed billing files. Independent task-verifier second pass: **PARTIAL** — code and security paths pass static review, but database migration application and a live Razorpay test-mode checkout remain pending.
+- Deployment/push status: Pending commit, push, Supabase migration application, and API/dashboard deployment.
+- Known limitations or failures: Razorpay plan IDs and test credentials must be configured in Coolify (`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, and the three plan IDs). The migration is checked in but has not been applied to production from this environment; the 15-day trial and checkout still need a live Test Mode smoke test.
+- Next action: Apply the migration, configure Razorpay Test Mode, deploy API and dashboard, then complete one test checkout and webhook replay.
+

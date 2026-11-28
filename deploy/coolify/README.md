@@ -57,6 +57,10 @@ Set these on each service in Coolify:
 | `GOOGLE_DRIVE_REDIRECT_URI` | `https://app.propai.live/api/google-drive/callback` |
 | `PROPAI_TOKEN_ENCRYPTION_KEY` | Stable Fernet key used to encrypt remote OAuth tokens; server-side only |
 | `EXTRACTION_PROVIDER_TIMEOUT_SECONDS` | Optional extraction provider request timeout; defaults to `180` seconds and is clamped to a minimum of `30`. |
+| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | Server-only Razorpay Test or Live API credentials. Never expose the secret to the browser. |
+| `RAZORPAY_WEBHOOK_SECRET` | Separate server-only secret configured for Razorpay webhook signature verification. |
+| `RAZORPAY_PLAN_SOLO` / `RAZORPAY_PLAN_TWO_NUMBERS` / `RAZORPAY_PLAN_THREE_NUMBERS` | Razorpay monthly plan IDs matching ₹1,299, ₹1,499, and ₹2,599. Create these in the same Razorpay mode as the API keys. |
+| `RAZORPAY_TRIAL_DAYS` | Optional trial length in days; defaults to `15`. |
 | `DOUBLEWORD_EMBEDDING_MODEL` | Exact embedding model ID, if the MCP embedding service is enabled |
 | `FRONTEND_URL` | `https://app.propai.live` |
 | `GOOGLE_MAPS_API_KEY` / `GOOGLE_PLACES_API_KEY` | Server-side Google key used to cache building coordinates, formatted addresses, and Plus Codes. The backend accepts either name; `GOOGLE_MAPS_API_KEY` matches the existing frontend configuration. |

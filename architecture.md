@@ -283,6 +283,15 @@ evidence. Raw search is group-only because DMs are rejected before persistence.
 Instinct/MCP may write only tenant-private broker inventory and requirements
 through the explicit `inventory:write` and `requirements:write` scopes.
 
+Workspace subscriptions are tenant-scoped in `billing_subscriptions`, keyed by
+one organization and linked to a server-side Razorpay subscription ID. The
+browser receives only the public Razorpay key ID; plan amounts and plan IDs are
+selected by the API. Payment callbacks must pass server-side HMAC verification,
+and webhook event IDs are persisted for replay-safe processing. Billing RLS
+allows organization members to read their own subscription while webhook event
+payloads remain service-role-only. A subscription does not grant access to
+another organization or bypass the existing WhatsApp and tenant gates.
+
 The public `GET /api/external/v1/docs` endpoint serves the REST transport guide
 for new external-agent sessions. The public `/contract` and `/contract/manifest`
 endpoints are the shared rulebook and freshness source; authenticated MCP also

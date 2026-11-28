@@ -279,6 +279,31 @@ export function stopExtraction(whatsappConnectionId: number) {
   return setExtractionStatus(whatsappConnectionId, "stop");
 }
 
+export type BillingPlan = { key: string; label: string; amount: number; numbers: number };
+export type BillingSubscription = { plan_key: string; status: string; razorpay_subscription_id: string; current_period_end?: string | null; updated_at?: string };
+
+export function getBillingPlans() {
+  return fetchJSON<{ plans: BillingPlan[]; currency: string }>("/billing/plans");
+}
+
+export function getBillingStatus() {
+  return fetchJSON<{ subscription: BillingSubscription | null }>("/billing/status");
+}
+
+export function createBillingSubscription(planKey: string) {
+  return fetchJSON<{ key_id: string; subscription_id: string; plan_key: string; amount: number; currency: string }>("/billing/create-subscription", {
+    method: "POST",
+    body: JSON.stringify({ plan_key: planKey }),
+  });
+}
+
+export function verifyBillingSubscription(payload: { razorpay_payment_id: string; razorpay_subscription_id: string; razorpay_signature: string }) {
+  return fetchJSON<{ ok: boolean; status: string; plan_key: string }>("/billing/verify-subscription", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function checkOnboardingGroup(
   whatsappConnectionId: number,
   groupJid: string,

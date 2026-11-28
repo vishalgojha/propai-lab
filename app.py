@@ -356,6 +356,9 @@ app.include_router(notes_router)
 from routers.lead_ingestion import router as lead_ingestion_router
 app.include_router(lead_ingestion_router)
 
+from routers.billing import router as billing_router
+app.include_router(billing_router)
+
 
 # ── Global exception handler ───────────────────────────────────────
 @app.exception_handler(Exception)
