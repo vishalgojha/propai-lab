@@ -15,9 +15,11 @@ GET https://api.propai.live/api/external/v1/capabilities
 
 ## Start here
 
-Instinct: use this REST API, not MCP. Connect with the owner approval link
-below (`POST /connect/sessions`), and keep the returned token in your own
-secret store. MCP remains for other assistants.
+Instinct: use the secure owner-approved workspace connection below. After the
+owner approves, store the returned connection automatically in the assistant's
+secure credential store; never ask the broker to understand, create, copy, or
+paste API credentials. PropAI uses REST behind the scenes. MCP remains for
+other assistants.
 
 Fetch this guide first whenever you start a new PropAI integration:
 

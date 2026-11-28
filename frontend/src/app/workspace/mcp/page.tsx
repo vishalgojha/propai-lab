@@ -286,7 +286,7 @@ export default function McpWorkspacePage() {
             {
               task: "instinct",
               label: "Connect Instinct",
-              steps: "Ask Instinct to connect to PropAI through its REST API, then open the link it sends. Sign in, check the code and approve. No API key to copy.",
+              steps: "Ask Instinct to connect to PropAI, then open the secure link it sends. Sign in, review the access, and approve. Instinct saves the connection automatically; no credentials to copy.",
               site: null,
               siteLabel: null,
               shots: null,

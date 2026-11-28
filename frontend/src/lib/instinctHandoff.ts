@@ -1,4 +1,4 @@
-export const INSTINCT_SETUP_MESSAGE = "Connect my PropAI workspace at https://app.propai.live. Use its secure sign-in and approval flow, send me the approval link, then confirm when a read test works. Use the PropAI REST API (https://api.propai.live/api/external/v1/docs), not MCP.";
+export const INSTINCT_SETUP_MESSAGE = "Connect my PropAI workspace at https://app.propai.live. Start the secure workspace connection, send me the approval link, and save the connection automatically after I approve. Then confirm a read test works. Do not ask me to create, copy, or paste credentials.";
 
 // Canonical WhatsApp handoff. This prefills a request, never grants access.
-export const INSTINCT_WHATSAPP_URL = "https://wa.me/16508702892?text=Connect+my+PropAI+workspace+at+https%3A%2F%2Fapp.propai.live.+Use+its+secure+sign-in+and+approval+flow%2C+send+me+the+approval+link%2C+then+confirm+when+a+read+test+works.+Use+the+PropAI+REST+API+%28https%3A%2F%2Fapi.propai.live%2Fapi%2Fexternal%2Fv1%2Fdocs%29%2C+not+MCP.";
+export const INSTINCT_WHATSAPP_URL = "https://wa.me/16508702892?text=Connect+my+PropAI+workspace+at+https%3A%2F%2Fapp.propai.live.+Start+the+secure+workspace+connection%2C+send+me+the+approval+link%2C+and+save+the+connection+automatically+after+I+approve.+Then+confirm+a+read+test+works.+Do+not+ask+me+to+create%2C+copy%2C+or+paste+credentials.";

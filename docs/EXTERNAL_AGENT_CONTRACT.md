@@ -2,7 +2,7 @@
 
 Contract name: `propai.external-agent`
 Contract version: `1.0`
-Contract revision: `2026-11-28.1`
+Contract revision: `2026-11-28.2`
 Published: `2026-11-23T00:00:00Z`
 Minimum client revision: `1`
 Schema revision: `external-v1`
@@ -19,10 +19,12 @@ handling, and confirmation rules must not.
 
 ## Transport choice for Instinct
 
-Instinct always uses the REST API (`https://api.propai.live/api/external/v1`)
-and the owner approval-link connection (`POST /connect/sessions`), never the
-MCP connector. MCP stays available for other assistants such as Claude. Both
-transports follow this same contract.
+Instinct uses the secure owner-approved workspace connection and stores the
+returned connection automatically. PropAI uses its REST transport behind the
+scenes (`https://api.propai.live/api/external/v1`); brokers should never be
+asked to understand, create, copy, or paste API credentials. MCP stays
+available for other assistants such as Claude. Both transports follow this
+same contract.
 
 ## Discovery
 

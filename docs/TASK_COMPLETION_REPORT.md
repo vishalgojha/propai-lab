@@ -1548,3 +1548,13 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Independent completion verification: PASS. Acceptance conditions checked: (1) Auth phone remains preferred — PASS by code path; (2) signup metadata is used as a fallback — PASS by code path; (3) workspace `owner_phone` is used when Auth and metadata phone are empty — PASS by direct mocked test; (4) unrelated Auth fields remain excluded — PASS by existing allowlist test; (5) only task hunks were committed — PASS, commit contains only the directory fix, tests, and this report entry.
 - Next action: Redeploy the API service in Coolify so `/api/admin/user-directory` serves the fallback. Do not redeploy unless authorized.
 
+### Align Instinct connection copy with automatic secure handoff (2026-11-28)
+
+- Requested outcome: Present the Instinct connection as a broker-friendly secure workspace connection; Instinct should collect and store the connection after owner approval without asking brokers to understand or handle API credentials.
+- Files/services changed: `frontend/src/lib/instinctHandoff.ts`, `frontend/src/app/workspace/mcp/page.tsx`, `docs/EXTERNAL_AGENT_CONTRACT.md`, `docs/EXTERNAL_AGENT_API.md`, and `routers/external_agent.py` contract revision/summary. No database schema or service behavior changed; the existing approved connect-session flow was reused.
+- Verification performed: `python3 -m py_compile routers/external_agent.py` passed; `git diff --check` passed; inspected the existing `POST /connect/sessions` → signed approval → one-time token poll flow and confirmed the new copy matches it.
+- Deployment/push status: Pending commit and push; no Coolify deployment performed for this copy change.
+- Known limitations or failures: Instinct must implement the secure credential-storage callback/polling behavior on its side; PropAI cannot persist credentials inside Instinct. Advanced/manual technical copy remains available under the collapsed technical settings.
+- Independent completion verification: PASS. Acceptance conditions checked: (1) normal Instinct handoff no longer mentions REST/API/MCP — PASS; (2) copy tells Instinct to save the connection automatically — PASS; (3) technical contract still identifies the internal REST transport and existing approval endpoints — PASS; (4) contract revision is bumped — PASS; (5) no schema or tenant-boundary behavior changed — PASS.
+- Next action: Commit and push the copy/contract changes, then redeploy the `api` and `propai-lab:main-app` Coolify services so the live contract and workspace UI match.
+
