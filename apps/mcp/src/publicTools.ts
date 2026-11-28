@@ -13,6 +13,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { supabase } from "./supabase.js";
+import { registerKnowledgeTool } from "./knowledgeTools.js";
 
 // Public-safe projection. Keep in sync with the columns granted to anon in
 // supabase/migrations/20260906120000_public_safe_listing_projection.sql.
@@ -215,6 +216,8 @@ export function createPublicMcpServer(): McpServer {
       };
     },
   );
+
+  registerKnowledgeTool(server);
 
   return server;
 }

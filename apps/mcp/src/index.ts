@@ -36,6 +36,7 @@ import { executeMarketSearch } from "./marketSearch.ts";
 import { recordAssistantSearchSuccess } from "./supabase.ts";
 import { createClientMcpServer } from "./clientTools.ts";
 import { createPublicMcpServer } from "./publicTools.ts";
+import { registerKnowledgeTool } from "./knowledgeTools.ts";
 import { registerMarketTools } from "./tools/market.ts";
 import { registerListingTools } from "./tools/listing.ts";
 import { registerRequirementTools } from "./tools/requirement.ts";
@@ -50,6 +51,7 @@ import { registerRawMessageTools } from "./tools/rawMessages.ts";
 import type { ToolContext } from "./types.js";
 import { deprecatedAlias } from "./compat.ts";
 export const MCP_TOOL_NAMES = [
+  "building_knowledge",
   // Domain-organized tools (primary)
   "market_search",
   "market_summary",
@@ -1063,6 +1065,8 @@ export function createMcpServer(context: ToolContext = {}) {
       };
     }
   });
+
+  registerKnowledgeTool(server);
 
   return server;
 }

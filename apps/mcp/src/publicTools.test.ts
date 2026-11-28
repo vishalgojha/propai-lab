@@ -26,14 +26,14 @@ async function listToolNames(server: ReturnType<typeof createMcpServer>): Promis
   return tools.map((tool) => tool.name).sort();
 }
 
-test("public (account-free) server exposes only search and fetch", async () => {
+test("public (account-free) server exposes only search, fetch and public building knowledge", async () => {
   const names = await listToolNames(createPublicMcpServer());
-  assert.deepEqual(names, ["fetch", "search"]);
+  assert.deepEqual(names, ["building_knowledge", "fetch", "search"]);
 });
 
 test("public context via createMcpServer is isolated to public tools", async () => {
   const names = await listToolNames(createMcpServer({ publicOnly: true }));
-  assert.deepEqual(names, ["fetch", "search"]);
+  assert.deepEqual(names, ["building_knowledge", "fetch", "search"]);
   for (const brokerTool of BROKER_ONLY_TOOLS) {
     assert.ok(!names.includes(brokerTool), `${brokerTool} must never be public`);
   }
@@ -74,4 +74,29 @@ test("public fetch marks listings inactive after 90 quiet days", () => {
   assert.equal(isActive({ ...FRESH_ROW, last_seen: daysAgo(45) }), true);
   assert.equal(isActive({ ...FRESH_ROW, last_seen: daysAgo(120) }), false);
   assert.equal(isActive({ ...FRESH_ROW, last_seen: null }), true);
+});
+
+test("building_knowledge tool reads the public knowledge docs and rejects bad slugs", async () => {
+  const realFetch = globalThis.fetch;
+  const seen: string[] = [];
+  globalThis.fetch = (async (url: unknown) => {
+    seen.push(String(url));
+    return new Response("# Doc\nAmenities as stated by the developer", { status: 200 });
+  }) as typeof fetch;
+  try {
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "test-client", version: "0.0.1" });
+    const server = createPublicMcpServer();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    const ok = await client.callTool({ name: "building_knowledge", arguments: { slug: "rustomjee-erika" } });
+    assert.match(JSON.stringify(ok.content), /Amenities as stated/);
+    assert.ok(seen[0].endsWith("/api/external/v1/knowledge/buildings/rustomjee-erika"));
+    const bad = await client.callTool({ name: "building_knowledge", arguments: { slug: "../../etc/passwd" } });
+    assert.equal(bad.isError, true);
+    assert.equal(seen.length, 1);
+    await client.close();
+    await server.close();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
