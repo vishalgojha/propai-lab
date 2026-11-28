@@ -1,10 +1,12 @@
-# Bandra East and BKC building knowledge
+# Mumbai building knowledge (Bandra East/BKC first, expanding)
 
 Broker claims are not facts: a post naming a building does not confirm wing, floor, unit or availability.
 Check status (OC, possession) against MahaRERA or the developer before relying on it.
 The counts below are a floor from observed coverage, not a census of every building in the area.
 
 Access per-building documents at /api/external/v1/knowledge/buildings/{slug} where the slug is the link target below (for example /api/external/v1/knowledge/buildings/agami-eternity).
+
+Buildings outside Bandra East/BKC are listed in the last section below, chosen by how often they recur in PropAI's own data.
 
 Amenity sections (added 28 Nov 2026) cover Rustomjee Seasons, Rustomjee Cleon, Ten BKC, Kalpataru Magnus, Kanakia Paris, Sunteck Signia Isles and Sunteck Signia Pearl, and quote only what the developer's own page states. Buildings without an amenity section have none recorded yet; that does not mean they have none.
 
@@ -62,3 +64,11 @@ Facts were audited against the opened public source pages listed in each buildin
 - Kohinoor Business Park: Kohinoor City, Kurla West. It is sometimes labelled "BKC-Bandra"; the address is Kurla West, so it is not counted.
 - Platina in East Avenue Road, Santacruz West: a different building from Platina in G Block BKC (see platina-bkc). Do not merge or exclude by name.
 - "Naman centre" at Prabhadevi: a different building from BKC Naman Centre (Plot C-31). Do not merge.
+
+## Other Mumbai buildings: identity and developer-stated amenities from opened developer pages (4)
+- [Rustomjee Crown](buildings/rustomjee-crown), Prabhadevi, residential
+- [Adani Western Heights](buildings/adani-western-heights), Andheri West, residential and commercial
+- [Piramal Mahalaxmi](buildings/piramal-mahalaxmi), Mahalaxmi, residential
+- [Lokhandwala Minerva](buildings/lokhandwala-minerva), Mahalaxmi, residential
+
+Note: some names that recur in PropAI data are single generic words that can match many buildings. Do not treat a bare name as one building without confirming locality and developer.

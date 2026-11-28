@@ -2,7 +2,7 @@
 
 Contract name: `propai.external-agent`
 Contract version: `1.0`
-Contract revision: `2026-11-28.3`
+Contract revision: `2026-11-28.4`
 Published: `2026-11-23T00:00:00Z`
 Minimum client revision: `1`
 Schema revision: `external-v1`
@@ -35,6 +35,21 @@ GET https://api.propai.live/api/external/v1/contract
 GET https://api.propai.live/api/external/v1/contract/manifest
 GET https://api.propai.live/api/external/v1/capabilities
 ```
+
+Public background knowledge needs no account and holds no workspace data:
+
+```http
+GET https://api.propai.live/api/external/v1/knowledge
+GET https://api.propai.live/api/external/v1/knowledge/buildings
+GET https://api.propai.live/api/external/v1/knowledge/buildings/{slug}
+```
+
+`/knowledge` is the realtor glossary. `/knowledge/buildings` is the index of Mumbai
+buildings with public documents, and each document carries its sources, a
+last-refreshed date and the developer's own amenity claims. Use them to
+understand a named building. A listed amenity is a developer marketing claim;
+a missing amenity section means nothing is recorded yet, not that the building
+has none. Broker posts are never facts.
 
 The contract is public. Capabilities are authenticated and return the scopes
 actually granted to the current workspace key.
