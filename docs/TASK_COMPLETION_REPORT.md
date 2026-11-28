@@ -1530,3 +1530,21 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Deployment/push status: The first rolling deployment at commit `77a379c9` rolled back because the singleton lock prevented overlap. After explicit approval, Coolify `Ingestor` was stopped and redeployed successfully at commit `03457559`; it is healthy and restored existing device sessions without re-pairing. No unlink or re-pair occurred.
 - Known limitations: A healthy container or old replayed insert is not recovery evidence. Final acceptance still requires a newly sent group message on each affected connection and comparison of event age, offline-sync markers, retry/undecryptable counts, duplicate rate, and raw insert timing. The current logs need a future correlation-safe connection label if exact per-broker offline-preview attribution is required.
 - Next action: Send one new group message from each affected phone after the backlog settles. Confirm each reaches `raw_messages` promptly with a near-zero original age. Do not re-pair because it invalidates the Groups confirmation receipt.
+### Restore WhatsApp group confirmation and extraction controls
+
+- Requested outcome: Fix the disabled extraction controls and the “completion unverified” state shown after group confirmation.
+- Live database change: Applied the checked-in atomic group-confirmation migration to the correct PropAI Supabase project `jsoiuzfwohtfkctlkozw`. Verified the presence of `confirm_whatsapp_group_selection`, `whatsapp_group_selection_state`, and `start_confirmed_whatsapp_extraction` with the expected signatures.
+- Services checked: API and `propai-lab:main-app` both have finished Coolify deployments from commit `d42f0a00` on 25 Nov 2026. No WhatsApp session restart or automatic extraction start was performed.
+- Verification performed: Correct project URL confirmed; required functions verified by read-only SQL; receipt table is currently empty because the broker must re-confirm the saved selection after migration. Independent task-verifier verdict: **PARTIAL** — schema and deployed code are aligned, but an authenticated browser confirmation/start smoke test remains.
+- Known limitations: The migration did not fabricate or auto-approve a selection. Existing saved groups remain subject to a fresh explicit confirmation, and extraction remains stopped until the broker clicks Start.
+- Next action: Refresh the WhatsApp Groups page, click **Confirm saved selection again**, then click **Start optional extraction**. Verify the status changes to Running and the button controls update.
+### Fix admin account directory phone fallback (2026-11-28)
+
+- Requested outcome: Show a signed-up user's WhatsApp number in Super Admin → User accounts when Supabase Auth's `phone` field is empty but the number is present in the workspace signup record.
+- Files/services changed: `storage/supabase.py` and `tests/test_admin_user_directory.py`. No production service was redeployed.
+- Verification performed: `python3 -m py_compile storage/supabase.py tests/test_admin_user_directory.py` passed; direct mocked behavioral checks for the existing allowlist, workspace-phone fallback, and pagination passed. The focused pytest command timed out after 35 seconds during test startup with no test output, including with plugin autoload disabled.
+- Deployment/push status: Commit and push pending at report creation; no deployment performed.
+- Known limitations or failures: Live production rendering was not exercised from this environment. The existing pytest startup timeout remains unresolved.
+- Independent completion verification: PASS. Acceptance conditions checked: (1) Auth phone remains preferred — PASS by code path; (2) signup metadata is used as a fallback — PASS by code path; (3) workspace `owner_phone` is used when Auth and metadata phone are empty — PASS by direct mocked test; (4) unrelated Auth fields remain excluded — PASS by existing allowlist test; (5) only task hunks are staged — pending final staging check.
+- Next action: Commit and push the task changes, then redeploy the API service in Coolify so `/api/admin/user-directory` serves the fallback.
+

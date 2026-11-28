@@ -64,18 +64,37 @@ def storage_for(handler):
 
 def test_auth_directory_only_allowlisted_fields_and_no_writes():
     def handler(r):
-        assert r.method=='GET' and r.url.path=='/auth/v1/admin/users'
-        assert r.url.params['page']=='2' and r.url.params['per_page']=='2'
-        assert r.headers['authorization']=='Bearer fixture-secret'
-        return httpx.Response(200,json={'users':[{'id':'u','email':'test@example.invalid','created_at':'2026-11-23T10:00:00Z','user_metadata':{'first_name':'Test','last_name':'User','secret':'never'},'app_metadata':{'secret':'never'},'encrypted_password':'never','identities':['never']}]})
+        if r.url.path == '/auth/v1/admin/users':
+            assert r.method=='GET'
+            assert r.url.params['page']=='2' and r.url.params['per_page']=='2'
+            assert r.headers['authorization']=='Bearer fixture-secret'
+            return httpx.Response(200,json={'users':[{'id':'u','email':'test@example.invalid','created_at':'2026-11-23T10:00:00Z','user_metadata':{'first_name':'Test','last_name':'User','secret':'never'},'app_metadata':{'secret':'never'},'encrypted_password':'never','identities':['never']}]})
+        assert r.url.path == '/rest/v1/organizations'
+        assert r.url.params['select']=='owner_user_id,owner_phone'
+        return httpx.Response(200,json=[])
     data=storage_for(handler).admin_user_directory('accounts',2,2)
     assert data['rows'][0]['name']=='Test User'
     assert data['total'] is None and data['has_more'] is False
     assert 'never' not in str(data)
 
 
+def test_auth_directory_uses_workspace_phone_when_auth_phone_is_empty():
+    def handler(r):
+        if r.url.path == '/auth/v1/admin/users':
+            return httpx.Response(200,json={'users':[{'id':'u','email':'raj@example.invalid','user_metadata':{}}]})
+        assert r.url.path == '/rest/v1/organizations'
+        return httpx.Response(200,json=[{'owner_user_id':'u','owner_phone':'919820056180'}])
+
+    data=storage_for(handler).admin_user_directory('accounts',1,25)
+    assert data['rows'][0]['phone']=='919820056180'
+
+
 def test_auth_full_page_has_next_without_guessing_total():
-    s=storage_for(lambda r:httpx.Response(200,json={'users':[{'id':'u'}]}))
+    def handler(r):
+        if r.url.path == '/auth/v1/admin/users':
+            return httpx.Response(200,json={'users':[{'id':'u'}]})
+        return httpx.Response(200,json=[])
+    s=storage_for(handler)
     data=s.admin_user_directory('accounts',1,1)
     assert data['has_more'] and data['total'] is None
 

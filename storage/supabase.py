@@ -3607,15 +3607,37 @@ class SupabaseStorage(Storage):
             users = payload.get("users")
             if not isinstance(users, list):
                 raise ValueError("Unexpected authentication directory response")
+            # Email signups keep the collected WhatsApp number in signup
+            # metadata/workspace ownership rather than auth.users.phone.
+            # Resolve the owner projection only for accounts missing an Auth
+            # phone so this private directory reflects the signup record.
+            user_ids_missing_phone = [
+                str(account.get("id") or "").strip()
+                for account in users
+                if not str(account.get("phone") or "").strip()
+                and str(account.get("id") or "").strip()
+            ]
+            owner_phone_by_user_id: dict[str, str] = {}
+            if user_ids_missing_phone:
+                owner_rows = self.client.table("organizations").select(
+                    "owner_user_id,owner_phone"
+                ).in_("owner_user_id", user_ids_missing_phone).execute().data or []
+                for owner_row in owner_rows:
+                    owner_id = str(owner_row.get("owner_user_id") or "").strip()
+                    owner_phone = str(owner_row.get("owner_phone") or "").strip()
+                    if owner_id and owner_phone and owner_id not in owner_phone_by_user_id:
+                        owner_phone_by_user_id[owner_id] = owner_phone
             rows = []
             for account in users:
                 metadata = account.get("user_metadata") or {}
                 if not isinstance(metadata, dict):
                     metadata = {}
                 name = " ".join(str(metadata.get(k) or "").strip() for k in ("first_name", "last_name")).strip()
+                account_id = str(account.get("id") or "").strip()
                 rows.append({
                     "id": account.get("id"), "name": name or str(metadata.get("full_name") or metadata.get("name") or ""),
-                    "email": account.get("email"), "phone": account.get("phone"),
+                    "email": account.get("email"),
+                    "phone": account.get("phone") or metadata.get("phone") or owner_phone_by_user_id.get(account_id),
                     "created_at": account.get("created_at"), "last_sign_in_at": account.get("last_sign_in_at"),
                     "email_confirmed_at": account.get("email_confirmed_at"),
                     "phone_confirmed_at": account.get("phone_confirmed_at"),
