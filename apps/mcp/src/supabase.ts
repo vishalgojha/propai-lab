@@ -392,3 +392,12 @@ function verifyAppSessionToken(token: string): AppSessionPayload | null {
     return null;
   }
 }
+
+/**
+ * Fresh, isolated auth client for one signup call. The configured anon key
+ * can be a disabled legacy key, so this prefers the server key; a new client
+ * per call keeps any session it receives away from every shared client.
+ */
+export function newSignupAuthClient() {
+  return buildClient(serviceKey || anonKey, "PropAI MCP signup auth client");
+}

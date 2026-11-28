@@ -7,7 +7,7 @@ let signUpResult: any = { data: { user: { id: "new-user", identities: [{ id: "i"
 mock.module("./supabase.js", {
   namedExports: {
     supabase: { from: (table: string) => ({ upsert: async (row: any) => { calls.push({ table, row }); return { error: null }; } }) },
-    supabaseAuth: { auth: { signUp: async () => signUpResult } },
+    newSignupAuthClient: () => ({ auth: { signUp: async () => signUpResult } }),
   },
 });
 
