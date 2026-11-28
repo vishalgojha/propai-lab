@@ -234,6 +234,15 @@ def _resolve_user_organization_id(user: dict) -> str | None:
             pass
         return orgs[0]["id"]
 
+    # Client accounts (assistant-only logins) never get a broker workspace
+    # provisioned. A failed lookup also blocks provisioning (fail closed).
+    try:
+        if storage.is_client_account(str(user.get("id") or "")):
+            return None
+    except Exception as exc:
+        print(f"[auth] client account lookup failed, not provisioning: {exc}", flush=True)
+        return None
+
     import re as _re
     email = user.get("email", "")
     metadata = user.get("user_metadata") or {}

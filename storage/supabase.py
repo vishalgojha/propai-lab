@@ -3502,6 +3502,19 @@ class SupabaseStorage(Storage):
 
     # ── Multi-Tenant: Organizations ────────────────────────────────
 
+    def is_client_account(self, user_id: str) -> bool:
+        """True when the auth user is an explicit client (client_accounts row).
+
+        Raises on lookup errors so callers can fail closed.
+        """
+        user_id = str(user_id or "").strip()
+        if not user_id:
+            return False
+        res = self.client.table("client_accounts").select("auth_user_id").eq(
+            "auth_user_id", user_id
+        ).limit(1).execute()
+        return bool(res.data)
+
     def get_organization_by_owner_user_id(self, user_id: str) -> dict | None:
         user_id = str(user_id or "").strip()
         if not user_id:
