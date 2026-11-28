@@ -51,6 +51,11 @@ understand a named building. A listed amenity is a developer marketing claim;
 a missing amenity section means nothing is recorded yet, not that the building
 has none. Broker posts are never facts.
 
+MCP clients can read the same documents with the read-only `building_knowledge` tool: call it
+without a slug for the index, then with a slug from the index. `GET /capabilities` also returns
+a `knowledge` object with these URLs. Discovery does not mean an assistant will call the tool on
+its own; clients decide when to use it.
+
 The contract is public. Capabilities are authenticated and return the scopes
 actually granted to the current workspace key.
 
