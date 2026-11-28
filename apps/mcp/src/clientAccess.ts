@@ -45,6 +45,9 @@ export async function signupClient(input: ClientSignupInput): Promise<{ ok: true
   if (password.length < 8 || password.length > 200) return { ok: false, error: "Password must be at least 8 characters." };
 
   const { data, error } = await sb.supabaseAuth.auth.signUp({ email, password });
+  if (error) {
+    console.error("[client-signup] auth signUp failed:", error.status, error.code || "", error.message);
+  }
   if (error) return { ok: false, error: "Could not create the account. Try again or use a different email." };
   const user = data.user;
   if (user && Array.isArray(user.identities) && user.identities.length > 0) {
