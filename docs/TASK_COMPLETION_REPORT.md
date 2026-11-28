@@ -1610,3 +1610,13 @@ Live v20-controlled navigation now hydrates in about one second with required sc
 - Known limitations or failures: This prevents the UI-wide failure state, but it does not repair a separately failing `/api/billing/status` or `/api/market/access` endpoint. The UI now identifies which capability failed so that endpoint can be diagnosed independently.
 - Next action: Redeploy `propai-lab:main-app`, reload `/account?tab=billing`, and verify that plans remain usable when `/market/access` is unavailable.
 
+### Add buyer/tenant Instinct and MCP connection UX (2026-11-28)
+
+- Requested outcome: Build client-side integration guidance for property buyers and tenants, explicitly separate from broker workspace integrations.
+- Files/services changed: `apps/www/src/app/client/page.tsx` and this report. Existing public REST and buyer/tenant MCP server paths were reused; no database schema or broker authorization behavior changed.
+- Behavior: The public client page now presents separate Instinct and MCP connection cards. Instinct receives a buyer/tenant-scoped prompt pointing to the account-free public REST guide; MCP points to `https://mcp.propai.live/mcp`. The page explicitly states that assistants can access only fresh public listings and listing contact routes, never broker groups, private inventory, CRM, raw messages, or other buyers’ requirements. Client login is described as optional for public search.
+- Verification performed: `apps/www` TypeScript check passed (`tsc --noEmit`, exit 0); `git diff --check` passed. Independent task-verifier second pass: **PARTIAL** — UI copy, links, and client-only boundary pass source inspection; live Instinct handoff, MCP connector negotiation, and production rendering remain unverified.
+- Deployment/push status: Pending commit and push. `propai-lab:main` requires redeployment to publish the client page; no deployment was performed in this pass.
+- Known limitations or failures: The Instinct button opens the existing assistant handoff and public REST guide; it does not create a private client API key. Requirement submission remains subject to the existing consent-gated public/MCP flows.
+- Next action: Redeploy `propai-lab:main`, open `/client`, verify both handoffs in a browser, and run one anonymous MCP search plus one Instinct public REST search.
+
