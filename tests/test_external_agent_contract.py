@@ -38,7 +38,7 @@ def test_capabilities_are_contract_bound_and_scope_filtered():
     }))
 
     assert result["contract"] == "propai.external-agent"
-    assert result["revision"] == "2026-11-26.1"
+    assert result["revision"] == "2026-11-28.1"
     assert {operation["name"] for operation in result["operations"]["read"]} >= {
         "health", "search_group_messages", "get_group_message",
     }

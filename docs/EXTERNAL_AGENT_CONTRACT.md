@@ -2,7 +2,7 @@
 
 Contract name: `propai.external-agent`
 Contract version: `1.0`
-Contract revision: `2026-11-25.1`
+Contract revision: `2026-11-28.1`
 Published: `2026-11-23T00:00:00Z`
 Minimum client revision: `1`
 Schema revision: `external-v1`
@@ -16,6 +16,13 @@ This is the shared behavior contract for every external AI client that uses
 PropAI, including Instinct REST and PropAI MCP. The transport may differ, but
 tenant scope, privacy boundaries, record semantics, write permissions, error
 handling, and confirmation rules must not.
+
+## Transport choice for Instinct
+
+Instinct always uses the REST API (`https://api.propai.live/api/external/v1`)
+and the owner approval-link connection (`POST /connect/sessions`), never the
+MCP connector. MCP stays available for other assistants such as Claude. Both
+transports follow this same contract.
 
 ## Discovery
 
